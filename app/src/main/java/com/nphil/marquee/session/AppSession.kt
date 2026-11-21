@@ -6,6 +6,7 @@ import com.nphil.marquee.core.CoreJson
 import com.nphil.marquee.core.LibrarySection
 import com.nphil.marquee.core.MarqueeCore
 import com.nphil.marquee.core.PlexHomeUser
+import com.nphil.marquee.core.PlexPin
 import com.nphil.marquee.core.PlexServer
 import com.nphil.marquee.core.Reach
 import com.nphil.marquee.data.AppSettings
@@ -13,6 +14,9 @@ import com.nphil.marquee.data.SecretStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -52,6 +56,8 @@ class AppSession(
 		val homeUsers: List<PlexHomeUser> = emptyList(),
 		/** The plex.tv/link code on screen while signing in. */
 		val linkCode: String? = null,
+		/** The plex.tv page that approves the sign-in, open in a Custom Tab while the PIN is polled. */
+		val signInPage: String? = null,
 		/** The address that answered last, by server. */
 		val addresses: Map<String, String> = emptyMap(),
 	) {
@@ -89,18 +95,47 @@ class AppSession(
 		refreshJob = scope.launch { refreshAccount(kept) }
 	}
 
-	/** Shows a plex.tv/link code and finishes once it is entered there. */
-	fun signIn() {
+	private val pagesToOpen = MutableSharedFlow<String>(extraBufferCapacity = 1)
+
+	/** Pages for the activity to open in a Custom Tab: plex.tv's sign-in page, when it starts or is reopened. */
+	val signInPages: SharedFlow<String> = pagesToOpen.asSharedFlow()
+
+	/**
+	 * Opens plex.tv's sign-in page and polls the PIN until it is approved there. The page has no forward URL:
+	 * plex.tv never forwarded back when the browser was already signed in (iPhone, 2026-11), so the activity
+	 * comes back over the page itself once [State.signInPage] clears.
+	 */
+	fun signIn() = startSignIn {
+		val pin = core.createPin(strong = true)
+		val page = checkNotNull(pin.page)
+		mutableState.update { it.copy(signInPage = page) }
+		pagesToOpen.emit(page)
+		pin
+	}
+
+	/** The fallback: a 4-character code entered at plex.tv/link on any device. */
+	fun signInWithCode() = startSignIn {
+		val pin = core.createPin(strong = false)
+		mutableState.update { it.copy(linkCode = pin.code) }
+		pin
+	}
+
+	/** Opens plex.tv's sign-in page again, for someone who closed it before approving. */
+	fun reopenSignInPage() {
+		state.value.signInPage?.let(pagesToOpen::tryEmit)
+	}
+
+	private fun startSignIn(createPin: suspend () -> PlexPin) {
 		signInJob?.cancel()
 		refreshJob?.cancel()
-		mutableState.update { it.copy(phase = Phase.SigningIn, linkCode = null) }
+		mutableState.update { it.copy(phase = Phase.SigningIn, linkCode = null, signInPage = null) }
 		signInJob = scope.launch {
 			try {
-				val code = core.createLinkCode()
-				mutableState.update { it.copy(linkCode = code.code) }
-				completeSignIn(core.waitForToken(code))
+				val token = core.waitForToken(createPin())
+				mutableState.update { it.copy(linkCode = null, signInPage = null) }
+				completeSignIn(token)
 			} catch (e: CoreException) {
-				mutableState.update { it.copy(phase = Phase.Failed(e.kind), linkCode = null) }
+				mutableState.update { it.copy(phase = Phase.Failed(e.kind), linkCode = null, signInPage = null) }
 			}
 		}
 	}
@@ -108,7 +143,7 @@ class AppSession(
 	fun cancelSignIn() {
 		signInJob?.cancel()
 		signInJob = null
-		mutableState.update { it.copy(phase = Phase.SignedOut, linkCode = null) }
+		mutableState.update { it.copy(phase = Phase.SignedOut, linkCode = null, signInPage = null) }
 	}
 
 	/** Checks the kept sign-in again after plex.tv could not be reached. */

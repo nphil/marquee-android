@@ -61,7 +61,10 @@ final class Methods: Sendable {
             state.withLock { $0.libraries = [:] }
             return try Reply.ok(Empty())
         case "pin.create":
-            return try Reply.ok(PIN(try await plexTV(token: nil).createPIN(strong: false)))
+            let strong = try decode(NewPIN.self, payload).strong
+            let tv = try plexTV(token: nil)
+            let pin = try await tv.createPIN(strong: strong)
+            return try Reply.ok(PIN(pin, page: strong ? tv.authURL(for: pin) : nil))
         case "pin.wait":
             let pin = try decode(PIN.self, payload)
             return try Reply.ok(Token(token: try await plexTV(token: nil).waitForToken(pin.plex)))

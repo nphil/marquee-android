@@ -25,16 +25,24 @@ struct ServerCall: Decodable {
     let refresh: Bool?
 }
 
-/// A plex.tv/link code. Dates travel as seconds since 1970.
+/// Asks for a strong PIN, approved on plex.tv's sign-in page, or a short plex.tv/link code.
+struct NewPIN: Codable {
+    let strong: Bool
+}
+
+/// A plex.tv PIN. A strong one carries `page`, the plex.tv page that approves it. Dates travel as seconds
+/// since 1970.
 struct PIN: Codable {
     let id: Int
     let code: String
     let expiresAt: Double?
+    let page: String?
 
-    init(_ pin: PlexPIN) {
+    init(_ pin: PlexPIN, page: URL?) {
         id = pin.id
         code = pin.code
         expiresAt = pin.expiresAt?.timeIntervalSince1970
+        self.page = page?.absoluteString
     }
 
     var plex: PlexPIN {

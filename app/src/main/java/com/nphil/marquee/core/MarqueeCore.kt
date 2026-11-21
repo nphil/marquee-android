@@ -23,12 +23,12 @@ class MarqueeCore(private val identity: suspend () -> ClientIdentity) {
 	@Volatile
 	private var configured = false
 
-	/** A code for plex.tv/link. */
-	suspend fun createLinkCode(): LinkCode = call("pin.create", JsonObject(emptyMap()))
+	/** A plex.tv PIN: a [strong] one comes with the plex.tv page that approves it, a short one is a plex.tv/link code. */
+	suspend fun createPin(strong: Boolean): PlexPin = call("pin.create", buildJsonObject { put("strong", strong) })
 
-	/** Waits until the code is entered at plex.tv/link and returns the account token. */
-	suspend fun waitForToken(code: LinkCode): String =
-		call<Token>("pin.wait", CoreJson.encodeToJsonElement(LinkCode.serializer(), code)).token
+	/** Waits until the PIN is approved at plex.tv and returns the account token. */
+	suspend fun waitForToken(pin: PlexPin): String =
+		call<Token>("pin.wait", CoreJson.encodeToJsonElement(PlexPin.serializer(), pin)).token
 
 	suspend fun account(token: String): PlexHomeUser = call("plex.account", tokenParams(token))
 

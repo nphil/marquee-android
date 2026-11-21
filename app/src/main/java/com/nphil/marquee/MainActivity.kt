@@ -18,10 +18,15 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import com.nphil.marquee.session.AppSession
 import com.nphil.marquee.ui.MarqueeApp
+import com.nphil.marquee.ui.signin.PlexSignInBrowser
 import com.nphil.marquee.ui.theme.MarqueeTheme
 import com.nphil.marquee.ui.theme.ThemeChoice
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -35,6 +40,16 @@ class MainActivity : ComponentActivity() {
 		// The splash stays until the first frame can show the chosen theme on the screen the kept sign-in
 		// leads to, so neither flashes.
 		splash.setKeepOnScreenCondition { !ready }
+		lifecycleScope.launch {
+			container.session.signInPages.collect { page -> PlexSignInBrowser.open(this@MainActivity, page) }
+		}
+		// Once the PIN is approved or the sign-in ends, the app comes back over the Custom Tab by itself: plex.tv
+		// does not forward back when the browser was already signed in to it.
+		lifecycleScope.launch {
+			container.session.state.map { it.signInPage != null }.distinctUntilChanged().drop(1)
+				.filter { open -> !open }
+				.collect { PlexSignInBrowser.bringBack(this@MainActivity) }
+		}
 		lifecycleScope.launch {
 			val initial = container.settings.themeChoice.first()
 			withContext(Dispatchers.Default) {

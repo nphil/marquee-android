@@ -29,9 +29,9 @@ data class ClientIdentity(
 	val deviceName: String,
 )
 
-/** A plex.tv/link code and when it stops working, in seconds since 1970. */
+/** A plex.tv PIN and when it stops working, in seconds since 1970. A strong one carries [page], the plex.tv page that approves it. */
 @Serializable
-data class LinkCode(val id: Long, val code: String, val expiresAt: Double? = null)
+data class PlexPin(val id: Long, val code: String, val expiresAt: Double? = null, val page: String? = null)
 
 @Serializable
 data class PlexConnection(

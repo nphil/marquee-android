@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -54,12 +53,17 @@ import com.nphil.marquee.ui.theme.Space
 import com.nphil.marquee.ui.theme.lucent
 
 /**
- * Sign-in (DESIGN §8.0): the Marquee mark, then a plex.tv/link code to enter on any device. Waiting, an
- * expired code and a refused or unreachable sign-in take the button's place on the same screen.
+ * Sign-in (DESIGN §8.0): the Marquee mark and one Sign in button, which opens plex.tv's sign-in page in a
+ * Custom Tab. Without a browser that opens Custom Tabs, or on request, a plex.tv/link code takes its place.
+ * Waiting, an expired PIN and a refused or unreachable sign-in take the button's place on the same screen.
  */
 @Composable
 fun SignInScreen(session: AppSession) {
 	val state by session.state.collectAsStateWithLifecycle()
+	val context = LocalContext.current
+	val start = {
+		if (PlexSignInBrowser.isAvailable(context)) session.signIn() else session.signInWithCode()
+	}
 	Column(
 		modifier = Modifier
 			.fillMaxSize()
@@ -73,7 +77,14 @@ fun SignInScreen(session: AppSession) {
 		MarqueeMark(Modifier.widthIn(max = 240.dp).fillMaxWidth())
 		Text("Marquee", style = MaterialTheme.typography.displaySmall, color = lucent.ink)
 		val content = when (val phase = state.phase) {
-			AppSession.Phase.SigningIn -> state.linkCode?.let { Content.Code(it) } ?: Content.Waiting
+			AppSession.Phase.SigningIn -> {
+				val code = state.linkCode
+				when {
+					code != null -> Content.Code(code)
+					state.signInPage != null -> Content.Page
+					else -> Content.Waiting
+				}
+			}
 			is AppSession.Phase.Failed -> Content.Failure(phase.error)
 			else -> Content.Start
 		}
@@ -86,10 +97,11 @@ fun SignInScreen(session: AppSession) {
 			label = "sign-in",
 		) { shown ->
 			when (shown) {
-				Content.Start -> PillButton("Sign in", onClick = session::signIn)
+				Content.Start -> PillButton("Sign in", onClick = start)
 				Content.Waiting -> Waiting(onCancel = session::cancelSignIn)
+				Content.Page -> PagePanel(session)
 				is Content.Code -> CodePanel(shown.code, onCancel = session::cancelSignIn)
-				is Content.Failure -> Failure(shown.error, canRetry = state.canRetry, session = session)
+				is Content.Failure -> Failure(shown.error, canRetry = state.canRetry, session = session, onSignIn = start)
 			}
 		}
 	}
@@ -98,6 +110,7 @@ fun SignInScreen(session: AppSession) {
 private sealed interface Content {
 	data object Start : Content
 	data object Waiting : Content
+	data object Page : Content
 	data class Code(val code: String) : Content
 	data class Failure(val error: CoreException.Kind) : Content
 }
@@ -108,6 +121,23 @@ private fun Waiting(onCancel: () -> Unit) {
 		LoadingIndicator()
 		Text("Signing in", style = MaterialTheme.typography.bodyLarge, color = lucent.ink2)
 		TextAction("Cancel", onClick = onCancel)
+	}
+}
+
+/** While plex.tv's page is open; the app comes back over it once the PIN is approved there. */
+@Composable
+private fun PagePanel(session: AppSession) {
+	Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Space.s4)) {
+		LoadingIndicator()
+		Text(
+			"Sign in to Plex on the page that opened. Marquee comes back here by itself once that's done.",
+			style = MaterialTheme.typography.bodyLarge,
+			color = lucent.ink2,
+			textAlign = TextAlign.Center,
+		)
+		TextAction("Open the sign-in page again", onClick = session::reopenSignInPage)
+		TextAction("Use a code instead", onClick = session::signInWithCode)
+		TextAction("Cancel", onClick = session::cancelSignIn)
 	}
 }
 
@@ -150,7 +180,7 @@ private fun CodePanel(code: String, onCancel: () -> Unit) {
 }
 
 @Composable
-private fun Failure(error: CoreException.Kind, canRetry: Boolean, session: AppSession) {
+private fun Failure(error: CoreException.Kind, canRetry: Boolean, session: AppSession, onSignIn: () -> Unit) {
 	var confirmingSignOut by remember { mutableStateOf(false) }
 	Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Space.s4)) {
 		Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
@@ -162,10 +192,10 @@ private fun Failure(error: CoreException.Kind, canRetry: Boolean, session: AppSe
 			Text(message(error), style = MaterialTheme.typography.bodyLarge, color = lucent.ink, textAlign = TextAlign.Center)
 		}
 		when {
-			error == CoreException.Kind.PinExpired -> PillButton("Get a new code", onClick = session::signIn)
-			error == CoreException.Kind.Unauthorized -> PillButton("Sign in again", onClick = session::signIn)
+			error == CoreException.Kind.PinExpired || error == CoreException.Kind.Unauthorized ->
+				PillButton("Sign in again", onClick = onSignIn)
 			canRetry -> PillButton("Try again", onClick = session::retry)
-			else -> PillButton("Try again", onClick = session::signIn)
+			else -> PillButton("Try again", onClick = onSignIn)
 		}
 		if (canRetry) TextAction("Sign Out", onClick = { confirmingSignOut = true })
 	}
@@ -175,7 +205,7 @@ private fun Failure(error: CoreException.Kind, canRetry: Boolean, session: AppSe
 }
 
 private fun message(error: CoreException.Kind) = when (error) {
-	CoreException.Kind.PinExpired -> "The code expired."
+	CoreException.Kind.PinExpired -> "The sign-in expired."
 	CoreException.Kind.Unauthorized -> "Plex signed this tablet out."
 	CoreException.Kind.Unreachable, CoreException.Kind.NoConnections -> "Plex can't be reached. Check the connection."
 	else -> "Sign-in didn't finish."
