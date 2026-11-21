@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The background of the iPhone app's icon. -->
+    <color name="ic_launcher_background">#191623</color>
+</resources>
