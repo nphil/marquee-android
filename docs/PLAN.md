@@ -1,0 +1,102 @@
+# Marquee for Android: plan
+
+Every feature of Marquee for iPhone, plus what Android allows beyond it, in a native Android app. The
+iPhone app's design document, `core/docs/DESIGN.md`, is the feature specification; this file records
+how the Android app meets it and what differs.
+
+## Goals
+
+- **Parity, then more.** Every iPhone feature, and Android-only extras (section 6).
+- **Tablet first, good on phones.** The owner's Xiaomi Pad 8 Pro is the only test device. Phone layouts
+  are checked with emulator screenshots and in a phone-width split-screen window on the tablet; phone
+  hardware stays untested.
+- **Native and themed.** Material 3 Expressive components, shapes and motion, on phones and tablets alike
+  (Google's large-screen guidance: navigation rail, side-by-side panes). Colour and type come from
+  Marquee's themes (`core/Resources/themes.json`), so every iPhone theme exists here, plus a Wallpaper
+  theme from Android's dynamic colour.
+- **Smooth at the panel's refresh rate.** No dropped frames in scrolling, transitions or the player.
+- **Robust video and audio.** Direct play of what the device can decode, including MKV, with the server
+  converting only what it cannot.
+- **Installed and updated with Obtainium** from this repo's signed GitHub releases.
+
+## 1. Architecture
+
+```
+app/        Kotlin, Jetpack Compose, Material 3 Expressive, Media3
+bridge/     Swift package MarqueeBridge: MarqueeCore behind a small JNI surface
+core/       git submodule: nphil/marquee-ios, pinned; MarqueeCore and the shared docs
+```
+
+- **Shared brain.** MarqueeCore (Plex client, route and quality rules, markers, tracks, subtitles,
+  downloads, Live TV guide, Seerr, link and diagnostics rules) is compiled for Android with the official
+  Swift SDK for Android and called from Kotlin. The bridge is coarse: a few calls per screen load or
+  playback event, values passed as JSON, always off the main thread. Nothing in the bridge runs per frame.
+- **Plex requests.** Core sends requests through its `PlexTransport` seam. On Android the transport is
+  OkHttp, supplied from Kotlin, so requests use Android's certificate store, HTTP/2 and network callbacks.
+- **Player.** Media3 ExoPlayer plays MKV, MP4 and the server's HLS directly. Audio the device cannot
+  decode (DTS, TrueHD and similar) goes through Media3's FFmpeg decoder extension; passthrough to a
+  receiver where one is attached. Subtitles: SRT, ASS/SSA, WebVTT, PGS and VobSub in the player; sidecar
+  files as on iPhone. VideoEngine's on-device remux is not used: Android needs no repackaging.
+- **UI.** Compose with Material 3 Expressive. `NavigationSuiteScaffold` gives a rail on tablets and a bar
+  on phones; list-detail and supporting-pane layouts on wide windows; shared-element transitions and
+  predictive back.
+- **Performance.** Baseline profiles, R8, stable list keys, derived state for anything ticking, video on
+  a `SurfaceView`. A macrobenchmark in CI measures frame timing on scrolling and the main transitions,
+  and a regression fails the build.
+- **Icon.** The iPhone app's mark as an adaptive icon with a monochrome layer, so Android's themed icons
+  tint it.
+
+## 2. Working with the iPhone app
+
+- Both apps are maintained together. A change to shared behaviour lands in MarqueeCore in `marquee-ios`
+  first, with its tests, and this repo then moves the `core` pin.
+- A feature is done when it works on both, or the difference is recorded here with its reason.
+- Video engine work stays in `nphil/videoengine`; this app does not depend on it.
+
+## 3. Release
+
+- Every push to `main` builds the Swift libraries and the APK, runs the tests and publishes a signed APK
+  as GitHub release `vX.Y.Z`, which Obtainium tracks.
+- The release key is in the repository secrets `ANDROID_KEYSTORE_BASE64` and
+  `ANDROID_KEYSTORE_PASSWORD`; losing it means no in-place updates.
+- The release APK carries arm64-v8a only; x86_64 builds exist for the CI emulator.
+
+## 4. Phases
+
+Each phase ends with a release installed on the tablet.
+
+1. **Foundations.** Project, Swift bridge build, CI and signed releases, icon, theme engine and theme
+   picker, adaptive app shell, sign-in with a plex.tv link code, server and profile choice.
+2. **Browse.** Home with its rows and layout editor (Continue Watching with rewatches), libraries,
+   detail pages with trailers and theme music, seasons and episodes, search, watchlist, Seerr requests.
+3. **Player.** Routes from Core, Auto quality with the link probe and Save Data, track and subtitle
+   rules, Bazarr and SpeechDock, subtitle style, Skip Intro, credits and Up Next, Picture in Picture,
+   background play, playback info, format badge, stats for nerds, diagnostics and Report a Problem.
+4. **The rest.** Downloads, Live TV (guide, DVR, direct from tuner), Chromecast, linked phones, the
+   LumaTV remote, glasses, the HomeLabber quality map.
+5. **Android extras** (section 6).
+
+## 5. Verification
+
+- Kotlin unit tests and MarqueeCore's tests run in CI; Core's tests also run on an Android emulator.
+- Screenshot tests at phone and tablet sizes, in light and dark, against FakePlex fixtures from `core`.
+- Frame-timing benchmark as above.
+- Acceptance on the Xiaomi Pad 8 Pro only, with its receipt recorded; phone hardware is listed as
+  untested.
+
+## 6. Android extras
+
+- Skip Intro and Next Episode as Picture-in-Picture actions.
+- Background playback with full system media controls.
+- Home-screen widgets (Continue Watching, Up Next), app shortcuts.
+- Downloads through the system's background work scheduler, surviving restarts.
+- Later: a Google TV build from the same code.
+
+## 7. Facts measured
+
+- 2026-11-21: MarqueeCore builds unchanged for `aarch64-unknown-linux-android28` (Swift 6.4.1 with its
+  Android SDK, NDK r30). The SDK's setup script fails on its dangling `clang` link; the sysroot links are
+  made by hand. Linking needs the native build system and `-Xlinker -L` to the SDK's
+  `swift_static-aarch64/android` directory for `_CFURLSessionInterface`.
+- The Swift runtime, Foundation (ICU alone 40 MB stripped) and Core come to about 30 MB zipped per ABI.
+  Not yet run on a device.
