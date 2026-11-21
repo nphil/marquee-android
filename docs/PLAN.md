@@ -103,8 +103,14 @@ Each phase ends with a release installed on the tablet.
 ## 7. Facts measured
 
 - 2026-11-21: MarqueeCore builds unchanged for `aarch64-unknown-linux-android28` (Swift 6.4.1 with its
-  Android SDK, NDK r30). The SDK's setup script fails on its dangling `clang` link; the sysroot links are
-  made by hand. Linking needs the native build system and `-Xlinker -L` to the SDK's
+  Android SDK, NDK r30). The SDK's setup script stops on the bundle's dangling `clang` link and runs once
+  that link is removed. Linking needs the native build system and `-Xlinker -L` to the SDK's
   `swift_static-aarch64/android` directory for `_CFURLSessionInterface`.
 - The Swift runtime, Foundation (ICU alone 40 MB stripped) and Core come to about 30 MB zipped per ABI.
-  Not yet run on a device.
+  The 0.1.0 release APK (arm64-v8a only, R8, baseline profile) is 31,927,921 bytes.
+- CI emulator (API 34, x86_64): the Swift libraries load in 15 ms and Core's connection probe runs
+  through the bridge (a refused port in 15 ms, a local server in 24 ms). Cold start to first frame
+  (`am start -W`, profile compiled) 604–629 ms over five launches, median 613 ms. Not yet run on the
+  tablet.
+- Compose 1.13 needs compileSdk 37.1 or later, so the app builds against `android-37.2`
+  (`compileSdkMinor = 2`). AGP 9 makes unit tests for the debug build type only.
