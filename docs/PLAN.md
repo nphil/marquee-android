@@ -66,12 +66,20 @@ core/       git submodule: nphil/marquee-ios, pinned; MarqueeCore and the shared
 Each phase ends with a release installed on the tablet.
 
 1. **Foundations.** Project, Swift bridge build, CI and signed releases, icon, theme engine and theme
-   picker, adaptive app shell, sign-in with a plex.tv link code, server and profile choice.
+   picker, adaptive app shell, sign-in, server and profile choice; diagnostics and Report a Problem
+   (the iPhone's DESIGN §8.12) in the release right after.
 2. **Browse.** Home with its rows and layout editor (Continue Watching with rewatches), libraries,
    detail pages with trailers and theme music, seasons and episodes, search, watchlist, Seerr requests.
 3. **Player.** Routes from Core, Auto quality with the link probe and Save Data, track and subtitle
-   rules, Bazarr and SpeechDock, subtitle style, Skip Intro, credits and Up Next, Picture in Picture,
-   background play, playback info, format badge, stats for nerds, diagnostics and Report a Problem.
+   rules, Bazarr and SpeechDock, subtitle style, Skip Intro, credits and Up Next, background play,
+   playback info, format badge, stats for nerds. Three small-player modes:
+   - **Picture in Picture** outside the app: resizable by the system; Android draws its controls, so the
+     app adds remote actions (play/pause, back and forward 10 s, Skip Intro, Next Episode) up to the
+     device's limit.
+   - **In-app mini player** while browsing: drawn by the app with the full controls and seek bar in the
+     theme, dragged to any corner, resized, swiped away, tapped to expand.
+   - **Free-form window** on tablets: the whole player, controls and menus included, in a resizable
+     floating window (`resizeableActivity`, layouts that hold at small window sizes).
 4. **The rest.** Downloads, Live TV (guide, DVR, direct from tuner), Chromecast, linked phones, the
    LumaTV remote, glasses, the HomeLabber quality map.
 5. **Android extras** (section 6).
@@ -86,7 +94,7 @@ Each phase ends with a release installed on the tablet.
 
 ## 6. Android extras
 
-- Skip Intro and Next Episode as Picture-in-Picture actions.
+- Picture-in-Picture actions (above), the in-app mini player and the free-form window player.
 - Background playback with full system media controls.
 - Home-screen widgets (Continue Watching, Up Next), app shortcuts.
 - Downloads through the system's background work scheduler, surviving restarts.
