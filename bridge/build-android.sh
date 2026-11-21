@@ -17,12 +17,14 @@ esac
 
 sdk_id=swift-6.4.1-RELEASE_android
 here="$(cd "$(dirname "$0")" && pwd)"
-sdk_root="${SWIFT_ANDROID_SDK_ROOT:-$HOME/.swiftpm/swift-sdks/$sdk_id.artifactbundle/swift-android}"
+# SwiftPM's default place for Swift SDKs, unless SWIFT_SDKS_PATH names another (CI does).
+sdks="${SWIFT_SDKS_PATH:-$HOME/.swiftpm/swift-sdks}"
+sdk_root="$sdks/$sdk_id.artifactbundle/swift-android"
 runtime="$sdk_root/swift-resources/usr/lib/swift-$arch/android"
 llvm="${ANDROID_NDK_HOME:?ANDROID_NDK_HOME must point at NDK r30}/toolchains/llvm/prebuilt/linux-x86_64"
 
 # API 28 is the oldest the Swift SDK's Foundation supports; the app's minSdk is above it.
-swift_build=(swift build --package-path "$here" --build-system native --swift-sdk "$sdk_id"
+swift_build=(swift build --package-path "$here" --build-system native --swift-sdks-path "$sdks" --swift-sdk "$sdk_id"
 	--triple "$arch-unknown-linux-android28" -c release
 	-Xlinker -L"$sdk_root/swift-resources/usr/lib/swift_static-$arch/android")
 "${swift_build[@]}"
