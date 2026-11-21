@@ -68,6 +68,9 @@ Each phase ends with a release installed on the tablet.
 1. **Foundations.** Project, Swift bridge build, CI and signed releases, icon, theme engine and theme
    picker, adaptive app shell, sign-in, server and profile choice; diagnostics and Report a Problem
    (the iPhone's DESIGN §8.12) in the release right after.
+   - Diagnostics, bridge half: `bridge/Sources/MarqueeDiagnostics` runs the iPhone's log (redaction,
+     journal, live ntfy batches, reports) behind the `diag.*` calls, with its Swift tests run in CI. The
+     Android half (settings page, floating button, exit reasons) is not built yet.
 2. **Browse.** Home with its rows and layout editor (Continue Watching with rewatches), libraries,
    detail pages with trailers and theme music, seasons and episodes, search, watchlist, Seerr requests.
 3. **Player.** Routes from Core, Auto quality with the link probe and Save Data, track and subtitle

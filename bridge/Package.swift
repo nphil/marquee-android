@@ -17,10 +17,25 @@ let package = Package(
     ],
     targets: [
         .target(name: "CMarqueeJNI"),
+        // The diagnostic log's pipeline (journal, live sender, reports). No JNI, so its tests run on the host.
+        .target(
+            name: "MarqueeDiagnostics",
+            dependencies: [
+                .product(name: "MarqueeCore", package: "MarqueeCore"),
+            ]
+        ),
         .target(
             name: "MarqueeBridge",
             dependencies: [
                 "CMarqueeJNI",
+                "MarqueeDiagnostics",
+                .product(name: "MarqueeCore", package: "MarqueeCore"),
+            ]
+        ),
+        .testTarget(
+            name: "MarqueeDiagnosticsTests",
+            dependencies: [
+                "MarqueeDiagnostics",
                 .product(name: "MarqueeCore", package: "MarqueeCore"),
             ]
         ),

@@ -13,12 +13,14 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
 /**
- * The Plex sign-in: the account token and the server list, whose entries carry their own tokens. Each
- * value is sealed with AES-GCM under a key that never leaves the Android Keystore, in preferences that
- * are kept out of backups (res/xml/backup_rules.xml), so a copied data directory carries no usable token.
+ * Secrets kept on the device: the Plex sign-in (the account token and the server list, whose entries carry
+ * their own tokens) in the default store, and the diagnostic log's server, topic and token in a store named
+ * "diagnostics", which signing out leaves alone. Each value is sealed with AES-GCM under one key that never
+ * leaves the Android Keystore, in preferences that are kept out of backups (res/xml/backup_rules.xml), so a
+ * copied data directory carries no usable secret.
  */
-class SecretStore(context: Context) {
-	private val prefs = context.getSharedPreferences("secrets", Context.MODE_PRIVATE)
+class SecretStore(context: Context, name: String = "secrets") {
+	private val prefs = context.getSharedPreferences(name, Context.MODE_PRIVATE)
 
 	fun read(name: String): String? {
 		val sealed = prefs.getString(name, null) ?: return null
@@ -50,10 +52,11 @@ class SecretStore(context: Context) {
 		prefs.edit { clear() }
 	}
 
-	private fun key(): SecretKey {
+	/** One key seals every store, so two stores making it at once must not each make their own. */
+	private fun key(): SecretKey = synchronized(lock) {
 		val store = KeyStore.getInstance(KEYSTORE).apply { load(null) }
-		(store.getKey(ALIAS, null) as? SecretKey)?.let { return it }
-		return KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, KEYSTORE).run {
+		(store.getKey(ALIAS, null) as? SecretKey)?.let { return@synchronized it }
+		KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, KEYSTORE).run {
 			init(
 				KeyGenParameterSpec.Builder(ALIAS, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
 					.setBlockModes(KeyProperties.BLOCK_MODE_GCM)
@@ -71,5 +74,6 @@ class SecretStore(context: Context) {
 		const val TRANSFORMATION = "AES/GCM/NoPadding"
 		const val TAG_BITS = 128
 		const val IV_BYTES = 12
+		val lock = Any()
 	}
 }

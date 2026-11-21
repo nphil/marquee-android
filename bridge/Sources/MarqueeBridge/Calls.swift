@@ -91,6 +91,8 @@ final class Methods: Sendable {
         case "library.sections":
             let library = try library(for: decode(ServerCall.self, payload))
             return try Reply.ok(try await library.sections().map(Section.init))
+        case _ where DiagCalls.handles(method):
+            return try await DiagCalls.handle(method, payload)
         default:
             throw BridgeError.unknownMethod(method)
         }
