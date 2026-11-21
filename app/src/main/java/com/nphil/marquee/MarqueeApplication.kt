@@ -14,19 +14,23 @@ import com.nphil.marquee.core.NativeCore
 import com.nphil.marquee.core.NativeTransport
 import com.nphil.marquee.data.AppSettings
 import com.nphil.marquee.data.SecretStore
+import com.nphil.marquee.diagnostics.Diag
+import com.nphil.marquee.diagnostics.DiagRequestLog
 import com.nphil.marquee.session.AppSession
 import com.nphil.marquee.ui.theme.ThemeCatalog
 import com.nphil.marquee.ui.theme.Themes
 import com.nphil.marquee.ui.theme.lucentTypography
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 
 /** The app's single instances, wired by hand: there is one of each and nothing to swap. */
 class AppContainer(context: Context) {
 	val scope: CoroutineScope = MainScope()
-	val http = OkHttpClient()
+	val http = OkHttpClient.Builder().addInterceptor(DiagRequestLog()).build()
 	val settings = AppSettings(context)
 	val core = MarqueeCore { identity(context) }
 	val session = AppSession(core, SecretStore(context), settings, scope)
@@ -38,6 +42,7 @@ class AppContainer(context: Context) {
 	init {
 		NativeCore.install(NativeTransport(http))
 		scope.launch { session.restore() }
+		scope.launch { session.state.map { it.user?.title }.distinctUntilChanged().collect { Diag.profile(it) } }
 	}
 
 	/** What Plex shows for this tablet in its device list. */
@@ -58,6 +63,7 @@ class MarqueeApplication : Application(), SingletonImageLoader.Factory {
 
 	override fun onCreate() {
 		super.onCreate()
+		Diag.install(this)
 		container = AppContainer(this)
 	}
 

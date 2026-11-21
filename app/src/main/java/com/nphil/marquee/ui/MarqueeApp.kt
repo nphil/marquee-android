@@ -17,6 +17,7 @@ import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteItem
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffold
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffoldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -29,6 +30,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.nphil.marquee.AppContainer
 import com.nphil.marquee.R
+import com.nphil.marquee.diagnostics.DiagScreen
 import com.nphil.marquee.session.AppSession
 import com.nphil.marquee.ui.library.LibraryScreen
 import com.nphil.marquee.ui.library.LibraryViewModel
@@ -51,6 +53,13 @@ fun MarqueeApp(container: AppContainer, choice: ThemeChoice, onTheme: ((ThemeCho
 				AppSession.Phase.ChoosingServer -> RootScreen.Servers
 				else -> RootScreen.SignIn
 			}
+		}
+	}
+	LaunchedEffect(root) {
+		when (root) {
+			RootScreen.SignIn -> DiagScreen.tab("Sign In")
+			RootScreen.Servers -> DiagScreen.tab("Servers")
+			RootScreen.Shell -> Unit
 		}
 	}
 	val effects = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
@@ -81,6 +90,7 @@ private fun Shell(container: AppContainer, choice: ThemeChoice, onTheme: ((Theme
 	val libraryModel = viewModel { LibraryViewModel(container.session) }
 	// Back from Settings returns to the Library before it leaves the app.
 	BackHandler(enabled = tab != Tab.Library) { tab = Tab.Library }
+	LaunchedEffect(tab) { DiagScreen.tab(tab.label) }
 	NavigationSuiteScaffold(
 		navigationItems = {
 			Tab.entries.forEach { item ->

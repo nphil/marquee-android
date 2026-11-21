@@ -11,6 +11,8 @@ import com.nphil.marquee.core.PlexServer
 import com.nphil.marquee.core.Reach
 import com.nphil.marquee.data.AppSettings
 import com.nphil.marquee.data.SecretStore
+import com.nphil.marquee.diagnostics.Diag
+import com.nphil.marquee.diagnostics.DiagCategory
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -80,6 +82,7 @@ class AppSession(
 		val account = settings.account()
 		if (kept == null) {
 			mutableState.value = State(phase = Phase.SignedOut)
+			Diag.info(DiagCategory.Plex, "session.restore", "signedIn" to false)
 			return
 		}
 		token = kept
@@ -91,6 +94,7 @@ class AppSession(
 			user = account.profile,
 			addresses = account.addresses,
 		)
+		Diag.info(DiagCategory.Plex, "session.restore", "signedIn" to true, "servers" to list.size, "profile" to (account.profile != null))
 		rememberedServer(list, account.serverId)?.let(::connect)
 		refreshJob = scope.launch { refreshAccount(kept) }
 	}
@@ -105,7 +109,7 @@ class AppSession(
 	 * plex.tv never forwarded back when the browser was already signed in (iPhone, 2026-11), so the activity
 	 * comes back over the page itself once [State.signInPage] clears.
 	 */
-	fun signIn() = startSignIn {
+	fun signIn() = startSignIn("page") {
 		val pin = core.createPin(strong = true)
 		val page = checkNotNull(pin.page)
 		mutableState.update { it.copy(signInPage = page) }
@@ -114,7 +118,7 @@ class AppSession(
 	}
 
 	/** The fallback: a 4-character code entered at plex.tv/link on any device. */
-	fun signInWithCode() = startSignIn {
+	fun signInWithCode() = startSignIn("code") {
 		val pin = core.createPin(strong = false)
 		mutableState.update { it.copy(linkCode = pin.code) }
 		pin
@@ -125,9 +129,10 @@ class AppSession(
 		state.value.signInPage?.let(pagesToOpen::tryEmit)
 	}
 
-	private fun startSignIn(createPin: suspend () -> PlexPin) {
+	private fun startSignIn(method: String, createPin: suspend () -> PlexPin) {
 		signInJob?.cancel()
 		refreshJob?.cancel()
+		Diag.info(DiagCategory.Plex, "signin.start", "method" to method)
 		mutableState.update { it.copy(phase = Phase.SigningIn, linkCode = null, signInPage = null) }
 		signInJob = scope.launch {
 			try {
@@ -135,12 +140,14 @@ class AppSession(
 				mutableState.update { it.copy(linkCode = null, signInPage = null) }
 				completeSignIn(token)
 			} catch (e: CoreException) {
+				Diag.warning(DiagCategory.Plex, "signin.failed", "method" to method, "kind" to e.kind.name, "status" to e.status)
 				mutableState.update { it.copy(phase = Phase.Failed(e.kind), linkCode = null, signInPage = null) }
 			}
 		}
 	}
 
 	fun cancelSignIn() {
+		Diag.info(DiagCategory.Plex, "signin.cancel")
 		signInJob?.cancel()
 		signInJob = null
 		mutableState.update { it.copy(phase = Phase.SignedOut, linkCode = null, signInPage = null) }
@@ -148,6 +155,7 @@ class AppSession(
 
 	/** Checks the kept sign-in again after plex.tv could not be reached. */
 	fun retry() {
+		Diag.info(DiagCategory.Plex, "session.retry")
 		val kept = token
 		if (kept == null) {
 			mutableState.update { it.copy(phase = Phase.SignedOut) }
@@ -159,6 +167,7 @@ class AppSession(
 	}
 
 	fun choose(server: PlexServer) {
+		Diag.info(DiagCategory.Plex, "server.choose", "owned" to server.isOwned, "present" to server.isPresent, "connections" to server.connections.size)
 		scope.launch { settings.setServerId(server.id) }
 		connect(server)
 	}
@@ -192,7 +201,12 @@ class AppSession(
 	 * [refresh] probes every address again. Null when plex.tv's list could not be used at all.
 	 */
 	suspend fun probe(server: PlexServer, refresh: Boolean): Reach? {
-		val reach = orNull { core.connect(server, state.value.addresses[server.id], refresh) } ?: return null
+		val reach = orNull { core.connect(server, state.value.addresses[server.id], refresh) }
+		if (reach == null) {
+			Diag.warning(DiagCategory.Plex, "server.probe.failed")
+			return null
+		}
+		logReach("server.probe", reach, "refresh" to refresh)
 		if (server.id == state.value.server?.id) reach.connection?.let { keepAddress(server.id, it.uri) }
 		return reach
 	}
@@ -209,13 +223,19 @@ class AppSession(
 	/** Switches to a Home profile; a wrong [pin] throws `ProfilePinRejected` and changes nothing. */
 	suspend fun switchUser(profile: PlexHomeUser, pin: String?) {
 		val kept = token ?: return
-		val profileToken = core.switchUser(kept, profile, pin)
+		val profileToken = try {
+			core.switchUser(kept, profile, pin)
+		} catch (e: CoreException) {
+			Diag.warning(DiagCategory.Plex, "profile.switch.failed", "kind" to e.kind.name, "status" to e.status)
+			throw e
+		}
 		val found = core.servers(profileToken)
 		keepSignIn(profileToken, found)
 		settings.setProfile(profile)
 		// The previous profile's connections carry its token.
 		core.reset()
 		mutableState.update { it.copy(servers = found, user = profile) }
+		Diag.info(DiagCategory.Plex, "profile.switch", "pin" to (pin != null), "servers" to found.size)
 		val same = found.firstOrNull { it.id == state.value.server?.id }
 		when {
 			same != null -> connect(same)
@@ -226,6 +246,7 @@ class AppSession(
 
 	/** Forgets the sign-in: the token and the server list are deleted. Settings and themes stay. */
 	fun signOut() {
+		Diag.notice(DiagCategory.Plex, "signout")
 		signInJob?.cancel()
 		refreshJob?.cancel()
 		addressJob?.cancel()
@@ -248,6 +269,7 @@ class AppSession(
 		mutableState.update {
 			it.copy(hasSignIn = true, servers = found, homeUsers = profiles, user = user, linkCode = null)
 		}
+		Diag.info(DiagCategory.Plex, "signin.done", "servers" to found.size, "profiles" to profiles.size)
 		show(found)
 	}
 
@@ -273,6 +295,7 @@ class AppSession(
 				else -> Unit
 			}
 		} catch (e: CoreException) {
+			Diag.notice(DiagCategory.Plex, "session.refresh.failed", "kind" to e.kind.name, "status" to e.status)
 			when {
 				e.kind == CoreException.Kind.Unauthorized -> signedOutByPlex()
 				// Offline, the kept servers stay usable; only a launch with nothing kept reports it.
@@ -299,6 +322,7 @@ class AppSession(
 		// Finds the address now, so the first screen does not wait for it, and keeps it for the next launch.
 		addressJob = scope.launch {
 			val reach = orNull { core.connect(server, state.value.addresses[server.id]) }
+			if (reach == null) Diag.warning(DiagCategory.Plex, "server.connect.failed") else logReach("server.connect", reach)
 			reach?.connection?.let { keepAddress(server.id, it.uri) }
 		}
 	}
@@ -309,7 +333,14 @@ class AppSession(
 		settings.setAddress(serverId, uri)
 	}
 
+	/** What a probe found, as the diagnostic log shows it: the address in use and a line for every address tried. */
+	private fun logReach(name: String, reach: Reach, vararg extra: Pair<String, Any?>) {
+		Diag.info(DiagCategory.Plex, name, "inUse" to reach.inUse, *extra)
+		reach.lines.forEach { Diag.info(DiagCategory.Plex, "$name.line", "line" to it) }
+	}
+
 	private fun signedOutByPlex() {
+		Diag.warning(DiagCategory.Plex, "session.unauthorized")
 		refreshJob?.cancel()
 		mutableState.update { it.copy(phase = Phase.Failed(CoreException.Kind.Unauthorized)) }
 	}

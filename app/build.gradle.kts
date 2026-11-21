@@ -46,6 +46,7 @@ android {
 		targetSdk = 37
 		versionCode = appVersionCode
 		versionName = appVersionName
+		buildConfigField("String", "COMMIT", "\"${git("rev-parse", "--short", "HEAD") ?: "unknown"}\"")
 
 		testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 		ndk { abiFilters += bridgeAbis }

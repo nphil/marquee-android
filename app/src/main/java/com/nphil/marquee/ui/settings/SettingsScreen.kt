@@ -19,6 +19,7 @@ import androidx.compose.material3.adaptive.layout.PaneAdaptedValue
 import androidx.compose.material3.adaptive.navigation.NavigableListDetailPaneScaffold
 import androidx.compose.material3.adaptive.navigation.rememberListDetailPaneScaffoldNavigator
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -30,12 +31,15 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nphil.marquee.R
+import com.nphil.marquee.diagnostics.Diag
+import com.nphil.marquee.diagnostics.DiagScreen
 import com.nphil.marquee.session.AppSession
 import com.nphil.marquee.ui.components.Avatar
 import com.nphil.marquee.ui.components.GroupGap
 import com.nphil.marquee.ui.components.GroupRow
 import com.nphil.marquee.ui.components.IconBadge
 import com.nphil.marquee.ui.components.plusInset
+import com.nphil.marquee.ui.diagnostics.DiagnosticLogsPage
 import com.nphil.marquee.ui.profiles.ProfilesPage
 import com.nphil.marquee.ui.servers.ServerList
 import com.nphil.marquee.ui.theme.ThemeChoice
@@ -49,6 +53,7 @@ enum class SettingsPage(val title: String) {
 	Profile("Profiles"),
 	Server("Servers"),
 	Appearance("Theme"),
+	DiagnosticLogs("Diagnostic Logs"),
 	Licences("Licences"),
 }
 
@@ -69,6 +74,8 @@ fun SettingsScreen(
 	val twoPane = navigator.scaffoldValue[ListDetailPaneScaffoldRole.List] == PaneAdaptedValue.Expanded &&
 		navigator.scaffoldValue[ListDetailPaneScaffoldRole.Detail] == PaneAdaptedValue.Expanded
 	val page = navigator.currentDestination?.contentKey ?: SettingsPage.Appearance
+	val shown = if (twoPane) page else navigator.currentDestination?.contentKey
+	LaunchedEffect(shown) { DiagScreen.path(shown?.title) }
 
 	NavigableListDetailPaneScaffold(
 		navigator = navigator,
@@ -110,6 +117,8 @@ private fun SettingsList(
 	onSignOut: () -> Unit,
 ) {
 	val state by session.state.collectAsStateWithLifecycle()
+	val diagnostics by Diag.settings.config.collectAsStateWithLifecycle()
+	val diagnosticsSummary = if (diagnostics?.let { it.configured && it.live } == true) "Sending live logs" else "Kept on this tablet"
 	val themeSummary = remember(choice) { summary(themes, choice) }
 	Scaffold(topBar = { TopAppBar(title = { Text("Settings") }) }, containerColor = lucent.canvas) { padding ->
 		LazyColumn(
@@ -138,8 +147,14 @@ private fun SettingsList(
 				}
 			}
 			item(key = "about") { Heading("About") }
+			item(key = "diagnostics") {
+				PageRow(0, 2, SettingsPage.DiagnosticLogs, selected, onOpen) {
+					IconBadge(R.drawable.ic_bug_report)
+					Labels("Diagnostic Logs", diagnosticsSummary)
+				}
+			}
 			item(key = "licences") {
-				PageRow(0, 1, SettingsPage.Licences, selected, onOpen) {
+				PageRow(1, 2, SettingsPage.Licences, selected, onOpen) {
 					IconBadge(R.drawable.ic_description)
 					Labels("Licences", "Manrope")
 				}
@@ -220,6 +235,7 @@ private fun SettingsDetail(
 			SettingsPage.Profile -> ProfilesPage(session, padding.plusInset())
 			SettingsPage.Server -> ServerList(session, isRoot = false, onChosen = { onBack?.invoke() }, contentPadding = padding)
 			SettingsPage.Appearance -> AppearancePage(themes, choice, onTheme, padding.plusInset())
+			SettingsPage.DiagnosticLogs -> DiagnosticLogsPage(padding.plusInset())
 			SettingsPage.Licences -> LicencesPage(padding.plusInset())
 		}
 	}

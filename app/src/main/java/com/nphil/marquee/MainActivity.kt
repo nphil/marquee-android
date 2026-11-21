@@ -11,13 +11,21 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
+import com.nphil.marquee.diagnostics.Diag
+import com.nphil.marquee.diagnostics.DiagCategory
+import com.nphil.marquee.diagnostics.DiagReportText
 import com.nphil.marquee.session.AppSession
 import com.nphil.marquee.ui.MarqueeApp
+import com.nphil.marquee.ui.diagnostics.ReportButtonHost
+import com.nphil.marquee.ui.diagnostics.ReportButtonTheme
+import com.nphil.marquee.ui.diagnostics.ReportSheetHost
 import com.nphil.marquee.ui.signin.PlexSignInBrowser
 import com.nphil.marquee.ui.theme.MarqueeTheme
 import com.nphil.marquee.ui.theme.ThemeChoice
@@ -31,10 +39,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
+	private lateinit var reportButton: ReportButtonHost
+
 	override fun onCreate(savedInstanceState: Bundle?) {
 		val splash = installSplashScreen()
 		super.onCreate(savedInstanceState)
 		enableEdgeToEdge()
+		reportButton = ReportButtonHost(this).also { it.attach() }
 		val container = container
 		var ready = false
 		// The splash stays until the first frame can show the chosen theme on the screen the kept sign-in
@@ -83,6 +94,13 @@ class MainActivity : ComponentActivity() {
 		val mode = choice.mode(isSystemInDarkTheme())
 		val id = choice.id(mode)
 		val theme = remember(id, mode) { container.themes.resolve(id, mode) }
+		var shown by remember { mutableStateOf(choice) }
+		LaunchedEffect(choice) {
+			if (choice != shown) {
+				Diag.info(DiagCategory.Ui, "theme.change", "from" to DiagReportText.themeSlots(shown), "to" to DiagReportText.themeSlots(choice))
+				shown = choice
+			}
+		}
 		val dark = theme.lucent.isDark
 		// System bar icons follow the theme on screen, which need not match the system's appearance.
 		LaunchedEffect(dark) {
@@ -96,6 +114,8 @@ class MainActivity : ComponentActivity() {
 		val scope = rememberCoroutineScope()
 		MarqueeTheme(theme, container.typography) {
 			MarqueeApp(container, choice, onTheme = { change -> scope.launch { container.settings.updateTheme(change) } })
+			ReportButtonTheme(reportButton)
+			ReportSheetHost(container)
 		}
 	}
 }
