@@ -1,0 +1,86 @@
+package com.nphil.marquee
+
+import android.graphics.Color
+import android.os.Build
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
+import com.nphil.marquee.session.AppSession
+import com.nphil.marquee.ui.MarqueeApp
+import com.nphil.marquee.ui.theme.MarqueeTheme
+import com.nphil.marquee.ui.theme.ThemeChoice
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+class MainActivity : ComponentActivity() {
+	override fun onCreate(savedInstanceState: Bundle?) {
+		val splash = installSplashScreen()
+		super.onCreate(savedInstanceState)
+		enableEdgeToEdge()
+		val container = container
+		var ready = false
+		// The splash stays until the first frame can show the chosen theme on the screen the kept sign-in
+		// leads to, so neither flashes.
+		splash.setKeepOnScreenCondition { !ready }
+		lifecycleScope.launch {
+			val initial = container.settings.themeChoice.first()
+			withContext(Dispatchers.Default) {
+				container.themes
+				container.typography
+			}
+			container.session.state.first { it.phase != AppSession.Phase.Restoring }
+			setContent { Root(container, initial) }
+			ready = true
+		}
+	}
+
+	override fun onAttachedToWindow() {
+		super.onAttachedToWindow()
+		preferFastestRefreshRate()
+	}
+
+	/** Without asking, a 120 Hz panel runs this window's scrolling and transitions at 60 Hz. */
+	private fun preferFastestRefreshRate() {
+		val screen = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) display else @Suppress("DEPRECATION") windowManager.defaultDisplay
+		val current = screen?.mode ?: return
+		val fastest = screen.supportedModes
+			.filter { it.physicalWidth == current.physicalWidth && it.physicalHeight == current.physicalHeight }
+			.maxByOrNull { it.refreshRate } ?: return
+		window.attributes = window.attributes.apply { preferredDisplayModeId = fastest.modeId }
+	}
+
+	@Composable
+	private fun Root(container: AppContainer, initial: ThemeChoice) {
+		val choice by container.settings.themeChoice.collectAsStateWithLifecycle(initial)
+		val mode = choice.mode(isSystemInDarkTheme())
+		val id = choice.id(mode)
+		val theme = remember(id, mode) { container.themes.resolve(id, mode) }
+		val dark = theme.lucent.isDark
+		// System bar icons follow the theme on screen, which need not match the system's appearance.
+		LaunchedEffect(dark) {
+			val bars = if (dark) {
+				SystemBarStyle.dark(Color.TRANSPARENT)
+			} else {
+				SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
+			}
+			enableEdgeToEdge(statusBarStyle = bars, navigationBarStyle = bars)
+		}
+		val scope = rememberCoroutineScope()
+		MarqueeTheme(theme, container.typography) {
+			MarqueeApp(container, choice, onTheme = { change -> scope.launch { container.settings.updateTheme(change) } })
+		}
+	}
+}
