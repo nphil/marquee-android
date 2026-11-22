@@ -6,6 +6,8 @@
 # gone is run again on a restarted emulator, up to three times. With the emulator still answering, a few failed tests
 # run once more on their own, as its video decoding and UI timing have been flaky: one that passes then is a warning in
 # the summary, and anything else is the code's, and final.
+# The baseline profile is an optimisation, so when the emulator is lost on every try of its phase the build goes on
+# without one and says so; lost tests would leave the code unchecked, and fail the run.
 set -euo pipefail
 
 gradle=(./gradlew --no-daemon -Pmarquee.abis=x86_64)
@@ -14,6 +16,8 @@ summary="${GITHUB_STEP_SUMMARY:-/dev/stdout}"
 attempts=3
 rerun_limit=4
 logs="${RUNNER_TEMP:-/tmp}/emulator-logs"
+# What a phase returns when its last try ended with the emulator lost.
+gone=75
 
 # The tests that failed in the last Gradle run, one per line: `Class#method`, a tab, and the first line of why.
 failed_tests() {
@@ -112,6 +116,8 @@ host_state() {
 	df -h / | tail -n 1
 	pgrep -fa 'qemu-system|emulator' | cut -c1-160 || true
 	sudo dmesg -T 2> /dev/null | tail -n 15 || true
+	# A kill that is not the kernel's (systemd-oomd, a script) is noted in the journal, not in dmesg.
+	sudo journalctl --since '-15 min' --no-pager 2> /dev/null | grep -i -E 'oom|killed|qemu|emulator' | tail -n 15 | cut -c1-200 || true
 	ls /tmp/android-runner 2> /dev/null || true
 	echo "::endgroup::"
 }
@@ -120,6 +126,17 @@ host_state() {
 capture_logcat() {
 	mkdir -p "$logs"
 	nohup adb logcat -b all -v threadtime > "$logs/logcat-$1.txt" 2>&1 &
+}
+
+# The host every 5 s while the checks run: memory, the biggest processes, and whether the emulator's process is there.
+watch_host() {
+	mkdir -p "$logs"
+	(
+		while sleep 5; do
+			echo "$(date +%T) qemu=$(pgrep -f qemu-system | head -n1 || true) $(free -m | awk 'NR==2 {print "used=" $3 " available=" $7}') $(ps -eo rss=,comm= --sort=-rss | head -n 3 | tr -s ' ' | tr '\n' ';')"
+		done
+	) >> "$logs/host.txt" 2>&1 &
+	watcher=$!
 }
 
 # Starts the AVD again with the flags the runner gave it, and waits until it has booted. Its data is wiped: after the
@@ -131,7 +148,7 @@ revive_emulator() {
 	pkill -f 'qemu-system|emulator/emulator' || true
 	sleep 2
 	# shellcheck disable=SC2086
-	nohup "$sdk/emulator/emulator" -port 5554 -avd test -wipe-data -no-snapshot $EMULATOR_OPTIONS > "${RUNNER_TEMP:-/tmp}/emulator-again.log" 2>&1 &
+	nohup bash -c '"$@"; echo "emulator exited with status $?"' _ "$sdk/emulator/emulator" -port 5554 -avd test -wipe-data -no-snapshot $EMULATOR_OPTIONS > "$logs/emulator-again-$1.log" 2>&1 &
 	timeout 120 adb wait-for-device
 	timeout 300 bash -c 'until [ "$(adb shell getprop sys.boot_completed 2> /dev/null | tr -d "\r")" = 1 ]; do sleep 2; done'
 	adb shell input keyevent 82
@@ -150,8 +167,8 @@ phase() {
 		emulator_answers && return "$status"
 		echo "::warning title=Emulator lost::the emulator stopped answering in the $name phase (attempt $attempt of $attempts)"
 		host_state
-		[ "$attempt" -lt "$attempts" ] || return "$status"
-		revive_emulator
+		[ "$attempt" -lt "$attempts" ] || return "$gone"
+		revive_emulator "$attempt"
 		capture_logcat "again-$attempt"
 	done
 }
@@ -161,9 +178,18 @@ case "${1:-}" in
 	*)
 		echo "Host: $(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2 | xargs), $(nproc) cores"
 		capture_logcat first
+		watch_host
 		phase tests
-		phase profile
+		profile=0
+		phase profile || profile=$?
+		kill "$watcher" 2> /dev/null || true
 		# Kept only when the emulator was lost: the artifact is for finding out why.
 		[ -e "$logs/lost" ] || rm -rf "$logs"
+		if [ "$profile" -eq "$gone" ]; then
+			echo "::warning title=No baseline profile::the emulator was lost on every try of the profile phase; this build has none"
+			echo "Baseline profile: not generated, the emulator was lost on every try. This build ships without one." >> "$summary"
+		elif [ "$profile" -ne 0 ]; then
+			exit "$profile"
+		fi
 		;;
 esac
