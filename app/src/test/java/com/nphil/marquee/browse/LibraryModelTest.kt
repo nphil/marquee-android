@@ -99,6 +99,7 @@ class LibraryModelTest {
 
 	private class FakeLibrary : LibrarySource {
 		val titleQueries = mutableListOf<SectionQuery>()
+		val titleSections = mutableListOf<String>()
 		val letterQueries = mutableListOf<SectionQuery>()
 		val collectionPages = mutableListOf<String>()
 		val refetched = mutableListOf<List<String>>()
@@ -111,6 +112,7 @@ class LibraryModelTest {
 
 		override suspend fun titles(section: String, query: SectionQuery, start: Int, size: Int): Page<PlexItem> {
 			titleQueries += query
+			titleSections += section
 			return Page(listOf("a", "b", "c").map { PlexItem(ratingKey = it) }, 3)
 		}
 
@@ -134,13 +136,30 @@ class LibraryModelTest {
 		}
 	}
 
+	private class FakeMemory(var chosen: String? = null, hidden: Set<String> = emptySet()) : LibraryMemory {
+		val views = mutableMapOf<String, String>()
+		override val hidden = MutableStateFlow(hidden)
+
+		override suspend fun choice() = chosen
+
+		override suspend fun choose(libraryKey: String) {
+			chosen = libraryKey
+		}
+
+		override suspend fun view(libraryKey: String) = views[libraryKey]
+
+		override suspend fun keepView(libraryKey: String, encoded: String?) {
+			if (encoded == null) views.remove(libraryKey) else views[libraryKey] = encoded
+		}
+	}
+
 	@Test
 	fun aLibraryLoadsItsTitlesAndStartsOverWhenAnotherIsChosen() {
 		val source = FakeLibrary()
 		val scope = CoroutineScope(Dispatchers.Unconfined + SupervisorJob())
-		val model = LibraryModel(source, MutableStateFlow(Changes()), scope)
+		val model = LibraryModel(source, MutableStateFlow(Changes()), FakeMemory(), scope)
 
-		assertEquals(listOf("1", "2"), model.libraries.value.map { it.key })
+		assertEquals(listOf("1", "2"), model.libraries.value?.map { it.key })
 		val movies = model.browser.value!!
 		assertEquals("1", movies.section.key)
 		assertEquals(3, movies.titles.value.items.size)
@@ -168,7 +187,7 @@ class LibraryModelTest {
 		val source = FakeLibrary()
 		val changes = MutableStateFlow(Changes())
 		val scope = CoroutineScope(Dispatchers.Unconfined + SupervisorJob())
-		val movies = LibraryModel(source, changes, scope).browser.value!!
+		val movies = LibraryModel(source, changes, FakeMemory(), scope).browser.value!!
 
 		changes.value = Changes(revision = 1, touched = mapOf("a" to 1, "elsewhere" to 1))
 		assertEquals(listOf(listOf("a")), source.refetched)
@@ -180,11 +199,102 @@ class LibraryModelTest {
 	}
 
 	@Test
-	fun theChosenLibraryIsTheOneAskedFor() {
+	fun aNewSessionOpensTheLibraryChosenLastWithoutLoadingAnotherFirst() {
+		val source = FakeLibrary()
 		val scope = CoroutineScope(Dispatchers.Unconfined + SupervisorJob())
-		val model = LibraryModel(FakeLibrary(), MutableStateFlow(Changes()), scope, initialChoice = "2")
+		val model = LibraryModel(source, MutableStateFlow(Changes()), FakeMemory(chosen = "2"), scope)
 		assertEquals("2", model.selected.value?.key)
 		assertEquals("2", model.browser.value?.section?.key)
+		assertEquals(setOf("2"), source.titleSections.toSet())
+		scope.cancel()
+	}
+
+	@Test
+	fun aChoiceTheServerNoLongerOffersFallsBackToTheFirstLibrary() {
+		val scope = CoroutineScope(Dispatchers.Unconfined + SupervisorJob())
+		val model = LibraryModel(FakeLibrary(), MutableStateFlow(Changes()), FakeMemory(chosen = "gone"), scope)
+		assertEquals("1", model.selected.value?.key)
+		assertEquals("1", model.browser.value?.section?.key)
+		scope.cancel()
+	}
+
+	@Test
+	fun onlyAChoiceIsRemembered() {
+		val memory = FakeMemory()
+		val scope = CoroutineScope(Dispatchers.Unconfined + SupervisorJob())
+		val model = LibraryModel(FakeLibrary(), MutableStateFlow(Changes()), memory, scope)
+		assertNull(memory.chosen)
+		model.choose("2")
+		assertEquals("2", memory.chosen)
+		scope.cancel()
+	}
+
+	@Test
+	fun aLibraryKeepsItsOwnSortAndFilter() {
+		val source = FakeLibrary()
+		val memory = FakeMemory()
+		val scope = CoroutineScope(Dispatchers.Unconfined + SupervisorJob())
+		val changes = MutableStateFlow(Changes())
+		val model = LibraryModel(source, changes, memory, scope)
+		val drama = PlexDirectory(key = "12", title = "Drama")
+		val kept = LibraryOptions(sort = Sort.Rating, reversed = true, unwatchedOnly = true, genre = drama)
+
+		model.browser.value!!.apply {
+			sortBy(Sort.Rating)
+			order(true)
+			filterUnwatched(true)
+			filterGenre(drama)
+		}
+		assertEquals(kept, decodeLibraryView(memory.views["1"]))
+
+		// The other library has its own; coming back finds the first as it was left.
+		model.choose("2")
+		assertEquals(LibraryOptions(), model.browser.value!!.options.value)
+		assertNull(memory.views["2"])
+		model.choose("1")
+		assertEquals(kept, model.browser.value!!.options.value)
+
+		// A later session starts there, and its first load already asks for it.
+		val asked = source.titleQueries.size
+		val later = LibraryModel(source, changes, memory, scope).browser.value!!
+		assertEquals(kept, later.options.value)
+		assertTrue(source.titleQueries.drop(asked).all { it.sort == Sort.Rating && it.reversed && it.genre == drama })
+
+		// Back to the defaults forgets them.
+		later.sortBy(Sort.Title)
+		later.filterUnwatched(false)
+		later.filterGenre(null)
+		assertNull(memory.views["1"])
+		scope.cancel()
+	}
+
+	@Test
+	fun movingBetweenTheViewsKeepsNothing() {
+		val memory = FakeMemory()
+		val scope = CoroutineScope(Dispatchers.Unconfined + SupervisorJob())
+		val movies = LibraryModel(FakeLibrary(), MutableStateFlow(Changes()), memory, scope).browser.value!!
+		movies.select(LibrarySegment.Recommended)
+		assertTrue(memory.views.isEmpty())
+		scope.cancel()
+	}
+
+	@Test
+	fun theFavoritesFollowTheSettingAndAChosenLibraryReturnsWhenSwitchedOnAgain() {
+		val memory = FakeMemory()
+		val scope = CoroutineScope(Dispatchers.Unconfined + SupervisorJob())
+		val model = LibraryModel(FakeLibrary(), MutableStateFlow(Changes()), memory, scope)
+		model.choose("2")
+
+		memory.hidden.value = setOf("2")
+		assertEquals(listOf("1"), model.libraries.value?.map { it.key })
+		assertEquals("1", model.browser.value?.section?.key)
+
+		memory.hidden.value = emptySet()
+		assertEquals("2", model.browser.value?.section?.key)
+
+		// Switching every one off leaves all of them, as the iPhone does.
+		memory.hidden.value = setOf("1", "2")
+		assertEquals(listOf("1", "2"), model.libraries.value?.map { it.key })
 		scope.cancel()
 	}
 }

@@ -14,15 +14,11 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -34,7 +30,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -43,7 +38,6 @@ import com.nphil.marquee.R
 import com.nphil.marquee.browse.BrowseEnvironment
 import com.nphil.marquee.browse.BrowsePlace
 import com.nphil.marquee.browse.DayClock
-import com.nphil.marquee.browse.HubGridModel
 import com.nphil.marquee.browse.ItemActions
 import com.nphil.marquee.browse.LibraryOptions
 import com.nphil.marquee.browse.LibrarySegment
@@ -52,6 +46,7 @@ import com.nphil.marquee.browse.SectionBrowser
 import com.nphil.marquee.browse.markedWatched
 import com.nphil.marquee.browse.showsValue
 import com.nphil.marquee.browse.sortValue
+import com.nphil.marquee.core.Destination
 import com.nphil.marquee.core.MediaType
 import com.nphil.marquee.core.Paged
 import com.nphil.marquee.core.PlexHub
@@ -61,6 +56,7 @@ import com.nphil.marquee.ui.browse.ActionButton
 import com.nphil.marquee.ui.browse.ActionMenu
 import com.nphil.marquee.ui.browse.FailureKind
 import com.nphil.marquee.ui.browse.GridSkeleton
+import com.nphil.marquee.ui.browse.HubGridScreen
 import com.nphil.marquee.ui.browse.ItemPoster
 import com.nphil.marquee.ui.browse.MenuAction
 import com.nphil.marquee.ui.browse.OfflineBanner
@@ -70,19 +66,23 @@ import com.nphil.marquee.ui.browse.RemoteContent
 import com.nphil.marquee.ui.browse.ShelfSkeleton
 import com.nphil.marquee.ui.browse.failureKind
 import com.nphil.marquee.ui.browse.posterMinWidth
+import com.nphil.marquee.ui.components.BackArrow
 import com.nphil.marquee.ui.components.EmptyState
 import com.nphil.marquee.ui.components.RetryButton
 import com.nphil.marquee.ui.components.SectionHeader
 import com.nphil.marquee.ui.components.ShelfRow
+import com.nphil.marquee.ui.shell.Places
 import com.nphil.marquee.ui.theme.Space
 import com.nphil.marquee.ui.theme.lucent
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 /**
- * The Library destination: the server's movie and TV libraries, one at a time. The title names the library and, with more
- * than one, switches it; the View menu sorts and filters the titles; the segments choose All, Collections or Recommended;
- * and in title order the A–Z rail jumps to a letter. [trailing] adds the app bar's own actions after the View button.
+ * The Library destination: the server's movie and TV libraries, one at a time. The title names the library and opens a
+ * menu of the favorite libraries and the places that are not tabs; the View menu sorts and filters the titles; the
+ * segments choose All, Collections or Recommended; and in title order the A–Z rail jumps to a letter. A Search or a
+ * Requests that is not a tab gets a button of its own. [onBack] adds a back arrow, for a Library opened from Home's menu
+ * rather than as a tab. [trailing] adds the app bar's own actions after the others.
  */
 @Composable
 fun LibraryScreen(
@@ -90,32 +90,40 @@ fun LibraryScreen(
 	place: BrowsePlace,
 	onSignIn: () -> Unit,
 	modifier: Modifier = Modifier,
+	places: Places = Places.None,
+	onBack: (() -> Unit)? = null,
 	trailing: @Composable RowScope.() -> Unit = {},
 ) {
-	// The chosen library survives a recreation; a new session starts on the first.
-	var savedKey by rememberSaveable { mutableStateOf<String?>(null) }
-	val host: LibraryViewModel = viewModel(key = "library:${place.key}") { LibraryViewModel(env, savedKey) }
+	val host: LibraryViewModel = viewModel(key = "library:${place.key}") { LibraryViewModel(env, place.profile) }
 	val model = host.model
 	val sections by model.sections.collectAsStateWithLifecycle()
 	val libraries by model.libraries.collectAsStateWithLifecycle()
 	val selected by model.selected.collectAsStateWithLifecycle()
 	val browser by model.browser.collectAsStateWithLifecycle()
 	val actions = remember(env) { ItemActions(env) }
-	LaunchedEffect(selected?.key) { selected?.key?.let { savedKey = it } }
 	var hubKey by rememberSaveable { mutableStateOf<String?>(null) }
 	var hubTitle by rememberSaveable { mutableStateOf("") }
 	val open = hubKey
 	if (open != null) {
-		LibraryHubScreen(env, place, open, hubTitle, onBack = { hubKey = null }, onSignIn = onSignIn, modifier = modifier)
+		HubGridScreen(env, place, open, hubTitle, onBack = { hubKey = null }, onSignIn = onSignIn, modifier = modifier)
 		return
 	}
+
+	BackHandler(enabled = onBack != null) { onBack?.invoke() }
+	val inMenu = remember(places) { places.inLibraryMenu() }
 
 	Scaffold(
 		modifier = modifier,
 		topBar = {
 			TopAppBar(
-				title = { LibraryTitle(selected?.title ?: "Library", libraries, selected?.key, model::choose) },
+				title = {
+					LibraryTitle(selected?.title ?: "Library", libraries.orEmpty(), selected?.key, inMenu, model::choose, places.open)
+				},
+				navigationIcon = { onBack?.let { BackArrow(it) } },
 				actions = {
+					if (Destination.Search in places.others) {
+						PlaceButton(Destination.Search, { places.open(Destination.Search) }, Modifier.testTag(LibraryTags.Search))
+					}
 					browser?.let { current ->
 						val options by current.options.collectAsStateWithLifecycle()
 						val genres by current.genres.collectAsStateWithLifecycle()
@@ -130,6 +138,9 @@ fun LibraryScreen(
 							)
 						}
 					}
+					if (Destination.Requests in places.others) {
+						PlaceButton(Destination.Requests, { places.open(Destination.Requests) }, Modifier.testTag(LibraryTags.Requests))
+					}
 					trailing()
 				},
 				colors = TopAppBarDefaults.topAppBarColors(containerColor = lucent.canvas, scrolledContainerColor = lucent.canvas),
@@ -141,22 +152,25 @@ fun LibraryScreen(
 			val posterWidth = posterMinWidth(maxWidth)
 			val fontScale = LocalDensity.current.fontScale
 			val skeletonWidth = maxWidth
+			val skeleton: @Composable () -> Unit = {
+				GridSkeleton(
+					PosterGridMetrics.of(skeletonWidth - Space.inset * 2, fontScale),
+					Modifier.padding(start = Space.inset, top = Space.s3),
+				)
+			}
 			RemoteContent(
 				remote = sections,
 				serverName = place.server.name,
 				onRetry = model::reload,
 				onSignIn = onSignIn,
 				modifier = Modifier.fillMaxSize(),
-				skeleton = {
-					GridSkeleton(
-						PosterGridMetrics.of(skeletonWidth - Space.inset * 2, fontScale),
-						Modifier.padding(start = Space.inset, top = Space.s3),
-					)
-				},
+				skeleton = skeleton,
 			) {
+				val offered = libraries
 				val current = browser
 				when {
-					libraries.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+					offered == null -> skeleton()
+					offered.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
 						EmptyState(
 							R.drawable.ic_video_library,
 							"No libraries",
@@ -164,7 +178,8 @@ fun LibraryScreen(
 							action = { RetryButton("Refresh", model::reload) },
 						)
 					}
-					current != null -> key(current) {
+					current == null -> skeleton()
+					else -> key(current) {
 						SectionContent(
 							browser = current,
 							place = place,
@@ -428,56 +443,6 @@ private fun ShowMenuPoster(
 					},
 				),
 			)
-		}
-	}
-}
-
-/** A hub's whole list, over the Library; Back returns to it. */
-@Composable
-private fun LibraryHubScreen(
-	env: BrowseEnvironment,
-	place: BrowsePlace,
-	key: String,
-	title: String,
-	onBack: () -> Unit,
-	onSignIn: () -> Unit,
-	modifier: Modifier = Modifier,
-) {
-	val model: HubGridModel = viewModel(key = "hub:${place.key}:$key") { HubGridModel(env, key) }
-	val paged by model.state.collectAsStateWithLifecycle()
-	val navigator = LocalNavigator.current
-	BackHandler(onBack = onBack)
-	Scaffold(
-		modifier = modifier,
-		topBar = {
-			TopAppBar(
-				title = { Text(title) },
-				navigationIcon = {
-					IconButton(onClick = onBack) {
-						Icon(painterResource(R.drawable.ic_arrow_back), contentDescription = "Back")
-					}
-				},
-				colors = TopAppBarDefaults.topAppBarColors(containerColor = lucent.canvas, scrolledContainerColor = lucent.canvas),
-			)
-		},
-		containerColor = lucent.canvas,
-	) { padding ->
-		PullToRefreshBox(
-			isRefreshing = paged.isLoading && paged.items.isNotEmpty(),
-			onRefresh = model::refresh,
-			modifier = Modifier.padding(padding).fillMaxSize(),
-		) {
-			PagedPosterGrid(
-				paged = paged,
-				serverName = place.server.name,
-				onRetry = model::load,
-				onSignIn = onSignIn,
-				onNearEnd = model::nearEnd,
-				modifier = Modifier.fillMaxSize(),
-				empty = { EmptyState(R.drawable.ic_video_library, "Nothing here", "The server lists no titles here.") },
-			) { item, width ->
-				ItemPoster(item, width, onClick = { navigator?.openItem(item.ratingKey) })
-			}
 		}
 	}
 }

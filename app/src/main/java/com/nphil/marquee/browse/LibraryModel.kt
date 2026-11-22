@@ -192,16 +192,19 @@ class ServerLibrary(private val source: BrowseSource) : LibrarySource {
 
 /**
  * One library as the person browses it: its three views, and the options that shape them. Chosen again, a library starts
- * over with new loaders and default options, as the iPhone's does.
+ * over with new loaders and the sort and filter it was left with.
  */
 class SectionBrowser(
 	val section: LibrarySection,
 	private val source: LibrarySource,
 	private val changes: StateFlow<Changes>,
 	private val scope: CoroutineScope,
+	initial: LibraryOptions = LibraryOptions(),
+	/** Told the sort and filter as [encodeLibraryView] writes them, each time they change, so they can be kept. */
+	private val keep: suspend (encoded: String?) -> Unit = {},
 ) {
 	private val type = section.itemType
-	private val mutableOptions = MutableStateFlow(LibraryOptions())
+	private val mutableOptions = MutableStateFlow(initial)
 	private val titleLoader = PagedLoader<PlexItem>(scope, keyOf = { it.ratingKey })
 	private val collectionLoader = PagedLoader<PlexItem>(scope, keyOf = { it.ratingKey })
 	private val recommendedLoader = RemoteLoader<List<PlexHub>>("library.recommended")
@@ -251,6 +254,7 @@ class SectionBrowser(
 			}
 		}
 		scope.launch { followChanges() }
+		scope.launch { keepOptions(initial) }
 	}
 
 	fun select(segment: LibrarySegment) = mutableOptions.update { it.copy(segment = segment) }
@@ -331,6 +335,17 @@ class SectionBrowser(
 		}
 	}
 
+	/** Hands each change of the sort or filter to [keep]; moving between the three views changes nothing there. */
+	private suspend fun keepOptions(initial: LibraryOptions) {
+		var kept = encodeLibraryView(initial)
+		mutableOptions.collect { options ->
+			val encoded = encodeLibraryView(options)
+			if (encoded == kept) return@collect
+			kept = encoded
+			keep(encoded)
+		}
+	}
+
 	private suspend fun refetch(keys: List<String>) {
 		val fresh = try {
 			source.refetch(keys)
@@ -344,38 +359,41 @@ class SectionBrowser(
 	}
 }
 
-/** The Library: the server's movie and TV libraries, and the browsing of the one chosen. */
+/** The Library: the libraries the profile favors, and the browsing of the one chosen. */
 class LibraryModel(
 	private val source: LibrarySource,
 	private val changes: StateFlow<Changes>,
+	private val memory: LibraryMemory,
 	private val scope: CoroutineScope,
-	initialChoice: String? = null,
 ) {
+	/** What the profile chose last, once read, so the first library never opens only to give way to it. */
+	private class Chosen(val key: String?)
+
 	private val loader = RemoteLoader<List<LibrarySection>>("library.sections")
-	private val chosen = MutableStateFlow(initialChoice)
+	private val chosen = MutableStateFlow<Chosen?>(null)
 	private val mutableBrowser = MutableStateFlow<SectionBrowser?>(null)
 	private var browserScope: CoroutineScope? = null
 
 	val sections: StateFlow<Remote<List<LibrarySection>>> = loader.state
 
-	/** The libraries the title menu offers: movies and TV shows. */
-	val libraries: StateFlow<List<LibrarySection>> = loader.state
-		.map { remote -> remote.value.orEmpty().filter { it.isBrowsable } }
-		.distinctUntilChanged()
-		.stateIn(scope, SharingStarted.Eagerly, emptyList())
+	/** The libraries the title menu offers; null until the server's list and the profile's favorites are both in. */
+	val libraries: StateFlow<List<LibrarySection>?> = combine(loader.state, memory.hidden) { remote, hidden ->
+		remote.value?.let { browsableLibraries(it, hidden) }
+	}.distinctUntilChanged().stateIn(scope, SharingStarted.Eagerly, null)
 
-	/** The library shown: the one chosen, else the first. */
-	val selected: StateFlow<LibrarySection?> = combine(libraries, chosen) { libraries, key ->
-		libraries.firstOrNull { it.key == key } ?: libraries.firstOrNull()
+	/** The library shown: the one chosen while it is still offered, else the first. */
+	val selected: StateFlow<LibrarySection?> = combine(libraries, chosen) { offered, last ->
+		if (offered == null || last == null) null else offered.firstOrNull { it.key == last.key } ?: offered.firstOrNull()
 	}.stateIn(scope, SharingStarted.Eagerly, null)
 
-	/** The browsing of [selected], new whenever another library is chosen. */
+	/** The browsing of [selected], new whenever another library is shown. */
 	val browser: StateFlow<SectionBrowser?> = mutableBrowser.asStateFlow()
 
 	init {
 		reload()
+		scope.launch { chosen.compareAndSet(null, Chosen(memory.choice())) }
 		scope.launch {
-			selected.distinctUntilChangedBy { it?.key }.collect { section -> open(section) }
+			selected.distinctUntilChangedBy { it?.key }.collectLatest { section -> open(section) }
 		}
 	}
 
@@ -384,24 +402,29 @@ class LibraryModel(
 	}
 
 	fun choose(key: String) {
-		chosen.value = key
+		if (chosen.value?.key == key) return
+		chosen.value = Chosen(key)
+		scope.launch { memory.choose(key) }
 	}
 
-	private fun open(section: LibrarySection?) {
-		browserScope?.cancel()
+	private suspend fun open(section: LibrarySection?) {
+		val previous = browserScope
 		if (section == null) {
 			browserScope = null
 			mutableBrowser.value = null
+			previous?.cancel()
 			return
 		}
+		val kept = decodeLibraryView(memory.view(section.key))
 		Diag.debug(DiagCategory.Ui, "library.open", "section" to section.key, "type" to section.type)
 		val child = CoroutineScope(scope.coroutineContext + SupervisorJob(scope.coroutineContext[Job]))
 		browserScope = child
-		mutableBrowser.value = SectionBrowser(section, source, changes, child)
+		mutableBrowser.value = SectionBrowser(section, source, changes, child, kept) { memory.keepView(section.key, it) }
+		previous?.cancel()
 	}
 }
 
 /** Holds a [LibraryModel] for the Library destination, so the chosen library and its loads outlive a rotation. */
-class LibraryViewModel(env: BrowseEnvironment, initialChoice: String?) : ViewModel() {
-	val model = LibraryModel(ServerLibrary(env.source), env.changes.state, viewModelScope, initialChoice)
+class LibraryViewModel(env: BrowseEnvironment, profile: String) : ViewModel() {
+	val model = LibraryModel(ServerLibrary(env.source), env.changes.state, StoredLibraryMemory(env.preferences, profile), viewModelScope)
 }

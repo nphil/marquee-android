@@ -45,10 +45,14 @@ import com.nphil.marquee.R
 import com.nphil.marquee.browse.LibraryChip
 import com.nphil.marquee.browse.LibraryOptions
 import com.nphil.marquee.browse.LibrarySegment
+import com.nphil.marquee.core.Destination
 import com.nphil.marquee.core.LibrarySection
 import com.nphil.marquee.core.MediaType
 import com.nphil.marquee.core.PlexDirectory
 import com.nphil.marquee.core.SectionQuery.Sort
+import com.nphil.marquee.ui.shell.Places
+import com.nphil.marquee.ui.shell.icon
+import com.nphil.marquee.ui.shell.title
 import com.nphil.marquee.ui.theme.Radius
 import com.nphil.marquee.ui.theme.Size
 import com.nphil.marquee.ui.theme.Space
@@ -58,6 +62,8 @@ import com.nphil.marquee.ui.theme.lucent
 object LibraryTags {
 	const val ViewMenu = "library.viewMenu"
 	const val Grid = "library.grid"
+	const val Search = "library.search"
+	const val Requests = "library.requests"
 }
 
 /** A menu in the Library's own look: the same sheet and edge as a long press's menu. */
@@ -90,10 +96,30 @@ private fun MenuChoice(text: String, chosen: Boolean, onClick: () -> Unit, @Draw
 	)
 }
 
-/** The Library's name in the app bar; with more than one library it opens a menu of them. */
+/** One place of a menu: opened when it is tapped, not chosen, so no check goes beside it. */
 @Composable
-internal fun LibraryTitle(title: String, libraries: List<LibrarySection>, chosen: String?, onChoose: (String) -> Unit) {
-	if (libraries.size < 2) {
+private fun MenuPlace(text: String, @DrawableRes icon: Int, onClick: () -> Unit) {
+	DropdownMenuItem(
+		text = { Text(text, style = MaterialTheme.typography.bodyLarge, color = lucent.ink) },
+		onClick = onClick,
+		leadingIcon = { Icon(painterResource(icon), contentDescription = null, tint = lucent.ink2) },
+	)
+}
+
+/**
+ * The Library's name in the app bar. It opens a menu of the libraries and, below them, the [places] that are not tabs;
+ * with one library and no places it is only the name.
+ */
+@Composable
+internal fun LibraryTitle(
+	title: String,
+	libraries: List<LibrarySection>,
+	chosen: String?,
+	places: List<Destination>,
+	onChoose: (String) -> Unit,
+	onOpen: (Destination) -> Unit,
+) {
+	if (libraries.size < 2 && places.isEmpty()) {
 		Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis)
 		return
 	}
@@ -124,7 +150,26 @@ internal fun LibraryTitle(title: String, libraries: List<LibrarySection>, chosen
 					},
 				)
 			}
+			if (libraries.isNotEmpty() && places.isNotEmpty()) HorizontalDivider(color = lucent.edge)
+			for (place in places) {
+				MenuPlace(place.title, place.icon) {
+					open = false
+					onOpen(place)
+				}
+			}
 		}
+	}
+}
+
+/** The places Library's title menu opens, in the iPhone's order: Search and Requests have buttons of their own beside it. */
+internal fun Places.inLibraryMenu(): List<Destination> =
+	listOf(Destination.LiveTv, Destination.Watchlist, Destination.Downloads).filter { it in others }
+
+/** An app bar button that opens another place: Search, or Requests as the + that adds a request. */
+@Composable
+internal fun PlaceButton(destination: Destination, onOpen: () -> Unit, modifier: Modifier = Modifier) {
+	IconButton(onClick = onOpen, modifier = modifier) {
+		Icon(painterResource(destination.icon), contentDescription = destination.title)
 	}
 }
 
@@ -209,7 +254,7 @@ internal fun ViewMenuButton(
 				onGenre(null)
 			})
 			for (genre in genres) {
-				MenuChoice(genre.title, chosen = genre == options.genre, onClick = {
+				MenuChoice(genre.title, chosen = genre.key == options.genre?.key, onClick = {
 					close()
 					onGenre(genre)
 				})
