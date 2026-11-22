@@ -85,9 +85,10 @@ Each phase ends with a release installed on the tablet.
      in parallel. Pages are Navigation 3 routes (`ui/AppNavigation.kt`); the poster-to-hero shared element
      runs only from the poster that was tapped. The tracks sheet is read-only and there is no Play or
      Resume until the player. Episode rows have no swipe actions; their menu has the same ones.
-   - The instrumented tests run `DetailBridgeTest` against the iPhone's FakePlex fixtures. The baseline
-     profile still records the start only: the detail screens need a signed-in session, and no seed hook
-     for one exists.
+   - The instrumented tests run `DetailBridgeTest` (the calls) and `DetailScreenTest` (the pages, with
+     the app's own session restored onto the fake server) against the iPhone's FakePlex fixtures. The
+     baseline profile still records the start only: the detail screens need a signed-in session, and the
+     profile generator runs in another process with no way to give the app one.
 3. **Player.** Routes from Core, Auto quality with the link probe and Save Data, track and subtitle
    rules, Bazarr and SpeechDock, subtitle style, Skip Intro, credits and Up Next, background play,
    playback info, format badge, stats for nerds. Three small-player modes:
