@@ -61,8 +61,8 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 
 /**
- * Seerr, the integration behind Requests. It is off until the owner turns it on in Settings › Integrations › Seerr,
- * and then only while it has an address (and, signing in with a key, the key). Every call here reads the saved
+ * Seerr, the integration behind Requests. The owner turns it on in Settings › Integrations › Seerr; Requests exists
+ * once the address (and, signing in with a key, the key) has passed a connection test. Every call here reads the saved
  * connection, so a screen never holds one. A Plex sign-in's cookie is kept for the profile that made it, so the next
  * launch need not sign in again.
  */
@@ -79,11 +79,15 @@ class Seerr(
 		val apiKey: String? = null,
 		val pulsarr: Boolean = false,
 		val on: Boolean = false,
+		/** The saved connection was last tested and worked. */
+		val verified: Boolean = false,
 		/** The saved settings have been read. */
 		val loaded: Boolean = false,
 	) {
 		val configured: Boolean get() = address.isNotEmpty()
-		val enabled: Boolean get() = on && configured
+
+		/** Requests exists when the switch is on and the connection works; a switch on without either shows nothing. */
+		val enabled: Boolean get() = on && configured && verified
 	}
 
 	/** What a test of the connection found. */
@@ -111,7 +115,7 @@ class Seerr(
 			val prefs = settings.seerr.first()
 			val (key, cookie) = withContext(Dispatchers.IO) { secrets.read(KEY) to secrets.read(SESSION) }
 			kept = cookie?.let { runCatching { CoreJson.decodeFromString(Kept.serializer(), it) }.getOrNull() }
-			mutableConfig.value = Config(prefs.address, key, prefs.pulsarr, prefs.enabled, loaded = true)
+			mutableConfig.value = Config(prefs.address, key, prefs.pulsarr, prefs.enabled, prefs.verified, loaded = true)
 			loadedConfig.complete(Unit)
 		}
 	}
@@ -129,14 +133,23 @@ class Seerr(
 			writes.withLock {
 				val before = mutableConfig.value
 				if (before.address == address && before.apiKey == apiKey) return@withContext
-				mutableConfig.update { it.copy(address = address, apiKey = apiKey) }
+				mutableConfig.update { it.copy(address = address, apiKey = apiKey, verified = false) }
 				kept = null
-				settings.updateSeerr { it.copy(address = address) }
+				settings.updateSeerr { it.copy(address = address, verified = false) }
 				withContext(Dispatchers.IO) {
 					secrets.write(KEY, apiKey)
 					secrets.write(SESSION, null)
 				}
 			}
+		}
+	}
+
+	/** Records what a test of the saved connection found; Requests follows it. */
+	suspend fun setVerified(verified: Boolean) {
+		loadedConfig.await()
+		writes.withLock {
+			mutableConfig.update { it.copy(verified = verified) }
+			settings.updateSeerr { it.copy(verified = verified) }
 		}
 	}
 

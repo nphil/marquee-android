@@ -20,6 +20,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -52,6 +54,7 @@ internal fun SettingsFieldRow(
 	imeAction: ImeAction = ImeAction.Next,
 	secret: Boolean = false,
 	onDone: () -> Unit = {},
+	focusRequester: FocusRequester? = null,
 ) {
 	var focusedOnce by remember { mutableStateOf(false) }
 	val focusManager = LocalFocusManager.current
@@ -62,6 +65,7 @@ internal fun SettingsFieldRow(
 			onValueChange = onChange,
 			modifier = Modifier
 				.weight(1f)
+				.then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
 				.onFocusChanged { state ->
 					if (state.isFocused) {
 						focusedOnce = true

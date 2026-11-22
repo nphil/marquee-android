@@ -53,11 +53,27 @@ object SeerrText {
 	/** Which field a [problem] belongs to: the key's own, or the address's. */
 	fun isKeyProblem(problem: String?): Boolean = problem == "key"
 
+	/** The addresses to try for what was typed: as typed when it names a scheme, otherwise https and then http. */
+	fun candidates(address: String): List<String> {
+		val text = address.trim()
+		return if ("://" in text) listOf(text) else listOf("https://$text", "http://$text")
+	}
+
+	/** Whether nothing answered like Seerr at an address, so the same address on the other scheme is worth a try. */
+	fun triesOtherScheme(error: Throwable): Boolean {
+		val core = error as? CoreException ?: return false
+		return core.kind == CoreException.Kind.Unreachable ||
+			(core.kind == CoreException.Kind.Seerr && core.failure in NO_SEERR_THERE)
+	}
+
+	private val NO_SEERR_THERE = setOf("unreachable", "timedOut", "notSeerr")
+
 	/** How the last connection test went, for the line under Test Connection. */
 	fun status(configured: Boolean, check: Check): Line = when {
-		!configured -> Line(Tone.Neutral, "Not set up. Add Seerr's address, then test the connection.")
+		!configured -> Line(Tone.Neutral, "Not set up. Enter Seerr's address and it is checked.")
 		else -> when (check) {
 			Check.Untested -> Line(Tone.Neutral, "Not tested yet.")
+			Check.Saved -> Line(Tone.Good, "Connected.")
 			Check.Testing -> Line(Tone.Neutral, "Checking… Signing in to Seerr.")
 			is Check.Connected -> Line(Tone.Good, "Connected · Seerr ${check.version}, signed in as ${check.user}.")
 			is Check.Failed -> Line(Tone.Problem, check.text)
@@ -72,6 +88,9 @@ object SeerrText {
 	sealed interface Check {
 		data object Untested : Check
 
+		/** The saved connection worked when it was last tested; nothing has changed since. */
+		data object Saved : Check
+
 		data object Testing : Check
 
 		data class Connected(val version: String, val user: String) : Check
@@ -79,6 +98,7 @@ object SeerrText {
 		data class Failed(val text: String) : Check
 	}
 
+	const val ABOUT = "Request movies and series, and hand them to Radarr and Sonarr, through Seerr."
 	const val INTRO =
 		"Seerr takes requests for movies and series and hands them to Radarr and Sonarr. With its address, Requests can find titles and ask for them."
 	const val PLEX_NOTE =

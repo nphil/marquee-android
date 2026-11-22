@@ -28,13 +28,14 @@ data class SeerrDraft(val address: String = "", val key: String = "", val plex: 
 
 /**
  * Seerr's settings page: the draft being typed, what Core makes of it and the connection test. A draft Core accepts is
- * saved 400 ms after the last key; Test Connection saves it at once first.
+ * tested [PAUSE_MILLIS] after the last key, or at once on Done or Test Connection. The test saves the draft, and a
+ * success is what makes Requests appear. An address typed without a scheme is tried as https, then as http.
  */
 class SeerrPageModel(private val seerr: Seerr) : ViewModel() {
 	private val mutableDraft = MutableStateFlow(SeerrDraft())
 	private val mutableParse = MutableStateFlow<SeerrParsed?>(null)
 	private val mutableCheck = MutableStateFlow<SeerrText.Check>(SeerrText.Check.Untested)
-	private var saving: Job? = null
+	private var pausing: Job? = null
 	private var testing: Job? = null
 
 	val draft: StateFlow<SeerrDraft> = mutableDraft.asStateFlow()
@@ -47,6 +48,7 @@ class SeerrPageModel(private val seerr: Seerr) : ViewModel() {
 			val saved = seerr.config.first { it.loaded }
 			val draft = SeerrDraft(saved.address, saved.apiKey.orEmpty(), plex = saved.apiKey == null)
 			mutableDraft.value = draft
+			if (saved.verified) mutableCheck.compareAndSet(SeerrText.Check.Untested, SeerrText.Check.Saved)
 			mutableParse.value = parse(draft)
 		}
 	}
@@ -61,27 +63,28 @@ class SeerrPageModel(private val seerr: Seerr) : ViewModel() {
 		mutableDraft.update(change)
 		mutableCheck.value = SeerrText.Check.Untested
 		testing?.cancel()
-		saving?.cancel()
-		saving = viewModelScope.launch {
+		pausing?.cancel()
+		pausing = viewModelScope.launch {
 			val draft = mutableDraft.value
 			val parsed = parse(draft)
 			mutableParse.value = parsed
 			if (parsed.problem == null && draft.complete) {
-				delay(SAVE_MILLIS)
-				save(draft, parsed)
+				delay(PAUSE_MILLIS)
+				run(draft)
 			}
 		}
 	}
 
+	/** Core's verdict on the address as it will first be tried. */
 	private suspend fun parse(draft: SeerrDraft): SeerrParsed =
-		if (draft.address.isBlank()) SeerrParsed() else seerr.parse(draft.address, draft.savedKey)
+		if (draft.address.isBlank()) SeerrParsed() else seerr.parse(SeerrText.candidates(draft.address).first(), draft.savedKey)
 
-	private suspend fun save(draft: SeerrDraft, parsed: SeerrParsed) {
-		seerr.save(parsed.address ?: draft.address.trim(), draft.savedKey)
-	}
-
+	/** Turning Seerr on tests what is already here, if it has not been shown to work; Requests then appears by itself. */
 	fun setOn(on: Boolean) {
-		viewModelScope.launch { seerr.setOn(on) }
+		viewModelScope.launch {
+			seerr.setOn(on)
+			if (on && !seerr.config.value.verified) test()
+		}
 	}
 
 	fun setPulsarr(on: Boolean) {
@@ -90,32 +93,62 @@ class SeerrPageModel(private val seerr: Seerr) : ViewModel() {
 
 	/** Saves what is typed, then signs in to Seerr and says who this is. */
 	fun test() {
-		val draft = mutableDraft.value
-		if (!draft.complete || mutableCheck.value == SeerrText.Check.Testing) return
-		saving?.cancel()
+		if (mutableCheck.value == SeerrText.Check.Testing) return
+		pausing?.cancel()
+		run(mutableDraft.value)
+	}
+
+	private fun run(draft: SeerrDraft) {
+		if (!draft.complete) return
 		mutableCheck.value = SeerrText.Check.Testing
-		testing = viewModelScope.launch {
-			val parsed = parse(draft)
-			mutableParse.value = parsed
-			if (parsed.problem != null) {
-				mutableCheck.value = SeerrText.Check.Failed(SeerrText.problem(parsed.problem).orEmpty())
-				return@launch
+		testing = viewModelScope.launch { mutableCheck.value = connect(draft) }
+	}
+
+	private suspend fun connect(draft: SeerrDraft): SeerrText.Check {
+		val tries = SeerrText.candidates(draft.address)
+		var shown: Throwable? = null
+		var first: String? = null
+		var saved: String? = null
+		var answered = false
+		for ((position, candidate) in tries.withIndex()) {
+			val parsed = seerr.parse(candidate, draft.savedKey)
+			if (position == 0) {
+				mutableParse.value = parsed
+				first = parsed.address ?: candidate
 			}
-			mutableCheck.value = try {
-				save(draft, parsed)
+			if (parsed.problem != null) {
+				// http is refused for an address off the home network; the https failure is the one to tell.
+				if (position == 0) return SeerrText.Check.Failed(SeerrText.problem(parsed.problem).orEmpty())
+				break
+			}
+			try {
+				saved = parsed.address ?: candidate
+				seerr.save(saved, draft.savedKey)
 				val found = seerr.test()
-				SeerrText.Check.Connected(found.version, found.user)
+				seerr.setVerified(true)
+				return SeerrText.Check.Connected(found.version, found.user)
 			} catch (e: CancellationException) {
 				throw e
 			} catch (e: Exception) {
-				SeerrText.Check.Failed(SeerrText.failure(e))
+				val other = SeerrText.triesOtherScheme(e)
+				if (shown == null || !other) shown = e
+				if (!other) {
+					answered = true
+					break
+				}
 			}
 		}
+		if (!answered && first != null && saved != first) {
+			// Neither scheme answered: keep the first address, which is the one to fix.
+			seerr.save(first, draft.savedKey)
+		}
+		seerr.setVerified(false)
+		return SeerrText.Check.Failed(SeerrText.failure(shown ?: IllegalStateException()))
 	}
 
 	/** Removes everything Seerr has here; the page starts over empty. */
 	fun forget() {
-		saving?.cancel()
+		pausing?.cancel()
 		testing?.cancel()
 		viewModelScope.launch {
 			seerr.forget()
@@ -126,6 +159,6 @@ class SeerrPageModel(private val seerr: Seerr) : ViewModel() {
 	}
 
 	private companion object {
-		const val SAVE_MILLIS = 400L
+		const val PAUSE_MILLIS = 900L
 	}
 }

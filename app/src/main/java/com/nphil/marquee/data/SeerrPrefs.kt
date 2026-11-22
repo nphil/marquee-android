@@ -18,20 +18,26 @@ data class SeerrPrefs(
 	val enabled: Boolean = false,
 	/** Pulsarr requests whatever goes on a Watchlist, so a title page says adding it there requests it too. */
 	val pulsarr: Boolean = false,
+	/** The saved address and sign-in were last tested and worked; Requests exists only then. */
+	val verified: Boolean = false,
 )
 
 private val ADDRESS = stringPreferencesKey("marquee.seerr.address")
 private val ENABLED = booleanPreferencesKey("marquee.seerr.enabled")
 private val PULSARR = booleanPreferencesKey("marquee.seerr.pulsarr")
+private val VERIFIED = booleanPreferencesKey("marquee.seerr.verified")
 
 internal fun Preferences.seerrPrefs() = SeerrPrefs(
 	address = this[ADDRESS].orEmpty(),
 	enabled = this[ENABLED] ?: false,
 	pulsarr = this[PULSARR] ?: false,
+	// An address saved before this was kept has been working, or Requests would not have been on.
+	verified = this[VERIFIED] ?: (this[ADDRESS] != null),
 )
 
 internal fun MutablePreferences.setSeerrPrefs(prefs: SeerrPrefs) {
 	if (prefs.address.isEmpty()) remove(ADDRESS) else this[ADDRESS] = prefs.address
 	this[ENABLED] = prefs.enabled
 	this[PULSARR] = prefs.pulsarr
+	this[VERIFIED] = prefs.verified
 }

@@ -1,5 +1,10 @@
 package com.nphil.marquee.ui.settings
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -21,14 +26,18 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.ToggleButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
@@ -53,8 +62,9 @@ import com.nphil.marquee.ui.theme.lucent
 private enum class Field { Address, Key }
 
 /**
- * Settings › Integrations › Seerr: where Seerr is, how to sign in, and the switch that makes Requests exist. A
- * connection Core accepts is saved as it is typed; the switch stays off until there is one.
+ * Settings › Integrations › Seerr: the switch that makes Requests exist, and under it, once on, where Seerr is and how
+ * to sign in. The switch is always there to turn; what is typed is tested by itself, and Requests appears when the
+ * test works.
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -67,6 +77,22 @@ fun SeerrPage(contentPadding: PaddingValues) {
 	val check by model.check.collectAsStateWithLifecycle()
 	var focused by remember { mutableStateOf<Field?>(null) }
 	var forgetting by rememberSaveable { mutableStateOf(false) }
+	var focusAddress by remember { mutableStateOf(false) }
+	val addressFocus = remember { FocusRequester() }
+	val keyboard = LocalSoftwareKeyboardController.current
+
+	// Turning Seerr on with nothing set up asks for the address first. The field is composed by the reveal, so it
+	// is focused once a frame has laid it out.
+	LaunchedEffect(focusAddress, config.on) {
+		if (focusAddress && config.on) {
+			withFrameNanos { }
+			runCatching { addressFocus.requestFocus() }.onSuccess { keyboard?.show() }
+			focusAddress = false
+		}
+	}
+
+	// The saved settings are read before anything is drawn, so a page opened with Seerr on is not revealed by motion.
+	if (!config.loaded) return
 
 	val problem = parse?.problem
 	val problemField = if (SeerrText.isKeyProblem(problem)) Field.Key else Field.Address
@@ -83,89 +109,80 @@ fun SeerrPage(contentPadding: PaddingValues) {
 		verticalArrangement = Arrangement.spacedBy(GroupGap),
 	) {
 		item(key = "enabled") {
-			SettingsSwitchRow(0, 1, "Enabled", config.on, enabled = config.configured, onChange = model::setOn)
+			SettingsSwitchRow(0, 1, "Enabled", config.on, enabled = true, onChange = { on ->
+				if (on && draft.address.isBlank()) focusAddress = true
+				model.setOn(on)
+			})
 		}
-		item(key = "enabledNote") {
-			SettingsFootnote(
-				if (config.configured) "Requests appears in the tablet's navigation while this is on."
-				else "Add Seerr's address below and test the connection; then this can be turned on.",
-				Modifier.padding(top = Space.s2, bottom = Space.s5),
-			)
+		item(key = "about") {
+			SettingsFootnote(SeerrText.ABOUT, Modifier.padding(top = Space.s2, bottom = Space.s5))
 		}
-
-		item(key = "address") {
-			SettingsFieldRow(
-				0, rows, "Address", draft.address, "https://seerr.local",
-				onChange = model::editAddress,
-				onFocus = track(Field.Address),
-				keyboardType = KeyboardType.Uri,
-				imeAction = if (draft.plex) ImeAction.Done else ImeAction.Next,
-				onDone = model::test,
-			)
-		}
-		item(key = "mode") { SignInRow(1, rows, draft.plex, model::setPlex) }
-		if (!draft.plex) {
-			item(key = "key") {
-				SettingsFieldRow(
-					2, rows, "API Key", draft.key, "Required",
-					onChange = model::editKey,
-					onFocus = track(Field.Key),
-					imeAction = ImeAction.Done,
-					secret = true,
-					onDone = model::test,
-				)
-			}
-		}
-		item(key = "intro") {
-			if (shown != null) {
-				ErrorLine(shown, Modifier.padding(horizontal = Space.s4, vertical = Space.s2))
-			} else {
-				SettingsFootnote(SeerrText.INTRO, Modifier.padding(top = Space.s2))
-			}
-		}
-		item(key = "modeNote") {
-			SettingsFootnote(if (draft.plex) SeerrText.PLEX_NOTE else SeerrText.KEY_NOTE, Modifier.padding(top = Space.s2, bottom = Space.s5))
-		}
-
-		item(key = "test") {
-			SettingsActionRow(
-				0, 1, R.drawable.ic_wifi, "Test Connection",
-				enabled = draft.complete && problem == null && !testing,
-				busy = testing,
-				onClick = model::test,
-			)
-		}
-		item(key = "status") {
-			val line = SeerrText.status(draft.complete && problem == null, check)
-			Row(
-				modifier = Modifier
-					.padding(horizontal = Space.s4)
-					.padding(top = Space.s2, bottom = Space.s5)
-					.semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
-				verticalAlignment = Alignment.CenterVertically,
-				horizontalArrangement = Arrangement.spacedBy(Space.s2),
+		item(key = "setup") {
+			AnimatedVisibility(
+				visible = config.on,
+				enter = expandVertically(MaterialTheme.motionScheme.defaultSpatialSpec()) + fadeIn(MaterialTheme.motionScheme.defaultEffectsSpec()),
+				exit = shrinkVertically(MaterialTheme.motionScheme.defaultSpatialSpec()) + fadeOut(MaterialTheme.motionScheme.defaultEffectsSpec()),
 			) {
-				when (line.tone) {
-					SeerrText.Tone.Problem -> ErrorLine(line.text)
-					SeerrText.Tone.Good -> {
-						Icon(painterResource(R.drawable.ic_check), contentDescription = null, tint = lucent.positive, modifier = Modifier.size(20.dp))
-						Text(line.text, style = MaterialTheme.typography.labelLarge, color = lucent.ink)
+				Column(verticalArrangement = Arrangement.spacedBy(GroupGap)) {
+					SettingsFieldRow(
+						0, rows, "Address", draft.address, "https://seerr.local",
+						onChange = model::editAddress,
+						onFocus = track(Field.Address),
+						keyboardType = KeyboardType.Uri,
+						imeAction = ImeAction.Done,
+						onDone = model::test,
+						focusRequester = addressFocus,
+					)
+					SignInRow(1, rows, draft.plex, model::setPlex)
+					if (!draft.plex) {
+						SettingsFieldRow(
+							2, rows, "API Key", draft.key, "Required",
+							onChange = model::editKey,
+							onFocus = track(Field.Key),
+							imeAction = ImeAction.Done,
+							secret = true,
+							onDone = model::test,
+						)
 					}
-					SeerrText.Tone.Neutral -> Text(line.text, style = MaterialTheme.typography.bodySmall, color = lucent.ink2)
+					if (shown != null) {
+						ErrorLine(shown, Modifier.padding(horizontal = Space.s4, vertical = Space.s2))
+					} else {
+						SettingsFootnote(SeerrText.INTRO, Modifier.padding(top = Space.s2))
+					}
+					SettingsFootnote(if (draft.plex) SeerrText.PLEX_NOTE else SeerrText.KEY_NOTE, Modifier.padding(top = Space.s2, bottom = Space.s5))
+
+					SettingsActionRow(
+						0, 1, R.drawable.ic_wifi, "Test Connection",
+						enabled = draft.complete && problem == null && !testing,
+						busy = testing,
+						onClick = model::test,
+					)
+					val line = SeerrText.status(draft.complete && problem == null, check)
+					Row(
+						modifier = Modifier
+							.padding(horizontal = Space.s4)
+							.padding(top = Space.s2, bottom = Space.s5)
+							.semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
+						verticalAlignment = Alignment.CenterVertically,
+						horizontalArrangement = Arrangement.spacedBy(Space.s2),
+					) {
+						when (line.tone) {
+							SeerrText.Tone.Problem -> ErrorLine(line.text)
+							SeerrText.Tone.Good -> {
+								Icon(painterResource(R.drawable.ic_check), contentDescription = null, tint = lucent.positive, modifier = Modifier.size(20.dp))
+								Text(line.text, style = MaterialTheme.typography.labelLarge, color = lucent.ink)
+							}
+							SeerrText.Tone.Neutral -> Text(line.text, style = MaterialTheme.typography.bodySmall, color = lucent.ink2)
+						}
+					}
+
+					SettingsSwitchRow(0, 1, "Pulsarr", config.pulsarr, enabled = true, onChange = model::setPulsarr)
+					SettingsFootnote(SeerrText.PULSARR_NOTE, Modifier.padding(top = Space.s2, bottom = Space.s5))
+
+					if (config.configured) {
+						SettingsActionRow(0, 1, R.drawable.ic_cloud_off, "Forget Seerr", enabled = true, tint = lucent.danger, onClick = { forgetting = true })
+					}
 				}
-			}
-		}
-
-		item(key = "pulsarr") {
-			SettingsSwitchRow(0, 1, "Pulsarr", config.pulsarr, enabled = config.configured, onChange = model::setPulsarr)
-		}
-		item(key = "pulsarrNote") {
-			SettingsFootnote(SeerrText.PULSARR_NOTE, Modifier.padding(top = Space.s2, bottom = Space.s5))
-		}
-
-		if (config.configured) {
-			item(key = "forget") {
-				SettingsActionRow(0, 1, R.drawable.ic_cloud_off, "Forget Seerr", enabled = true, tint = lucent.danger, onClick = { forgetting = true })
 			}
 		}
 	}
