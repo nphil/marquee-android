@@ -74,9 +74,12 @@ class BackAnimationTest {
 	/** The last frame shot before the finger came off. */
 	private var releasedAt = 0
 
-	private val sintel = Page("Sintel") { awaitActions() }
-	private val coffeeRun = Page("Coffee Run") { awaitActions() }
-	private val season = Page("Season 1") { scrollTo(hasText("Episodes") and isHeading()) }
+	private val sintel = Page("Sintel", heading("Sintel")) { awaitMovie("Sintel") }
+	private val coffeeRun = Page("Coffee Run", heading("Coffee Run")) { awaitMovie("Coffee Run") }
+	private val season = Page("Season 1", heading("Episodes")) {
+		waitFor(heading("Season 1"))
+		scrollTo(heading("Episodes"))
+	}
 
 	@After
 	fun startTheClockAgain() {
@@ -134,7 +137,7 @@ class BackAnimationTest {
 		val report = "reach ${film.reach}, leftover ${film.leftover}, finger off after frame $releasedAt of ${film.size}"
 		assertTrue("the page did not follow the finger: $report", film.reach >= LeastReach)
 		assertTrue("the page did not come back to where it was: $report", film.leftover <= film.reach / 10)
-		assertTrue("a swipe called off closed the page", rule.onAllNodes(sintel.heading).fetchSemanticsNodes().isNotEmpty())
+		assertTrue("a swipe called off closed the page", rule.onAllNodes(sintel.marker).fetchSemanticsNodes().isNotEmpty())
 	}
 
 	private fun assertSmoothClose(name: String, page: Page) {
@@ -143,7 +146,7 @@ class BackAnimationTest {
 		val stepBack = film.biggestStepBack
 		val gain = film.slowestGain(releasedAt)
 		val report = "finger off after frame $releasedAt, place per frame: $film"
-		assertTrue("${page.title} is still on screen at the end of the close. $report", rule.onAllNodes(page.heading).fetchSemanticsNodes().isEmpty())
+		assertTrue("${page.title} is still on screen at the end of the close. $report", rule.onAllNodes(page.marker).fetchSemanticsNodes().isEmpty())
 		assertTrue("the close jumped $step of the way in one frame. $report", step <= BiggestStep)
 		assertTrue("the close went back $stepBack of the way in one frame. $report", stepBack <= BiggestStepBack)
 		assertTrue("the close gained only $gain in eight frames while it was under way. $report", gain >= LeastGain)
@@ -189,7 +192,6 @@ class BackAnimationTest {
 
 	/** Waits for the page to open and settle, its pictures included, then stops the clock and shoots the first frame. */
 	private fun startFilming(page: Page) {
-		waitFor(page.heading)
 		page.awaitLoaded()
 		app.art.awaitSettled(rule)
 		rule.waitForIdle()
@@ -234,9 +236,10 @@ class BackAnimationTest {
 		}
 	}
 
-	private fun awaitActions() {
-		waitFor(hasContentDescription("Mark watched"))
-		waitFor(hasContentDescription("More"))
+	/** A movie's heading and its watched toggle, in whichever state the process has left it. */
+	private fun awaitMovie(title: String) {
+		waitFor(heading(title))
+		waitFor(hasContentDescription("Mark watched") or hasContentDescription("Mark unwatched"))
 	}
 
 	private fun waitFor(matcher: SemanticsMatcher) {
@@ -252,10 +255,10 @@ class BackAnimationTest {
 
 	private fun isHeading() = SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading)
 
-	/** A page under test: [awaitLoaded] waits until it shows what it loads, and its [heading] is gone once it has closed. */
-	private inner class Page(val title: String, val awaitLoaded: () -> Unit) {
-		val heading: SemanticsMatcher get() = hasText(title) and isHeading()
-	}
+	private fun heading(text: String) = hasText(text) and isHeading()
+
+	/** A page under test: [awaitLoaded] waits until it shows what it loads, and its [marker] is gone once it has closed. */
+	private inner class Page(val title: String, val marker: SemanticsMatcher, val awaitLoaded: () -> Unit)
 
 	private companion object {
 		/** Long enough for the emulator's first frames and the fixtures' answers. */
