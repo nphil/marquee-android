@@ -5,6 +5,7 @@ import androidx.test.uiautomator.By
 import androidx.test.uiautomator.BySelector
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
+import java.util.regex.Pattern
 
 /**
  * The build the profile is recorded against: nonMinifiedRelease, whose ProfilingApplication answers from the iPhone
@@ -16,13 +17,19 @@ object ProfileTarget {
 			?.takeIf { it.isNotEmpty() }
 			?: error("targetAppId is passed by baselineprofile/build.gradle.kts")
 
-	/** Waits for the poster on Home, scrolling Home for it when it is below the first screen, and opens its page. */
+	/**
+	 * Waits for the poster on Home, scrolling Home for it when it is below the first screen, and opens its page. A tap
+	 * right after a scroll can land while the row is still settling, so a tap that opens nothing is repeated once.
+	 */
 	fun openFromHome(device: UiDevice, poster: BySelector) {
 		repeat(5) {
-			device.wait(Until.findObject(poster), 8_000)?.let {
-				it.click()
-				check(device.wait(Until.hasObject(By.desc("Back")), 10_000)) { "the title page did not open" }
-				return
+			if (device.wait(Until.hasObject(poster), 8_000)) {
+				repeat(2) {
+					device.findObject(poster)?.click()
+					if (device.wait(Until.hasObject(By.desc("Back")), 6_000)) return
+				}
+				val onScreen = device.findObjects(By.desc(Pattern.compile(".+"))).mapNotNull { it.contentDescription }
+				error("the title page did not open; on screen: $onScreen")
 			}
 			scroll(device, down = true)
 		}
