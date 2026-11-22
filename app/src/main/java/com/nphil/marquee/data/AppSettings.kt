@@ -6,10 +6,13 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStoreFile
 import com.nphil.marquee.core.CoreJson
 import com.nphil.marquee.core.HomeLayout
 import com.nphil.marquee.core.PlexHomeUser
+import com.nphil.marquee.core.TabBarBehavior
+import com.nphil.marquee.core.TabLayout
 import com.nphil.marquee.ui.theme.ThemeChoice
 import com.nphil.marquee.ui.theme.ThemeMode
 import kotlinx.coroutines.flow.Flow
@@ -130,6 +133,49 @@ class AppSettings(context: Context) : BrowsePreferences {
 		store.edit { it[SIDEBAR_EXPANDED] = expanded }
 	}
 
+	override val tabLayout: Flow<TabLayout> = store.data.map { prefs ->
+		prefs[TAB_ORDER]?.let { order -> TabLayout.saved(order.split(','), prefs[TAB_SHOWN].orEmpty().split(',')) } ?: TabLayout.standard
+	}.distinctUntilChanged()
+
+	override suspend fun setTabLayout(layout: TabLayout) {
+		store.edit { prefs ->
+			prefs[TAB_ORDER] = layout.savedOrder.joinToString(",")
+			prefs[TAB_SHOWN] = layout.savedShown.joinToString(",")
+		}
+	}
+
+	override val tabBarBehavior: Flow<TabBarBehavior> =
+		store.data.map { prefs -> TabBarBehavior.entries.firstOrNull { it.name == prefs[TAB_BAR] } ?: TabBarBehavior.Always }.distinctUntilChanged()
+
+	override suspend fun setTabBarBehavior(behavior: TabBarBehavior) {
+		store.edit { it[TAB_BAR] = behavior.name }
+	}
+
+	override fun hiddenLibraries(profile: String): Flow<Set<String>> =
+		store.data.map { it[hiddenLibrariesKey(profile)].orEmpty() }.distinctUntilChanged()
+
+	override suspend fun setHiddenLibraries(profile: String, hidden: Set<String>) {
+		store.edit { prefs ->
+			if (hidden.isEmpty()) prefs.remove(hiddenLibrariesKey(profile)) else prefs[hiddenLibrariesKey(profile)] = hidden
+		}
+	}
+
+	override fun libraryChoice(profile: String): Flow<String?> =
+		store.data.map { it[libraryChoiceKey(profile)] }.distinctUntilChanged()
+
+	override suspend fun setLibraryChoice(profile: String, libraryKey: String) {
+		store.edit { it[libraryChoiceKey(profile)] = libraryKey }
+	}
+
+	override fun libraryView(profile: String, libraryKey: String): Flow<String?> =
+		store.data.map { it[libraryViewKey(profile, libraryKey)] }.distinctUntilChanged()
+
+	override suspend fun setLibraryView(profile: String, libraryKey: String, encoded: String?) {
+		store.edit { prefs ->
+			if (encoded == null) prefs.remove(libraryViewKey(profile, libraryKey)) else prefs[libraryViewKey(profile, libraryKey)] = encoded
+		}
+	}
+
 	private fun Preferences.themeChoice() = ThemeChoice(
 		matchSystem = this[THEME_MATCH] ?: true,
 		lightId = this[THEME_LIGHT] ?: ThemeChoice().lightId,
@@ -151,10 +197,16 @@ class AppSettings(context: Context) : BrowsePreferences {
 		val ADDRESSES = stringPreferencesKey("plex.addresses")
 		val addressSerializer = MapSerializer(String.serializer(), String.serializer())
 		val SIDEBAR_EXPANDED = booleanPreferencesKey("shell.sidebarExpanded")
+		val TAB_ORDER = stringPreferencesKey("shell.tabOrder")
+		val TAB_SHOWN = stringPreferencesKey("shell.tabsShown")
+		val TAB_BAR = stringPreferencesKey("shell.tabBarBehavior")
 
 		fun homeLayoutKey(profile: String) = stringPreferencesKey("home.layout.$profile")
 		fun dismissalsKey(profile: String) = stringPreferencesKey("home.rewatchDismissed.$profile")
 		fun recentsKey(profile: String) = stringPreferencesKey("search.recents.$profile")
+		fun hiddenLibrariesKey(profile: String) = stringSetPreferencesKey("library.hidden.$profile")
+		fun libraryChoiceKey(profile: String) = stringPreferencesKey("library.chosen.$profile")
+		fun libraryViewKey(profile: String, libraryKey: String) = stringPreferencesKey("library.view.$profile.$libraryKey")
 	}
 }
 
