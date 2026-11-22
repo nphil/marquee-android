@@ -20,7 +20,8 @@ class PlayCoreTest {
 			 "stream":{"kind":"file","url":"http://192.0.2.10:32400/library/parts/9/1/file.mkv","headers":{"X-Plex-Token":"t"},"offset":0},
 			 "intro":[{"start":30000,"end":90000,"isFinal":false}],"credits":[],
 			 "chapters":[{"title":"Opening","start":0,"end":60000}],
-			 "isAnime":false,"quality":0,"adapts":false}
+			 "isAnime":false,"quality":0,"adapts":false,"badge":{"resolution":"4K","range":"dolbyVision","sound":"atmos"},
+			 "thumbnails":{"url":"http://192.0.2.10:32400/library/parts/9/indexes/sd","headers":{"X-Plex-Token":"t"}}}
 		""".trimIndent()
 
 		val plan = CoreJson.decodeFromString(PlayPlan.serializer(), json)
@@ -33,6 +34,8 @@ class PlayCoreTest {
 		assertEquals(600.0, plan.startAt, 0.0)
 		assertEquals(30_000, plan.intro.single().start)
 		assertNull(plan.probe)
+		assertEquals("4K, Dolby Vision, Dolby Atmos", plan.badge.spoken)
+		assertEquals("t", plan.thumbnails?.headers?.get("X-Plex-Token"))
 	}
 
 	@Test
@@ -47,6 +50,7 @@ class PlayCoreTest {
 
 		assertNull(plan.stream)
 		assertEquals(4_194_304, plan.probe?.maxBytes)
+		assertNull(plan.thumbnails)
 		assertEquals(RouteKind.ServerTranscode, plan.route.kind)
 	}
 
@@ -84,5 +88,33 @@ class PlayCoreTest {
 		assertEquals("8 Mbps 1080p", QualityPreset.title(8_000))
 		assertEquals("2 Mbps 720p", QualityPreset.title(2_000))
 		assertTrue(QualityPreset.all.first() == QualityPreset.AUTO)
+	}
+
+	@Test
+	fun theAutoplayAndTapAnswersAreTheBridgesWords() {
+		val countdown = CoreJson.decodeFromString(AutoplayPlan.serializer(), """{"atCredits":"countdown","seconds":5,"playsNextAtEnd":true}""")
+		assertEquals(AutoplayPlan(AtCredits.Countdown, 5, true), countdown)
+		val now = CoreJson.decodeFromString(AutoplayPlan.serializer(), """{"atCredits":"playNow","playsNextAtEnd":false}""")
+		assertEquals(AtCredits.PlayNow, now.atCredits)
+
+		val skip = CoreJson.decodeFromString(TapAnswer.serializer(), """{"action":"skip","side":"back"}""")
+		assertEquals(TapAnswer(TapAction.Skip, SkipSide.Back), skip)
+		val single = CoreJson.decodeFromString(TapAnswer.serializer(), """{"action":"single","window":0.3}""")
+		assertEquals(0.3, single.window!!, 0.0)
+		val retry = CoreJson.decodeFromString(SkipAnswer.serializer(), """{"verdict":"retry","retried":true}""")
+		assertEquals(SkipVerdict.Retry, retry.verdict)
+	}
+
+	@Test
+	fun theServersAccountOfItsConversionDecodes() {
+		val json = """{"active":true,"video":"copy","audio":"transcode","subtitle":"none","speed":2.4,"throttled":false,"fullPipeline":false}"""
+
+		val state = CoreJson.decodeFromString(TranscodeState.serializer(), json)
+
+		assertTrue(state.active)
+		assertEquals("copy", state.video)
+		assertEquals(2.4, state.speed!!, 0.0)
+		assertNull(state.decoding)
+		assertFalse(CoreJson.decodeFromString(TranscodeState.serializer(), """{"active":false}""").active)
 	}
 }

@@ -21,4 +21,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "Marquee"
-include(":app", ":baselineprofile")
+include(":app", ":baselineprofile", ":ffmpeg")

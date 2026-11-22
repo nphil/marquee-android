@@ -9,8 +9,9 @@ import android.view.Display
 import com.nphil.marquee.core.Capabilities
 
 /**
- * What this tablet's decoders and screen take, in the terms Core's route rules ask. Audio the tablet has no decoder
- * for (DTS and TrueHD on most) is left out, so Core has the server convert only the audio and copy the video.
+ * What this tablet's decoders and screen take, in the terms Core's route rules ask. Audio that neither the tablet nor
+ * the app's FFmpeg build (see [DeviceDecoders]) can decode is left out, so Core has the server convert only the audio
+ * and copy the video.
  */
 object PlayerCapabilities {
 	private val containers = listOf("mp4", "m4v", "mov", "mkv", "matroska", "webm")
@@ -30,6 +31,8 @@ object PlayerCapabilities {
 		"dts" to "audio/vnd.dts",
 		"truehd" to "audio/true-hd",
 		"mlp" to "audio/true-hd",
+		"pcm_alaw" to "audio/g711-alaw",
+		"pcm_mulaw" to "audio/g711-mlaw",
 	)
 
 	/** Media3 reads raw PCM without a codec. */

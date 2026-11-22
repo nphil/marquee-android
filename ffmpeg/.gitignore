@@ -1,0 +1,3 @@
+# Written by build.sh: the FFmpeg download and objects, and the finished libraries.
+/.build/
+/src/main/jniLibs/

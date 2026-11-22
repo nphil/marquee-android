@@ -1,64 +1,79 @@
 package com.nphil.marquee.ui.player
 
+import android.content.Context
+import android.media.AudioManager
 import android.os.SystemClock
 import android.view.View
 import androidx.activity.compose.BackHandler
-import androidx.annotation.DrawableRes
+import androidx.activity.compose.LocalActivity
 import androidx.annotation.OptIn
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.FilledIconButton
-import androidx.compose.material3.FilledTonalIconButton
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEvent
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.text.Cue
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.nphil.marquee.R
 import com.nphil.marquee.container
+import com.nphil.marquee.core.Chapter
+import com.nphil.marquee.core.Marker
+import com.nphil.marquee.core.QualityPreset
 import com.nphil.marquee.data.SubtitleLook
 import com.nphil.marquee.playback.HideSystemBars
 import com.nphil.marquee.playback.LocalPlaybackHttp
@@ -66,19 +81,95 @@ import com.nphil.marquee.playback.PlayerModel
 import com.nphil.marquee.playback.PlayerPhase
 import com.nphil.marquee.ui.theme.Radius
 import com.nphil.marquee.ui.theme.Space
-import com.nphil.marquee.ui.theme.lucent
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.util.Locale
+import kotlin.math.abs
 
 /** How long the controls stay up after the last touch while the title plays, then they hide: a bright overlay does not sit on the picture. */
 private const val CONTROLS_DWELL_MS = 3_000L
 
+/** How long an offer stays up with the controls away, then it hides and comes back with them: a bright card does not sit in one place. */
+private const val OFFER_DWELL_MS = 10_000L
+
+/** How far above the bottom edge the offer sits, clear of the seek bar. */
+private val OFFER_LIFT = CHROME_BOTTOM_CLEARANCE
+
+private const val POSITION_POLL_MS = 250L
+
+/** The speed while the picture is held. */
+private const val HOLD_SPEED = 2f
+
+/** How long the way out of the lock stays after a touch on the locked screen, then it fades. */
+private const val UNLOCK_DWELL_MS = 2_500L
+
+/** How long the zoom and lock notes stay up. */
+private const val ASPECT_NOTE_MS = 1_000L
+private const val LOCK_NOTE_MS = 1_200L
+
+/** Below the top bar, where the notes sit. */
+private val NOTE_TOP = 72.dp
+
+/** A finished scrub is held on the bar until the player is within this of it, or this long has passed. */
+private const val HOLD_NEAR_MS = 2_000L
+private const val HOLD_MAX_MS = 8_000L
+
+/** How the picture fills the window. */
+@OptIn(UnstableApi::class)
+internal enum class PlayerAspect(val label: String, val detail: String, val resizeMode: Int) {
+	Fit("Fit", "The whole picture, with bars where it does not fill the window", AspectRatioFrameLayout.RESIZE_MODE_FIT),
+	Fill("Fill", "Fills the window and crops what does not fit", AspectRatioFrameLayout.RESIZE_MODE_ZOOM),
+	Stretch("Stretch", "Fills the window and stretches the picture to do it", AspectRatioFrameLayout.RESIZE_MODE_FILL),
+	;
+
+	fun next(): PlayerAspect = entries[(ordinal + 1) % entries.size]
+}
+
+/**
+ * Where a finished scrub was sent, until the player has got there. A stream that restarts at the new place reports the
+ * old position for a moment; the bar stays on the target instead of jumping back.
+ */
+internal class PositionHold {
+	private var target = NONE
+	private var since = 0L
+
+	fun hold(ms: Long, now: Long) {
+		target = ms
+		since = now
+	}
+
+	fun release() {
+		target = NONE
+	}
+
+	/** The position to show when the player says [actual] at [now]. */
+	fun shown(actual: Long, now: Long): Long {
+		if (target == NONE) return actual
+		if (abs(actual - target) <= HOLD_NEAR_MS || now - since > HOLD_MAX_MS) {
+			target = NONE
+			return actual
+		}
+		return target
+	}
+
+	private companion object {
+		const val NONE = -1L
+	}
+}
+
+/** Where the bar is cut, in milliseconds: the start of each chapter and the edges of each intro and credits span. */
+internal fun cutEdges(chapters: List<Chapter>, spans: List<Marker>): List<Long> =
+	chapters.map { it.start.toLong() } + spans.flatMap { listOf(it.start.toLong(), it.end.toLong()) }
+
+/** The intro and credits spans as stretches of the bar, in milliseconds. */
+internal fun markRanges(spans: List<Marker>): List<LongRange> = spans.map { it.start.toLong()..it.end.toLong() }
+
 /**
  * The full-screen player: the picture, and over it the controls, which a tap shows and which hide 3 s after the last
- * touch while it plays. They stay up while it is paused, loading or has failed. Leaving stops the title and tells the server.
+ * touch while it plays. They stay up while it is paused, loading or has failed, while the bar is scrubbed and while a
+ * menu is open. Leaving stops the title and tells the server.
  */
 @OptIn(UnstableApi::class)
 @Composable
@@ -88,14 +179,174 @@ fun PlayerScreen(ratingKey: String, titleKey: String, fromStart: Boolean, onClos
 	val http = LocalPlaybackHttp.current ?: container.http
 	val model = viewModel { PlayerModel(container, http, context, ratingKey, titleKey, fromStart) }
 	val playing = model.isPlaying
+	val engine = model.player
+	val pip = rememberPictureInPicture(model)
+	val haptics = LocalHapticFeedback.current
+	val accent = rememberPlayerAccent()
+	val window = LocalActivity.current?.window
 	var shown by remember { mutableStateOf(true) }
 	var touches by remember { mutableIntStateOf(0) }
-	// The track panel: the page it is on, or null while it is closed. Closes when left alone, see PANEL_DWELL_MS.
-	var panel by remember { mutableStateOf<TracksPage?>(null) }
+	var offerShown by remember { mutableStateOf(true) }
+	// The side panel: the trail of pages opened, or empty while it is closed. Closes when left alone, see PANEL_DWELL_MS.
+	var pages by remember { mutableStateOf(emptyList<TracksPage>()) }
 	var panelTouched by remember { mutableLongStateOf(0L) }
+	var locked by rememberSaveable { mutableStateOf(false) }
+	var lockStamp by remember { mutableIntStateOf(0) }
+	var unlockStamp by remember { mutableIntStateOf(0) }
+	var aspect by rememberSaveable { mutableStateOf(PlayerAspect.Fit) }
+	var aspectStamp by remember { mutableIntStateOf(0) }
+	var showsRemaining by rememberSaveable { mutableStateOf(true) }
+	var muted by rememberSaveable { mutableStateOf(false) }
+	var held by remember { mutableStateOf(false) }
+	var heldSpeed by remember { mutableFloatStateOf(1f) }
+	var rootFocused by remember { mutableStateOf(false) }
+	var positionMs by remember { mutableLongStateOf(model.movieMs()) }
+	var bufferedMs by remember { mutableLongStateOf(0L) }
+	val sleep = rememberSaveable(saver = SleepTimer.Saver) { SleepTimer() }
 	val profile by remember(container) { container.session.state.map { it.user?.uuid }.distinctUntilChanged() }.collectAsStateWithLifecycle(null)
 	val look by remember(container, profile) { container.settings.subtitleLook(profile) }.collectAsStateWithLifecycle(SubtitleLook())
 	val sample = remember { listOf(Cue.Builder().setText("Subtitles look like this").build()) }
+	val focus = remember { FocusRequester() }
+	val lastPages = remember { arrayOf(listOf(TracksPage.Subtitles)) }
+	if (pages.isNotEmpty()) lastPages[0] = pages
+	val menuOpen = pages.isNotEmpty()
+
+	val hold = remember { PositionHold() }
+	val scrub = remember(model, hold) {
+		ScrubState(
+			began = { model.scrubbing = true },
+			moved = { seconds -> model.previews?.want(seconds) },
+			ended = { seconds ->
+				model.scrubbing = false
+				model.previews?.settle()
+				hold.hold((seconds * 1000).toLong(), SystemClock.elapsedRealtime())
+				if (!model.seekTo(seconds)) hold.release()
+			},
+		)
+	}
+	val brightness = remember(window) { Brightness(window, context.contentResolver) }
+	val volume = remember(context) { Volume(context.getSystemService(Context.AUDIO_SERVICE) as AudioManager) }
+	val brightnessMeter = remember { Meter() }
+	val volumeMeter = remember { Meter() }
+	val swipeFrom = remember { floatArrayOf(0f) }
+
+	fun changeAspect(next: PlayerAspect) {
+		if (next == aspect) return
+		aspect = next
+		aspectStamp++
+	}
+
+	fun unlock() {
+		locked = false
+		shown = true
+		touches++
+	}
+
+	// Back closes a page, then the panel, then the lock; with none of them open it is not taken.
+	fun back(): Boolean = when {
+		menuOpen -> {
+			pages = pages.dropLast(1)
+			true
+		}
+		locked -> {
+			unlock()
+			true
+		}
+		else -> false
+	}
+
+	fun onKey(event: KeyEvent): Boolean {
+		if (event.type != KeyEventType.KeyDown) return false
+		if (event.key == Key.Escape) {
+			if (!back()) onClose()
+			return true
+		}
+		if (locked || menuOpen) return false
+		val action = keyAction(event.key, rootFocused) ?: return false
+		val player = model.player ?: return false
+		if (event.nativeKeyEvent.repeatCount > 0 && !action.repeats) return true
+		touches++
+		when (action) {
+			KeyAction.Toggle -> {
+				shown = true
+				model.userActed()
+				model.toggle()
+			}
+			KeyAction.Play -> {
+				shown = true
+				model.userActed()
+				player.play()
+			}
+			KeyAction.Pause -> {
+				shown = true
+				model.userActed()
+				player.pause()
+			}
+			KeyAction.Back -> {
+				shown = true
+				model.skip(-model.skipInterval)
+			}
+			KeyAction.Forward -> {
+				shown = true
+				model.skip(model.skipInterval)
+			}
+			KeyAction.VolumeUp, KeyAction.VolumeDown -> {
+				muted = false
+				volumeMeter.show(volume.step(up = action == KeyAction.VolumeUp))
+			}
+			KeyAction.Aspect -> changeAspect(if (aspect == PlayerAspect.Fit) PlayerAspect.Fill else PlayerAspect.Fit)
+			KeyAction.Mute -> {
+				muted = !muted
+				volumeMeter.show(if (muted) 0f else volume.level())
+			}
+			KeyAction.Next -> {
+				shown = true
+				model.userActed()
+				model.playNext()
+			}
+		}
+		return true
+	}
+
+	// The picture's gestures. Only stable things are captured, so one instance serves for as long as the model does.
+	val picture = remember(model, scrub) {
+		PictureActions(
+			locked = { locked },
+			canHold = { model.player != null && model.isPlaying && !scrub.active },
+			tap = { x, width -> model.tap(x, width) },
+			lockedTap = { unlockStamp++ },
+			hold = { on ->
+				if (on) {
+					heldSpeed = model.speed
+					model.setSpeed(HOLD_SPEED)
+					held = true
+					haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+				} else if (held) {
+					model.setSpeed(heldSpeed)
+					held = false
+				}
+			},
+			swipeBegan = { kind -> swipeFrom[0] = if (kind == SwipeKind.Brightness) brightness.level() else volume.level() },
+			swiped = { kind, dy, height ->
+				val level = swipeLevel(swipeFrom[0], dy, height)
+				if (kind == SwipeKind.Brightness) {
+					brightness.set(level)
+					brightnessMeter.show(brightness.level())
+				} else {
+					muted = false
+					volume.set(level)
+					volumeMeter.show(volume.level())
+				}
+			},
+			scrubBegan = { if (model.durationMs > 0L) scrub.begin(model.movieMs() / 1000.0) },
+			scrubbed = { dx, width ->
+				val duration = model.durationMs / 1000.0
+				scrub.moveTo(scrubbed(scrub.seconds, dx, width, pictureSpan(duration), duration))
+			},
+			scrubEnded = { scrub.finish() },
+			pinched = { zoom -> pinchAspect(zoom)?.let { changeAspect(it) } },
+		)
+	}
 
 	// Holds the page's trailer and theme tune quiet for as long as the player is open, and the app's own sound while it plays.
 	DisposableEffect(container) {
@@ -103,89 +354,233 @@ fun PlayerScreen(ratingKey: String, titleKey: String, fromStart: Boolean, onClos
 		onDispose { open.release() }
 	}
 	DisposableEffect(container, playing) {
-		val hold = if (playing) container.playback.holdAudio() else null
-		onDispose { hold?.release() }
+		val audio = if (playing) container.playback.holdAudio() else null
+		onDispose { audio?.release() }
 	}
-	LifecycleEventEffect(Lifecycle.Event.ON_STOP) { model.pause() }
+	// The window's brightness and the double-speed hold are the player's only while it is open.
+	DisposableEffect(brightness) { onDispose { brightness.restore() } }
+	DisposableEffect(model) { onDispose { if (held) model.setSpeed(heldSpeed) } }
+	BackgroundPlaybackEffect(model, pip)
 	LaunchedEffect(model.finished) { if (model.finished) onClose() }
-	LaunchedEffect(shown, playing, touches, panel) {
-		if (!playing || panel != null) {
+	LaunchedEffect(model) {
+		model.controlTaps.collect { toggle -> if (!locked) shown = if (toggle) !shown else true }
+	}
+	LaunchedEffect(menuOpen) {
+		model.menusOpen = menuOpen
+		if (!menuOpen) focus.requestFocus()
+	}
+	LaunchedEffect(engine, muted) { engine?.volume = if (muted) 0f else 1f }
+	LaunchedEffect(model.skipping) { if (model.skipping != null) hold.release() }
+	// The timer pauses the title when it runs out, on the device's clock, which runs with the screen off.
+	LaunchedEffect(sleep.deadline) {
+		if (!sleep.set) return@LaunchedEffect
+		delay(sleep.remainingMs())
+		model.pause()
+		sleep.cancel()
+	}
+	// An offer shows when it arises, hides after its dwell (or its countdown, if longer) and returns with the controls.
+	val countdownMs = model.offers.countdown?.lengthMs ?: 0L
+	LaunchedEffect(model.offers.offer, shown, touches, countdownMs) {
+		offerShown = true
+		if (model.offers.offer != null && !shown) {
+			delay(maxOf(OFFER_DWELL_MS, countdownMs + 1_000L))
+			offerShown = false
+		}
+	}
+	// The controls stay up while the picture is still, a menu is open or the bar is being scrubbed; else they hide.
+	val still = !playing || model.isBuffering || engine == null
+	LaunchedEffect(shown, still, touches, menuOpen, scrub.active) {
+		if (still || menuOpen || scrub.active) {
 			shown = true
 		} else if (shown) {
 			delay(CONTROLS_DWELL_MS)
 			shown = false
 		}
 	}
-	LaunchedEffect(panel != null) {
-		if (panel == null) return@LaunchedEffect
+	LaunchedEffect(menuOpen) {
+		if (!menuOpen) return@LaunchedEffect
 		panelTouched = SystemClock.elapsedRealtime()
 		while (true) {
 			val left = PANEL_DWELL_MS - (SystemClock.elapsedRealtime() - panelTouched)
 			if (left <= 0) break
 			delay(left)
 		}
-		panel = null
+		pages = emptyList()
 	}
-	// Back goes up a page, then closes the panel.
-	BackHandler(enabled = panel != null) { panel = panel?.parent }
+	val chromeOn = (shown || scrub.active) && !locked && !pip.active
+	// The bar's position is read from the player only while the bar is on screen.
+	LaunchedEffect(model, chromeOn) {
+		if (!chromeOn) return@LaunchedEffect
+		while (true) {
+			if (!scrub.active) {
+				positionMs = hold.shown(model.movieMs(), SystemClock.elapsedRealtime())
+				val player = model.player
+				bufferedMs = if (player == null) positionMs else positionMs + (player.bufferedPosition - player.currentPosition).coerceAtLeast(0L)
+			}
+			delay(POSITION_POLL_MS)
+		}
+	}
+	BackHandler(enabled = menuOpen || locked) { back() }
 	HideSystemBars()
 
 	// A video's letterbox is black on every theme; the theme's canvas would frame it in light on a light one.
-	Box(Modifier.fillMaxSize().background(Color.Black)) {
-		val engine = model.player
+	Box(
+		Modifier
+			.fillMaxSize()
+			.background(Color.Black)
+			.focusRequester(focus)
+			.onFocusChanged { rootFocused = it.isFocused }
+			.focusable()
+			.onKeyEvent { onKey(it) },
+	) {
 		if (engine != null) {
-			Video(engine, keepScreenOn = playing)
+			Video(engine, aspect, keepScreenOn = playing, pip = pip)
 			// The subtitle lines are the app's own, over the picture and under the controls and the tap that brings them up.
 			CaptionView(
-				cues = if (panel == TracksPage.Style && model.tracks.cues.isEmpty()) sample else model.tracks.cues,
+				cues = if (pages.lastOrNull() == TracksPage.Style && model.tracks.cues.isEmpty()) sample else model.tracks.cues,
 				look = look,
-				controlsUp = shown,
+				controlsUp = chromeOn,
 				modifier = Modifier.fillMaxSize(),
 			)
-			Box(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures(onTap = { shown = !shown }) })
-			if (model.isBuffering && !shown) LoadingIndicator(Modifier.align(Alignment.Center))
+			if (!pip.active) {
+				Box(Modifier.fillMaxSize().pointerInput(picture) { detectPictureGestures(picture) })
+				SkipRipple(model.skipping, Modifier.fillMaxSize())
+			}
 		}
-		when (val phase = model.phase) {
-			PlayerPhase.Starting -> LoadingIndicator(Modifier.align(Alignment.Center))
-			is PlayerPhase.Failed -> Failure(phase.message, onRetry = model::retry, onClose = onClose, modifier = Modifier.align(Alignment.Center))
-			PlayerPhase.Playing -> Unit
-		}
-		model.skipping?.let { total ->
-			Text(
-				if (total > 0) "+$total s" else "$total s",
-				style = MaterialTheme.typography.headlineMedium,
-				color = lucent.ink,
-				modifier = Modifier
-					.align(Alignment.TopCenter)
-					.safeDrawingPadding()
-					.padding(top = Space.s8 + Space.s6)
-					.background(lucent.scrim, RoundedCornerShape(Radius.control))
-					.padding(horizontal = Space.s5, vertical = Space.s3),
-			)
-		}
-		AnimatedVisibility(visible = shown || engine == null, enter = fadeIn(), exit = fadeOut()) {
-			Controls(model, onClose = onClose, onTouch = { touches++ }, onPanel = { panel = it })
-		}
-		panel?.let { page ->
-			// A tap outside the panel closes it. The picture stays in view, so a change of look is seen as it is made.
-			Box(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures(onTap = { panel = null }) })
-			TracksPanel(
+		if (!pip.active) {
+			val motion = MaterialTheme.motionScheme
+			when (val phase = model.phase) {
+				PlayerPhase.Starting -> LoadingIndicator(Modifier.align(Alignment.Center), color = accent)
+				is PlayerPhase.Failed -> Failure(phase.message, accent, onRetry = model::retry, onClose = onClose, modifier = Modifier.align(Alignment.Center))
+				PlayerPhase.Playing -> if (engine != null && model.isBuffering && !chromeOn) LoadingIndicator(Modifier.align(Alignment.Center), color = accent)
+			}
+			AnimatedVisibility(
+				visible = chromeOn,
+				enter = fadeIn(motion.defaultEffectsSpec()),
+				exit = fadeOut(motion.fastEffectsSpec()),
+			) {
+				val tracks = model.tracks
+				val plan = model.plan
+				val duration = model.durationMs
+				val spans = plan?.let { it.intro + it.credits }.orEmpty()
+				val state = ChromeState(
+					title = model.title,
+					subtitle = model.subtitle,
+					ready = engine != null,
+					playing = playing,
+					buffering = model.isBuffering,
+					positionMs = positionMs,
+					durationMs = duration,
+					bufferedMs = bufferedMs,
+					cuts = remember(plan, duration) { seekCuts(duration, cutEdges(plan?.chapters.orEmpty(), spans)) },
+					bands = remember(plan, duration) { seekBands(duration, markRanges(spans)) },
+					skipSeconds = model.skipInterval,
+					showsRemaining = showsRemaining,
+					speed = model.speed,
+					aspect = aspect,
+					hasSubtitles = tracks.lists.menuSubtitles.isNotEmpty(),
+					subtitlesOn = tracks.subtitleId != null,
+					hasAudioChoices = tracks.lists.audio.size > 1,
+					qualityLabel = QualityPreset.title(model.quality).takeIf { model.quality != QualityPreset.AUTO },
+					canPip = pip.supported,
+					hasChapters = plan?.chapters?.isNotEmpty() == true,
+					hasNext = model.next != null,
+				)
+				val actions = ChromeActions(
+					back = onClose,
+					toggle = {
+						touches++
+						model.userActed()
+						model.toggle()
+					},
+					skip = { seconds ->
+						touches++
+						model.skip(seconds)
+					},
+					subtitles = { pages = listOf(TracksPage.Subtitles) },
+					audio = { pages = listOf(TracksPage.Audio) },
+					quality = { pages = listOf(TracksPage.Quality) },
+					speed = { pages = listOf(TracksPage.Speed) },
+					pip = pip::enter,
+					more = { pages = listOf(TracksPage.More) },
+					lock = {
+						locked = true
+						lockStamp++
+					},
+					aspect = { changeAspect(aspect.next()) },
+					chapters = { pages = listOf(TracksPage.Chapters) },
+					next = {
+						touches++
+						model.userActed()
+						model.playNext()
+					},
+					remaining = {
+						touches++
+						showsRemaining = !showsRemaining
+					},
+				)
+				PlayerChrome(state, actions, scrub, model.previews)
+			}
+			OfferOverlay(
 				model = model,
-				look = look,
-				onLook = { change -> profile?.let { id -> container.scope.launch { container.settings.updateSubtitleLook(id, change) } } },
-				page = page,
-				onPage = { panel = it },
-				onClose = { panel = null },
-				onTouch = { panelTouched = SystemClock.elapsedRealtime() },
-				modifier = Modifier.align(Alignment.CenterEnd),
+				visible = offerShown && !menuOpen && !locked,
+				modifier = Modifier.align(Alignment.BottomEnd).safeDrawingPadding().padding(end = Space.s4, bottom = OFFER_LIFT),
 			)
+			StatsOverlay(model, Modifier.align(Alignment.TopStart))
+			FormatBadgeHost(model, chromeOn, Modifier.align(Alignment.TopCenter).safeDrawingPadding().padding(top = Space.s4))
+
+			val noteAt = Modifier.align(Alignment.TopCenter).safeDrawingPadding().padding(top = NOTE_TOP)
+			Note(aspectStamp, aspect.label, R.drawable.ic_aspect_ratio, ASPECT_NOTE_MS, noteAt)
+			Note(lockStamp, "Controls Locked", R.drawable.ic_lock, LOCK_NOTE_MS, noteAt)
+			HoldPill(held, noteAt)
+			MeterView(
+				brightnessMeter,
+				icon = { R.drawable.ic_brightness },
+				accent = accent,
+				modifier = Modifier.align(Alignment.CenterStart).safeDrawingPadding().padding(Space.s6),
+			)
+			MeterView(
+				volumeMeter,
+				icon = { level -> if (level <= 0f) R.drawable.ic_volume_off else R.drawable.ic_volume_up },
+				accent = accent,
+				modifier = Modifier.align(Alignment.CenterEnd).safeDrawingPadding().padding(Space.s6),
+			)
+
+			if (menuOpen) {
+				// A tap outside the panel closes it. The picture stays in view, so a change of look is seen as it is made.
+				Box(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures(onTap = { pages = emptyList() }) })
+			}
+			AnimatedVisibility(
+				visible = menuOpen,
+				modifier = Modifier.align(Alignment.CenterEnd),
+				enter = fadeIn(motion.defaultEffectsSpec()) + slideInHorizontally(motion.defaultSpatialSpec<IntOffset>()) { it / 3 },
+				exit = fadeOut(motion.fastEffectsSpec()) + slideOutHorizontally(motion.fastSpatialSpec<IntOffset>()) { it / 3 },
+			) {
+				TracksPanel(
+					model = model,
+					look = look,
+					onLook = { change -> profile?.let { id -> container.scope.launch { container.settings.updateSubtitleLook(id, change) } } },
+					pages = pages.ifEmpty { lastPages[0] },
+					aspect = aspect,
+					onAspect = { changeAspect(it) },
+					sleep = sleep,
+					pip = pip,
+					onPush = { page -> pages = pages + page },
+					onPop = { pages = pages.dropLast(1) },
+					onClose = { pages = emptyList() },
+					onTouch = { panelTouched = SystemClock.elapsedRealtime() },
+				)
+			}
+			if (locked) {
+				UnlockPill(unlockStamp, onUnlock = { unlock() }, modifier = Modifier.align(Alignment.BottomStart).safeDrawingPadding().padding(Space.s4))
+			}
 		}
 	}
 }
 
 @Composable
 @OptIn(UnstableApi::class)
-private fun Video(engine: ExoPlayer, keepScreenOn: Boolean) {
+private fun Video(engine: ExoPlayer, aspect: PlayerAspect, keepScreenOn: Boolean, pip: PictureInPicture) {
 	AndroidView(
 		factory = { context ->
 			PlayerView(context).apply {
@@ -197,153 +592,58 @@ private fun Video(engine: ExoPlayer, keepScreenOn: Boolean) {
 		// The screen stays on while the video plays, and times out when it is paused.
 		update = {
 			it.player = engine
+			it.resizeMode = aspect.resizeMode
 			it.keepScreenOn = keepScreenOn
 		},
 		onRelease = { it.player = null },
-		modifier = Modifier.fillMaxSize(),
+		modifier = Modifier.fillMaxSize().onGloballyPositioned { pip.videoBounds(it.boundsInWindow()) },
 	)
 }
 
 @Composable
-private fun Failure(message: String, onRetry: () -> Unit, onClose: () -> Unit, modifier: Modifier) {
-	Column(modifier, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Space.s4)) {
-		Text(message, style = MaterialTheme.typography.titleMedium, color = lucent.ink)
-		Row(horizontalArrangement = Arrangement.spacedBy(Space.s3)) {
-			Button(onClick = onRetry) { Text("Try Again") }
-			TextButton(onClick = onClose) { Text("Close") }
-		}
-	}
-}
-
-/** The back arrow and title above; once a player is open, skip and play in the middle and the seek bar below. */
-@Composable
-private fun Controls(model: PlayerModel, onClose: () -> Unit, onTouch: () -> Unit, onPanel: (TracksPage) -> Unit) {
-	Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(lucent.scrim, Color.Transparent, lucent.scrim)))) {
-		TopBar(model, onClose, onPanel, Modifier.align(Alignment.TopStart))
-		if (model.player != null) {
-			Transport(model, onTouch, Modifier.align(Alignment.Center))
-			Progress(model, onTouch, Modifier.align(Alignment.BottomCenter))
-		}
-	}
-}
-
-@Composable
-private fun TopBar(model: PlayerModel, onClose: () -> Unit, onPanel: (TracksPage) -> Unit, modifier: Modifier) {
-	Row(
-		modifier = modifier.fillMaxWidth().safeDrawingPadding().padding(Space.s3),
-		verticalAlignment = Alignment.CenterVertically,
-		horizontalArrangement = Arrangement.spacedBy(Space.s3),
+private fun Failure(message: String, accent: Color, onRetry: () -> Unit, onClose: () -> Unit, modifier: Modifier) {
+	val shape = RoundedCornerShape(Radius.card)
+	Column(
+		modifier
+			.padding(Space.s6)
+			.widthIn(max = 420.dp)
+			.clip(shape)
+			.background(PlayerInk.card)
+			.border(1.dp, PlayerInk.cardEdge, shape)
+			.padding(Space.s5),
+		horizontalAlignment = Alignment.CenterHorizontally,
+		verticalArrangement = Arrangement.spacedBy(Space.s4),
 	) {
-		FilledTonalIconButton(onClick = onClose) {
-			Icon(painterResource(R.drawable.ic_arrow_back), contentDescription = "Back")
-		}
-		if (model.title.isNotEmpty()) {
-			Column(
-				Modifier
-					.background(lucent.scrim, RoundedCornerShape(Radius.control))
-					.padding(horizontal = Space.s3, vertical = Space.s1),
-			) {
-				Text(model.title, style = MaterialTheme.typography.titleMedium, color = lucent.ink, maxLines = 1)
-				model.subtitle?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = lucent.ink2, maxLines = 1) }
-			}
-		}
-		Spacer(Modifier.weight(1f))
-		if (model.tracks.lists.menuSubtitles.isNotEmpty()) {
-			FilledTonalIconButton(onClick = { onPanel(TracksPage.Subtitles) }) {
-				Icon(painterResource(R.drawable.ic_closed_caption), contentDescription = "Subtitles")
-			}
-		}
-		if (model.tracks.lists.audio.size > 1) {
-			FilledTonalIconButton(onClick = { onPanel(TracksPage.Audio) }) {
-				Icon(painterResource(R.drawable.ic_volume_up), contentDescription = "Audio")
-			}
+		Text(message, style = MaterialTheme.typography.titleMedium, color = PlayerInk.ink, textAlign = TextAlign.Center)
+		Row(horizontalArrangement = Arrangement.spacedBy(Space.s3)) {
+			GlassPill("Try Again", onRetry, fill = accent, content = PlayerInk.onAccent)
+			GlassPill("Close", onClose)
 		}
 	}
 }
 
+/**
+ * The way out of the lock, up for a moment after a touch on the locked screen. Panel care: a 48 dp glass pill at the
+ * bottom-start, still, up for 2.5 s and then faded out; nothing else is drawn while the screen is locked.
+ */
 @Composable
-private fun Transport(model: PlayerModel, onTouch: () -> Unit, modifier: Modifier) {
-	Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.s8)) {
-		SkipButton(R.drawable.ic_replay, "Back 10 seconds") {
-			onTouch()
-			model.skip(-SKIP_SECONDS)
-		}
-		Box(Modifier.size(72.dp), contentAlignment = Alignment.Center) {
-			if (model.isBuffering) {
-				LoadingIndicator()
-			} else {
-				FilledIconButton(
-					onClick = {
-						onTouch()
-						model.toggle()
-					},
-					modifier = Modifier.size(72.dp),
-				) {
-					Icon(
-						painterResource(if (model.isPlaying) R.drawable.ic_pause else R.drawable.ic_play_arrow),
-						contentDescription = if (model.isPlaying) "Pause" else "Play",
-						modifier = Modifier.size(40.dp),
-					)
-				}
-			}
-		}
-		SkipButton(R.drawable.ic_forward, "Forward 10 seconds") {
-			onTouch()
-			model.skip(SKIP_SECONDS)
-		}
+private fun UnlockPill(stamp: Int, onUnlock: () -> Unit, modifier: Modifier = Modifier) {
+	var visible by remember { mutableStateOf(false) }
+	LaunchedEffect(stamp) {
+		if (stamp == 0) return@LaunchedEffect
+		visible = true
+		delay(UNLOCK_DWELL_MS)
+		visible = false
+	}
+	AnimatedVisibility(
+		visible,
+		modifier,
+		enter = fadeIn(MaterialTheme.motionScheme.fastEffectsSpec()),
+		exit = fadeOut(MaterialTheme.motionScheme.slowEffectsSpec()),
+	) {
+		GlassPill("Unlock", onUnlock, icon = R.drawable.ic_lock_open)
 	}
 }
-
-private const val SKIP_SECONDS = 10
-
-/** A circular arrow with the skip's length written inside it. */
-@Composable
-private fun SkipButton(@DrawableRes icon: Int, description: String, onClick: () -> Unit) {
-	IconButton(onClick = onClick, modifier = Modifier.size(56.dp)) {
-		Box(contentAlignment = Alignment.Center) {
-			Icon(painterResource(icon), contentDescription = description, modifier = Modifier.size(40.dp), tint = lucent.ink)
-			Text("$SKIP_SECONDS", style = MaterialTheme.typography.labelSmall, color = lucent.ink)
-		}
-	}
-}
-
-/** The seek bar with the time so far and the time left. */
-@Composable
-private fun Progress(model: PlayerModel, onTouch: () -> Unit, modifier: Modifier) {
-	val duration = model.durationMs.coerceAtLeast(1L)
-	var position by remember { mutableLongStateOf(model.movieMs()) }
-	var drag by remember { mutableStateOf<Float?>(null) }
-	// The bar is on screen only while the controls are, so this reads the player only then.
-	LaunchedEffect(model) {
-		while (true) {
-			if (drag == null) position = model.movieMs()
-			delay(POSITION_POLL_MS)
-		}
-	}
-	val at = drag?.let { (it * duration).toLong() } ?: position
-	Column(modifier.safeDrawingPadding().padding(horizontal = Space.s4)) {
-		Slider(
-			value = drag ?: (position.toFloat() / duration).coerceIn(0f, 1f),
-			onValueChange = {
-				drag = it
-				onTouch()
-			},
-			onValueChangeFinished = {
-				drag?.let {
-					position = (it * duration).toLong()
-					model.seekTo(position / 1000.0)
-				}
-				drag = null
-			},
-		)
-		Row(Modifier.fillMaxWidth().padding(horizontal = Space.s2), horizontalArrangement = Arrangement.SpaceBetween) {
-			Text(clock(at), style = MaterialTheme.typography.labelMedium, color = lucent.ink)
-			Text("-" + clock(duration - at), style = MaterialTheme.typography.labelMedium, color = lucent.ink2)
-		}
-	}
-}
-
-private const val POSITION_POLL_MS = 250L
 
 /** [ms] as `m:ss`, or `h:mm:ss` from an hour up. */
 internal fun clock(ms: Long): String {

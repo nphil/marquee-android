@@ -34,10 +34,12 @@ core/       git submodule: nphil/marquee-ios, pinned; MarqueeCore and the shared
 - **Plex requests.** Core sends requests through its `PlexTransport` seam. On Android the transport is
   OkHttp, supplied from Kotlin, so requests use Android's certificate store, HTTP/2 and network callbacks.
 - **Player.** Media3 ExoPlayer plays MKV, MP4 and the server's HLS directly. Audio the device cannot
-  decode (DTS, TrueHD and similar, read from `MediaCodecList`) is declared unsupported, so Core's route
-  has Plex convert only the audio and copy the video (a direct stream). The FFmpeg decoder extension is
-  not used: its wrapper is GPLv3, and a tablet's speakers and Bluetooth cannot output those formats
-  anyway. Passthrough to a receiver stays Media3's own where one is attached. Subtitles: SRT sidecars
+  decode (DTS, TrueHD and similar, read from `MediaCodecList`) goes to an LGPL-only FFmpeg build
+  (`ffmpeg/`: Media3's FFmpeg audio extension over separate shared libraries), which decodes AC3,
+  E-AC3, DTS, TrueHD, FLAC, Opus, Vorbis and ALAC to PCM; the platform's decoder is always tried
+  first. Audio neither can decode is declared unsupported, so Core's route has Plex convert only the
+  audio and copy the video (a direct stream). Passthrough to a receiver stays Media3's own where one
+  is attached. Subtitles: SRT sidecars
   as on iPhone, a cue starting `{\an8}` at the top, and the file's own text tracks; which audio and
   subtitle play is Core's `TrackRules`. The app draws the lines itself (Media3's `SubtitleView` over the
   picture, the player's own one hidden) in the profile's subtitle style; a file's own font sizes never
@@ -116,13 +118,15 @@ Each phase ends with a release installed on the tablet.
 3. **Player.** Routes from Core, Auto quality with the link probe and Save Data, the track rules from
    Core (English subtitles on by default; original audio, or the English dub with its own subtitle for
    anime; a Tracks menu of On, Off, Style and one Advanced row), Bazarr and SpeechDock, subtitle style,
-   Skip Intro, credits and Up Next, background play, playback info, format badge, stats for nerds. Three
-   small-player modes:
+   Skip Intro, credits and Up Next, background play (a media session and a foreground service keep the sound
+   going with the screen off), playback info, the format badge, stats for nerds, seek-bar previews (the
+   server's thumbnail index, or frames the app takes itself) and the `Diag` trail (route reasons by name,
+   chosen tracks, stalls, the server's own account of a conversion; never URLs or tokens). Small-player modes:
    - **Picture in Picture** outside the app: resizable by the system; Android draws its controls, so the
      app adds remote actions (play/pause, back and forward 10 s, Skip Intro, Next Episode) up to the
      device's limit.
-   - **In-app mini player** while browsing: drawn by the app with the full controls and seek bar in the
-     theme, dragged to any corner, resized, swiped away, tapped to expand.
+   - **In-app mini player** while browsing (not built yet): drawn by the app with the full controls and seek
+     bar in the theme, dragged to any corner, resized, swiped away, tapped to expand.
    - **Free-form window** on tablets: the whole player, controls and menus included, in a resizable
      floating window (`resizeableActivity`, layouts that hold at small window sizes).
 4. **The rest.** Downloads, Live TV (guide, DVR, direct from tuner), Chromecast, linked phones, the

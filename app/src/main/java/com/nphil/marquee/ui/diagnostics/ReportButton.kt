@@ -20,9 +20,11 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.toArgb
 import androidx.core.animation.doOnEnd
+import androidx.core.app.PictureInPictureModeChangedInfo
 import androidx.core.content.ContextCompat
 import androidx.core.content.edit
 import androidx.core.graphics.Insets
+import androidx.core.util.Consumer
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.Lifecycle
@@ -32,8 +34,12 @@ import com.nphil.marquee.R
 import com.nphil.marquee.diagnostics.Diag
 import com.nphil.marquee.ui.theme.lucent
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.map
@@ -78,12 +84,20 @@ class ReportButtonHost(private val activity: ComponentActivity) {
 	fun attach() {
 		activity.lifecycleScope.launch {
 			activity.repeatOnLifecycle(Lifecycle.State.STARTED) {
-				Diag.settings.config.filterNotNull()
-					.map { it.button && it.configured }
+				// Picture in Picture draws the window small and from the system: the button would sit over the video.
+				combine(Diag.settings.config.filterNotNull().map { it.button && it.configured }, pictureInPicture()) { wanted, small -> wanted && !small }
 					.distinctUntilChanged()
 					.collectLatest { visible -> if (visible) show() }
 			}
 		}
+	}
+
+	/** Whether the activity is in Picture in Picture now, and each time that changes. */
+	private fun pictureInPicture(): Flow<Boolean> = callbackFlow {
+		val listener = Consumer<PictureInPictureModeChangedInfo> { trySend(it.isInPictureInPictureMode) }
+		activity.addOnPictureInPictureModeChangedListener(listener)
+		trySend(activity.isInPictureInPictureMode)
+		awaitClose { activity.removeOnPictureInPictureModeChangedListener(listener) }
 	}
 
 	private suspend fun show(): Unit = coroutineScope {

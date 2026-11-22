@@ -24,8 +24,10 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nphil.marquee.R
 import com.nphil.marquee.container
+import com.nphil.marquee.core.CreditsAutoplay
 import com.nphil.marquee.core.DirectPlayMode
 import com.nphil.marquee.core.QualityPreset
+import com.nphil.marquee.core.SkipTapMode
 import com.nphil.marquee.data.PlaybackPrefs
 import com.nphil.marquee.playback.rememberPlaybackPrefs
 import com.nphil.marquee.ui.components.ChoiceRow
@@ -61,6 +63,56 @@ fun VideoPlaybackPage(contentPadding: PaddingValues) {
 		contentPadding = contentPadding,
 		verticalArrangement = Arrangement.spacedBy(GroupGap),
 	) {
+		item(key = "skipInterval") {
+			ChoiceRow("Skip Interval", prefs.skipInterval, PlaybackPrefs.SKIP_INTERVALS, ::seconds, index = 0, count = 2) { interval ->
+				change { it.copy(skipInterval = interval) }
+			}
+		}
+		item(key = "skipTaps") {
+			ChoiceRow("Skip Gesture", prefs.skipTaps, SkipTapMode.entries, ::skipTapsTitle, index = 1, count = 2) { mode ->
+				change { it.copy(skipTaps = mode) }
+			}
+		}
+		item(key = "skipNote") {
+			Footnote(
+				"Skip back and skip forward jump by this much. Double-tap the left or right of the picture to skip. " +
+					"With Double-Tap, a single tap always shows or hides the controls.",
+			)
+		}
+		item(key = "introSkip") {
+			ChoiceRow("Skip Intro", prefs.introSkipDelay, listOf(0) + PlaybackPrefs.COUNTDOWNS, ::introSkipTitle, index = 0, count = 1) { delay ->
+				change { it.copy(introSkipDelay = delay) }
+			}
+		}
+		item(key = "introNote") { Footnote("Intro countdowns start only at intro markers from Plex.") }
+		val autoplayRows = if (!prefs.autoplaysNext) 1 else if (prefs.creditsAutoplay == CreditsAutoplay.Countdown) 3 else 2
+		item(key = "autoplay") {
+			SwitchRow("Autoplay Next Episode", prefs.autoplaysNext, index = 0, count = autoplayRows) { on -> change { it.copy(autoplaysNext = on) } }
+		}
+		if (prefs.autoplaysNext) {
+			item(key = "credits") {
+				ChoiceRow("Credits", prefs.creditsAutoplay, CreditsAutoplay.entries, ::creditsTitle, index = 1, count = autoplayRows) { mode ->
+					change { it.copy(creditsAutoplay = mode) }
+				}
+			}
+			if (prefs.creditsAutoplay == CreditsAutoplay.Countdown) {
+				item(key = "countdown") {
+					ChoiceRow("Countdown", prefs.nextEpisodeDelay, PlaybackPrefs.COUNTDOWNS, ::seconds, index = 2, count = autoplayRows) { delay ->
+						change { it.copy(nextEpisodeDelay = delay) }
+					}
+				}
+			}
+		}
+		item(key = "autoplayNote") { Footnote(autoplayNote(prefs)) }
+		item(key = "background") {
+			SwitchRow("Keep Playing in Background", prefs.keepsPlaying) { on -> change { it.copy(keepsPlaying = on) } }
+		}
+		item(key = "backgroundNote") {
+			Footnote(
+				"Audio carries on with the screen off or in another app, with controls on the lock screen and in the " +
+					"notifications. Off pauses the title when the player leaves the screen.",
+			)
+		}
 		item(key = "quality") {
 			ChoiceRow("Streaming Quality", prefs.quality, QualityPreset.all, QualityPreset::title, index = 0, count = 3) { quality ->
 				change { it.copy(quality = quality) }
@@ -127,6 +179,28 @@ private fun directPlayTitle(mode: DirectPlayMode): String = when (mode) {
 	DirectPlayMode.Auto -> "Auto"
 	DirectPlayMode.Force -> "Always"
 	DirectPlayMode.Disabled -> "Never"
+}
+
+private fun seconds(value: Int) = "$value seconds"
+
+private fun introSkipTitle(delay: Int) = if (delay == 0) "Manually" else "After ${seconds(delay)}"
+
+private fun skipTapsTitle(mode: SkipTapMode): String = when (mode) {
+	SkipTapMode.DoubleTap -> "Double-Tap"
+	SkipTapMode.Chained -> "Double-Tap, Then Keep Tapping"
+}
+
+private fun creditsTitle(mode: CreditsAutoplay): String = when (mode) {
+	CreditsAutoplay.Countdown -> "Countdown"
+	CreditsAutoplay.SkipInstantly -> "Skip Credits Instantly"
+}
+
+private fun autoplayNote(prefs: PlaybackPrefs): String = when {
+	!prefs.autoplaysNext -> "Off: an episode ends on its own. At Plex's credits marker, Up Next is offered and waits for a tap."
+	prefs.creditsAutoplay == CreditsAutoplay.Countdown ->
+		"At Plex's credits marker, Up Next counts down ${prefs.nextEpisodeDelay} s, then the next episode plays. " +
+			"An episode with no credits marker goes on when it ends."
+	else -> "At Plex's credits marker the next episode starts at once, with no card. An episode with no credits marker goes on when it ends."
 }
 
 @Composable

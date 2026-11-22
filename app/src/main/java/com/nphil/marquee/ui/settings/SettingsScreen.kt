@@ -200,7 +200,7 @@ private fun SettingsList(
 			item(key = "licences") {
 				PageRow(1, 2, SettingsPage.Licences, selected, onOpen) {
 					IconBadge(R.drawable.ic_description)
-					Labels("Licences", "Manrope")
+					Labels("Licences", "Manrope, FFmpeg")
 				}
 			}
 			item(key = "signOut") {

@@ -4,10 +4,15 @@ import android.graphics.Color
 import android.graphics.Typeface
 import androidx.annotation.OptIn
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.text.Cue
 import androidx.media3.common.util.UnstableApi
@@ -17,8 +22,19 @@ import com.nphil.marquee.data.SubtitleEdge
 import com.nphil.marquee.data.SubtitleFont
 import com.nphil.marquee.data.SubtitleLook
 
-/** How far up the lines move while the controls are over the bottom of the picture, as a share of the screen's height. */
-private const val CONTROLS_LIFT = 0.16f
+/**
+ * How far up the lines move while the controls are over the bottom of the picture, as a share of the screen's height:
+ * enough that the lowest line sits above the controls' clearance, on a tall phone and a wide tablet alike.
+ */
+@OptIn(UnstableApi::class)
+@Composable
+private fun controlsLift(): Float {
+	val density = LocalDensity.current
+	val height = LocalWindowInfo.current.containerSize.height
+	if (height <= 0) return 0f
+	val clear = with(density) { CHROME_BOTTOM_CLEARANCE.toPx() } + WindowInsets.safeDrawing.getBottom(density)
+	return (clear / height - SubtitleView.DEFAULT_BOTTOM_PADDING_FRACTION).coerceAtLeast(0f)
+}
 
 /** The soft shadow: black, see-through, so a line reads on a bright scene without a hard edge. */
 private const val SOFT_SHADOW = 0x99000000.toInt()
@@ -31,7 +47,11 @@ private const val SOFT_SHADOW = 0x99000000.toInt()
 @Composable
 internal fun CaptionView(cues: List<Cue>, look: SubtitleLook, controlsUp: Boolean, modifier: Modifier = Modifier) {
 	val style = remember(look) { look.captionStyle() }
-	val lift by animateFloatAsState(if (controlsUp) CONTROLS_LIFT else 0f, label = "caption lift")
+	val lift by animateFloatAsState(
+		if (controlsUp) controlsLift() else 0f,
+		MaterialTheme.motionScheme.defaultSpatialSpec(),
+		label = "caption lift",
+	)
 	AndroidView(
 		factory = { context -> SubtitleView(context).apply { setApplyEmbeddedFontSizes(false) } },
 		update = { view ->

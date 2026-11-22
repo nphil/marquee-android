@@ -8,6 +8,7 @@ import Synchronization
 enum PlayCalls {
     private static let names: Set<String> = [
         "play.start", "play.queue", "play.report", "play.stop", "play.look", "play.link", "play.remember",
+        "play.autoplay", "play.skip.begin", "play.skip.check", "play.tap", "play.tap.reset", "play.transcode",
     ]
 
     static func handles(_ method: String) -> Bool {
@@ -55,6 +56,28 @@ enum PlayCalls {
             // On forgets the subtitle: the rules pick again next time.
             if let choice = call.subtitle?.choice { memory.subtitle = RememberedSubtitle(choice, in: tracks) }
             return try Reply.ok(memory)
+        case "play.autoplay":
+            let call = try decode(AutoplayCall.self, payload)
+            let rule = AutoplayNext(enabled: call.enabled, credits: call.credits, delay: call.delay)
+            return try Reply.ok(AutoplayWire(rule, creditsWatched: call.creditsWatched))
+        case "play.skip.begin":
+            let call = try decode(SkipBeginCall.self, payload)
+            try await services.session(call.session).beginSkip(to: call.target)
+            return try Reply.ok(Empty())
+        case "play.skip.check":
+            let call = try decode(SkipCheckCall.self, payload)
+            let session = try services.session(call.session)
+            return try Reply.ok(await session.checkSkip(playhead: call.playhead, advanced: call.advanced, pending: call.pending))
+        case "play.tap":
+            let call = try decode(TapCall.self, payload)
+            let session = try services.session(call.session)
+            return try Reply.ok(TapWire(await session.tap(TapSide(x: call.x, width: call.width), mode: call.mode, at: call.at)))
+        case "play.tap.reset":
+            try await services.session(decode(SessionCall.self, payload).session).resetTaps()
+            return try Reply.ok(Empty())
+        case "play.transcode":
+            let session = try services.session(decode(SessionCall.self, payload).session)
+            return try Reply.ok(TranscodeWire(await session.transcode()))
         default:
             throw BridgeError.unknownMethod(method)
         }
@@ -120,13 +143,19 @@ enum PlayCalls {
         )
 
         let startAt = startSeconds(call, item: item, duration: duration)
+        let badgeAudio = route.audio.flatMap { track in part.streams.first { $0.id == track.id } }
+        let badge = BadgeWire(FormatBadge.make(video: part.videoStream, media: media, audio: badgeAudio, route: route))
+        let thumbnails = part.hasSceneThumbnails
+            ? connection.flatMap { PlexURL.make(base: $0.uri, path: "/library/parts/\(part.id)/indexes/sd") }
+                .map { ThumbnailsWire(url: $0.absoluteString, headers: library.authorizationHeaders()) }
+            : nil
         func plan(_ stream: StreamSpec?, probe: ProbeSpec? = nil) -> PlanWire {
             PlanWire(
                 session: session.id, item: ItemWire(item), mediaIndex: mediaIndex, startAt: startAt, duration: duration,
                 route: RouteWire(route), stream: stream, probe: probe,
                 intro: item.markers(.intro).map(MarkerWire.init), credits: item.markers(.credits).map(MarkerWire.init),
                 chapters: item.chapters.map(ChapterWire.init), tracks: lists, isAnime: picked.isAnime,
-                quality: quality.rawValue, adapts: adaptive != nil
+                quality: quality.rawValue, adapts: adaptive != nil, badge: badge, thumbnails: thumbnails
             )
         }
 
@@ -149,7 +178,7 @@ enum PlayCalls {
             await session.begin(item, tracks: tracks, adaptive: adaptive, address: base, conversion: nil)
             return plan(StreamSpec(kind: "file", url: url.absoluteString, headers: library.authorizationHeaders(), session: nil, offset: 0))
         case .serverTranscode:
-            try await selectForServer(route, part: part, tracks: tracks, library: library)
+            try await selectForServer(route, part: part, tracks: tracks, library: library, session: session)
             let conversion = UUID().uuidString
             let request = TranscodeRequest(item: item, mediaIndex: mediaIndex, route: route, offset: startAt, session: conversion)
             let url = try await library.transcodeURL(request)
@@ -225,15 +254,18 @@ enum PlayCalls {
         return PlayTracksWire(audio: audio, subtitles: subtitles, automatic: automatic, headers: headers)
     }
 
-    /// The server streams the part's selected audio; it is told only when the route plays another.
+    /// The server streams the part's selected audio and, when it has one selected, that subtitle. This player draws its
+    /// own, and Plex can burn in a selected or forced subtitle whatever the request says, so the server's subtitle is
+    /// cleared for the stream and put back when it ends. The audio is told only when the route plays another.
     private static func selectForServer(
-        _ route: PlaybackRoute, part: PlexPart, tracks: MediaTracks, library: PlexLibrary
+        _ route: PlaybackRoute, part: PlexPart, tracks: MediaTracks, library: PlexLibrary, session: PlaySession
     ) async throws {
         let serverAudio = tracks.audio.first(where: \.isSelectedOnServer)?.id
         let serverSubtitle = tracks.subtitles.first(where: \.isSelectedOnServer)?.id
         let audio = route.audio?.id ?? serverAudio
-        guard audio != serverAudio else { return }
-        try await library.selectStreams(partID: part.id, audioStreamID: audio, subtitleStreamID: serverSubtitle)
+        guard audio != serverAudio || serverSubtitle != nil else { return }
+        try await library.selectStreams(partID: part.id, audioStreamID: audio, subtitleStreamID: nil)
+        if let serverSubtitle { await session.willRestore(part: part.id, audio: audio, subtitle: serverSubtitle) }
     }
 
     private static func decode<T: Decodable>(_ type: T.Type, _ payload: Data) throws -> T {
@@ -319,21 +351,40 @@ actor PlaySession {
     private var tracks: MediaTracks?
     private var reporter: TimelineReporter?
     private var conversion: String?
+    /// The subtitle the server had selected before a server stream cleared it, put back when that stream ends.
+    private var restore: (part: Int, audio: Int?, subtitle: Int)?
     private var queue: PlexPlayQueue?
     private var queueKey: String?
     private var queueTask: Task<PlexPlayQueue?, Never>?
+    /// The intro skip being confirmed, and the screen's taps: both are state machines in Core that need what came before.
+    private var skipCheck: SkipCheck?
+    private var taps = SkipTaps(mode: .doubleTap)
 
     init(id: String, library: PlexLibrary) {
         self.id = id
         self.library = library
     }
 
-    /// Ends what the last stream held on the server: its conversion.
+    /// Ends what the last stream held on the server: its conversion, and the subtitle it cleared.
     func endStream() async {
         reporter = nil
+        if let restore {
+            self.restore = nil
+            try? await library.selectStreams(partID: restore.part, audioStreamID: restore.audio, subtitleStreamID: restore.subtitle)
+        }
         guard let conversion else { return }
         self.conversion = nil
         try? await library.stopTranscode(session: conversion)
+    }
+
+    func willRestore(part: Int, audio: Int?, subtitle: Int) {
+        restore = (part, audio, subtitle)
+    }
+
+    /// The server's account of the conversion playing, or nil when there is none or the server does not answer.
+    func transcode() async -> PlexTranscodeSession? {
+        guard let conversion else { return nil }
+        return try? await library.transcodeSession(conversion)
     }
 
     /// The item's place in the play queue, or nil while a new queue is made beside the start (`neighbors` waits for it).
@@ -391,5 +442,28 @@ actor PlaySession {
         let move = adaptive.observe(look)
         self.adaptive = adaptive
         return MoveWire(rung: move?.rawValue, estimateKbps: adaptive.estimateKbps, belowFloor: adaptive.belowFloor)
+    }
+
+    /// Starts confirming a skip to [target] seconds (`SkipCheck`).
+    func beginSkip(to target: TimeInterval) {
+        skipCheck = SkipCheck(target: target)
+    }
+
+    /// Judges the playhead against the skip being confirmed. A landing or a second miss ends the check.
+    func checkSkip(playhead: TimeInterval, advanced: TimeInterval, pending: Bool) -> SkipVerdictWire {
+        guard var check = skipCheck else { return SkipVerdictWire(none: ()) }
+        let verdict = check.check(playhead: playhead, advanced: advanced, pending: pending)
+        skipCheck = verdict == .landed || verdict == .missed ? nil : check
+        return SkipVerdictWire(verdict, retried: check.retried)
+    }
+
+    func tap(_ side: TapSide, mode: SkipTapMode, at now: TimeInterval) -> SkipTaps.Action {
+        taps.mode = mode
+        return taps.tap(side, at: now)
+    }
+
+    /// Forgets a pending tap and any chain, for a tap that must only bring the controls.
+    func resetTaps() {
+        taps.reset()
     }
 }

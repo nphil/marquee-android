@@ -96,7 +96,15 @@ data class PlayPlan(
 	val quality: Int = 0,
 	/** Auto adapts the quality on this stream. */
 	val adapts: Boolean = false,
+	/** What the first-start badge shows for the stream that plays. */
+	val badge: FormatBadge = FormatBadge(),
+	/** The server's scene-thumbnail index (BIF) of the part, when it has one. */
+	val thumbnails: ThumbnailSource? = null,
 )
+
+/** Where to read a part's BIF index: the address and what authorizes the request. Never log it. */
+@Serializable
+data class ThumbnailSource(val url: String, val headers: Map<String, String> = emptyMap())
 
 @Serializable
 data class PlayRoute(
@@ -122,6 +130,38 @@ enum class RouteKind {
 
 	/** The server converts. */
 	@SerialName("serverTranscode") ServerTranscode,
+}
+
+/**
+ * What the first-start badge says about the stream that plays: the picture size, the high dynamic range kind and the
+ * surround sound. Each is null when unknown or when it does not apply to the route, so nothing is made up.
+ */
+@Serializable
+data class FormatBadge(
+	/** `SD`, `720p`, `1080p`, `1440p`, `4K` or `8K`. */
+	val resolution: String? = null,
+	val range: BadgeRange? = null,
+	val sound: BadgeSound? = null,
+) {
+	val isEmpty: Boolean get() = resolution == null && range == null && sound == null
+
+	/** "4K, Dolby Vision, Dolby Atmos", for TalkBack. */
+	val spoken: String get() = listOfNotNull(resolution, range?.words, sound?.words).joinToString(", ")
+}
+
+@Serializable
+enum class BadgeRange(val words: String) {
+	@SerialName("hdr10") Hdr10("HDR10"),
+	@SerialName("hdr10Plus") Hdr10Plus("HDR10+"),
+	@SerialName("hlg") Hlg("HLG"),
+	@SerialName("dolbyVision") DolbyVision("Dolby Vision"),
+}
+
+@Serializable
+enum class BadgeSound(val words: String) {
+	@SerialName("atmos") Atmos("Dolby Atmos"),
+	@SerialName("surround51") Surround51("5.1"),
+	@SerialName("surround71") Surround71("7.1"),
 }
 
 /** How the chosen subtitle reaches the screen: none, sidecar, inStream or notShown. This player never has the server burn one in. */
@@ -307,3 +347,139 @@ suspend fun MarqueeCore.playRemember(
 	if (subtitle != null) put("subtitle", CoreJson.encodeToJsonElement(SubtitlePick.serializer(), subtitle))
 	if (memory != null) put("memory", memory)
 })
+
+/** What the profile's autoplay rule does when an episode reaches its credits marker. */
+@Serializable
+enum class AtCredits {
+	/** Up Next is offered and waits for a tap. */
+	@SerialName("offer") Card,
+
+	/** Up Next counts down, then the next episode plays. */
+	@SerialName("countdown") Countdown,
+
+	/** The next episode starts at once, with no card. */
+	@SerialName("playNow") PlayNow,
+}
+
+/** What Up Next does at the credits when autoplay is on (Core's `CreditsAutoplay`). */
+@Serializable
+enum class CreditsAutoplay {
+	@SerialName("countdown") Countdown,
+	@SerialName("skipInstantly") SkipInstantly,
+}
+
+/** How the picture's taps skip (Core's `SkipTapMode`). */
+@Serializable
+enum class SkipTapMode {
+	@SerialName("doubleTap") DoubleTap,
+	@SerialName("chained") Chained,
+}
+
+/** What autoplay does at an episode's credits marker and when it ends (Core's `AutoplayNext`). */
+@Serializable
+data class AutoplayPlan(
+	val atCredits: AtCredits,
+	/** The countdown's length, for [AtCredits.Countdown]. */
+	val seconds: Int? = null,
+	/** The finished episode goes on to the next: autoplay is on and the credits were not chosen to be watched. */
+	val playsNextAtEnd: Boolean,
+)
+
+suspend fun MarqueeCore.playAutoplay(enabled: Boolean, credits: CreditsAutoplay, delay: Int, creditsWatched: Boolean): AutoplayPlan =
+	call("play.autoplay", buildJsonObject {
+		put("enabled", enabled)
+		put("credits", CoreJson.encodeToJsonElement(CreditsAutoplay.serializer(), credits))
+		put("delay", delay)
+		put("creditsWatched", creditsWatched)
+	})
+
+/** Core's verdict on a skip past the intro. */
+@Serializable
+enum class SkipVerdict {
+	/** No skip is being confirmed. */
+	@SerialName("none") None,
+	@SerialName("waiting") Waiting,
+	@SerialName("landed") Landed,
+
+	/** The skip did not land: seek there once more. */
+	@SerialName("retry") Retry,
+	@SerialName("missed") Missed,
+}
+
+@Serializable
+data class SkipAnswer(val verdict: SkipVerdict, val retried: Boolean)
+
+/** Starts confirming a skip past the intro, to [target] seconds. */
+suspend fun MarqueeCore.playSkipBegin(session: String, target: Double) {
+	call<JsonObject>("play.skip.begin", buildJsonObject {
+		put("session", session)
+		put("target", target)
+	})
+}
+
+/** Judges where playback is against the skip being confirmed; [advanced] is the seconds played since the last look. */
+suspend fun MarqueeCore.playSkipCheck(session: String, playhead: Double, advanced: Double, pending: Boolean): SkipAnswer =
+	call("play.skip.check", buildJsonObject {
+		put("session", session)
+		put("playhead", playhead)
+		put("advanced", advanced)
+		put("pending", pending)
+	})
+
+/** What a tap on the picture does. */
+@Serializable
+enum class TapAction {
+	@SerialName("skip") Skip,
+
+	/** A first tap: a second within the window skips; otherwise the controls show or hide. */
+	@SerialName("single") Single,
+	@SerialName("controls") Controls,
+}
+
+@Serializable
+enum class SkipSide {
+	@SerialName("back") Back,
+	@SerialName("forward") Forward,
+}
+
+@Serializable
+data class TapAnswer(
+	val action: TapAction,
+	val side: SkipSide? = null,
+	/** For [TapAction.Single]: the seconds to wait for a second tap. */
+	val window: Double? = null,
+)
+
+/** Tells a double-tap from a single tap at [x] of [width], at [at] seconds on a steady clock. */
+suspend fun MarqueeCore.playTap(session: String, mode: SkipTapMode, x: Double, width: Double, at: Double): TapAnswer =
+	call("play.tap", buildJsonObject {
+		put("session", session)
+		put("mode", CoreJson.encodeToJsonElement(SkipTapMode.serializer(), mode))
+		put("x", x)
+		put("width", width)
+		put("at", at)
+	})
+
+/** Forgets a pending tap and any chain, for a tap that must only bring the controls. */
+suspend fun MarqueeCore.playTapReset(session: String) {
+	call<JsonObject>("play.tap.reset", buildJsonObject { put("session", session) })
+}
+
+/** The server's own account of the conversion that plays; [active] is false when it has none or does not answer. */
+@Serializable
+data class TranscodeState(
+	val active: Boolean,
+	/** "copy" or "transcode"; for [subtitle] also "burn". */
+	val video: String? = null,
+	val audio: String? = null,
+	val subtitle: String? = null,
+	/** Encoding speed as a multiple of real time; below 1 the player outruns it. */
+	val speed: Double? = null,
+	val throttled: Boolean? = null,
+	val fullPipeline: Boolean? = null,
+	val decoding: String? = null,
+	val encoding: String? = null,
+)
+
+suspend fun MarqueeCore.playTranscode(session: String): TranscodeState =
+	call("play.transcode", buildJsonObject { put("session", session) })

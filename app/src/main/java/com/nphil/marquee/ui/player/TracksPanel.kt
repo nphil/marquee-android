@@ -1,10 +1,16 @@
 package com.nphil.marquee.ui.player
 
+import androidx.annotation.DrawableRes
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
@@ -18,10 +24,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.painterResource
@@ -44,38 +48,50 @@ import com.nphil.marquee.ui.theme.Radius
 import com.nphil.marquee.ui.theme.Space
 import com.nphil.marquee.ui.theme.lucent
 
-/** How long the track panel stays up with no touch on it, then it closes: a bright panel does not sit on the picture. */
+/** How long the panel stays up with no touch on it, then it closes: a bright panel does not sit on the picture. */
 internal const val PANEL_DWELL_MS = 30_000L
 
 private val PANEL_WIDTH = 380.dp
 
-/** The pages of the track panel. */
+/** The pages of the player's side panel. */
 internal enum class TracksPage(val title: String) {
 	Subtitles("Subtitles"),
 	Audio("Audio"),
 	Style("Subtitle Style"),
 	Advanced("Advanced"),
-	;
-
-	/** The page a back press returns to; null when the panel closes instead. */
-	val parent: TracksPage? get() = if (this == Style || this == Advanced) Subtitles else null
+	More("More"),
+	Quality("Quality"),
+	Speed("Playback Speed"),
+	Aspect("Aspect Ratio"),
+	Chapters("Chapters"),
+	Sleep("Sleep Timer"),
+	Info("Playback Info"),
 }
 
 /**
- * The audio and subtitle menus over the right of the picture: pick a track, set how the lines look, or see every
- * subtitle the file has. A pick takes effect at once. [onTouch] hears every touch on the panel, for the dwell.
+ * The menus over the right of the picture: the audio and subtitle tracks, the settings of the picture and the sound,
+ * and the playback info. [pages] is the trail of pages opened, the last one showing; a page opened from another has a
+ * way back. A pick takes effect at once. [onTouch] hears every touch on the panel, for the dwell. The panel keeps the
+ * app's theme, not the player's dark one: it is a sheet, and it is on screen only while the viewer is reading it.
  */
 @Composable
 internal fun TracksPanel(
 	model: PlayerModel,
 	look: SubtitleLook,
 	onLook: ((SubtitleLook) -> SubtitleLook) -> Unit,
-	page: TracksPage,
-	onPage: (TracksPage) -> Unit,
+	pages: List<TracksPage>,
+	aspect: PlayerAspect,
+	onAspect: (PlayerAspect) -> Unit,
+	sleep: SleepTimer,
+	pip: PictureInPicture,
+	onPush: (TracksPage) -> Unit,
+	onPop: () -> Unit,
 	onClose: () -> Unit,
 	onTouch: () -> Unit,
 	modifier: Modifier = Modifier,
 ) {
+	val page = pages.last()
+	val fade = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
 	Column(
 		modifier
 			.fillMaxHeight()
@@ -95,14 +111,26 @@ internal fun TracksPanel(
 			},
 		verticalArrangement = Arrangement.spacedBy(Space.s3),
 	) {
-		Header(page, onBack = page.parent?.let { parent -> { onPage(parent) } }, onClose = onClose)
-		key(page) {
-			Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Space.s3)) {
-				when (page) {
-					TracksPage.Subtitles -> SubtitlesPage(model, look, onPage)
+		Header(page, onBack = if (pages.size > 1) onPop else null, onClose = onClose)
+		AnimatedContent(
+			page,
+			Modifier.weight(1f),
+			transitionSpec = { fadeIn(fade) togetherWith fadeOut(fade) },
+			label = "panel page",
+		) { shown ->
+			Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Space.s3)) {
+				when (shown) {
+					TracksPage.Subtitles -> SubtitlesPage(model, look, onPush)
 					TracksPage.Audio -> AudioPage(model)
 					TracksPage.Style -> StylePage(look, onLook)
 					TracksPage.Advanced -> AdvancedPage(model)
+					TracksPage.More -> MorePage(model, pip, aspect, sleep, onPush, onClose)
+					TracksPage.Quality -> QualityPage(model)
+					TracksPage.Speed -> SpeedPage(model)
+					TracksPage.Aspect -> AspectPage(aspect, onAspect)
+					TracksPage.Chapters -> ChaptersPage(model, onClose)
+					TracksPage.Sleep -> SleepPage(model, sleep)
+					TracksPage.Info -> PlaybackInfoPage(model)
 				}
 			}
 		}
@@ -126,7 +154,7 @@ private fun Header(page: TracksPage, onBack: (() -> Unit)?, onClose: () -> Unit)
 }
 
 @Composable
-private fun SubtitlesPage(model: PlayerModel, look: SubtitleLook, onPage: (TracksPage) -> Unit) {
+private fun SubtitlesPage(model: PlayerModel, look: SubtitleLook, onPush: (TracksPage) -> Unit) {
 	val tracks = model.tracks
 	val showing = tracks.lists.subtitles.firstOrNull { it.id == tracks.subtitleId }
 	val automatic = tracks.lists.subtitles.firstOrNull { it.id == tracks.lists.automatic }
@@ -142,8 +170,8 @@ private fun SubtitlesPage(model: PlayerModel, look: SubtitleLook, onPage: (Track
 		}
 	}
 	Column(verticalArrangement = Arrangement.spacedBy(GroupGap)) {
-		NavRow(0, 2, "Subtitle Style", look.preset.title.takeIf { look.isPreset } ?: "Custom") { onPage(TracksPage.Style) }
-		NavRow(1, 2, "Advanced", null) { onPage(TracksPage.Advanced) }
+		NavRow(0, 2, "Subtitle Style", look.preset.title.takeIf { look.isPreset } ?: "Custom") { onPush(TracksPage.Style) }
+		NavRow(1, 2, "Advanced", null) { onPush(TracksPage.Advanced) }
 	}
 }
 
@@ -207,7 +235,7 @@ private fun SubtitleEdge.title() = when (this) {
 
 /** A row of a list of choices: the chosen one is marked, and one that cannot be chosen is dimmed. */
 @Composable
-private fun PickRow(
+internal fun PickRow(
 	index: Int,
 	count: Int,
 	label: String,
@@ -227,15 +255,11 @@ private fun PickRow(
 
 /** A row that opens another page, showing where it stands now. */
 @Composable
-private fun NavRow(index: Int, count: Int, label: String, value: String?, onClick: () -> Unit) {
+internal fun NavRow(index: Int, count: Int, label: String, value: String?, @DrawableRes icon: Int? = null, onClick: () -> Unit) {
 	GroupRow(index, count, onClick = onClick) {
+		if (icon != null) Icon(painterResource(icon), contentDescription = null, tint = lucent.ink, modifier = Modifier.size(24.dp))
 		Text(label, style = MaterialTheme.typography.titleMedium, color = lucent.ink, modifier = Modifier.weight(1f))
 		if (value != null) Text(value, style = MaterialTheme.typography.bodyLarge, color = lucent.ink2)
-		Icon(
-			painterResource(R.drawable.ic_arrow_back),
-			contentDescription = null,
-			modifier = Modifier.size(20.dp).rotate(180f),
-			tint = lucent.ink2,
-		)
+		Icon(painterResource(R.drawable.ic_chevron_right), contentDescription = null, modifier = Modifier.size(20.dp), tint = lucent.ink2)
 	}
 }

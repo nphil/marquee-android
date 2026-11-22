@@ -7,8 +7,10 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import com.nphil.marquee.core.CreditsAutoplay
 import com.nphil.marquee.core.DirectPlayMode
 import com.nphil.marquee.core.QualityPreset
+import com.nphil.marquee.core.SkipTapMode
 import com.nphil.marquee.playback.ThemeFade
 
 /** A Home profile's choices for the hero trailer, a show's theme music and how titles play (Settings › Video & Playback). */
@@ -23,7 +25,26 @@ data class PlaybackPrefs(
 	/** Holds a metered network to a low bitrate. */
 	val savesData: Boolean = false,
 	val directPlay: DirectPlayMode = DirectPlayMode.Auto,
-)
+	/** Seconds the skip buttons and a double-tap jump: one of [SKIP_INTERVALS]. */
+	val skipInterval: Int = 10,
+	val skipTaps: SkipTapMode = SkipTapMode.DoubleTap,
+	/** Seconds before Skip Intro takes itself; 0 leaves it to a tap. */
+	val introSkipDelay: Int = 5,
+	/** The next episode follows when one ends. */
+	val autoplaysNext: Boolean = true,
+	val creditsAutoplay: CreditsAutoplay = CreditsAutoplay.Countdown,
+	/** Seconds of the Up Next countdown: one of [COUNTDOWNS]. */
+	val nextEpisodeDelay: Int = 5,
+	/** The sound carries on when the player leaves the screen, held by a notification with lock-screen controls. */
+	val keepsPlaying: Boolean = true,
+) {
+	companion object {
+		val SKIP_INTERVALS = listOf(5, 10, 15, 30, 60)
+
+		/** Seconds for the intro and Up Next countdowns. */
+		val COUNTDOWNS = listOf(3, 5, 10, 15, 30)
+	}
+}
 
 // Keyed by the profile's uuid, so each person in the Home keeps their own.
 private fun trailers(profile: String) = booleanPreferencesKey("playback.$profile.trailers")
@@ -32,6 +53,13 @@ private fun themeVolume(profile: String) = floatPreferencesKey("playback.$profil
 private fun quality(profile: String) = intPreferencesKey("playback.$profile.quality")
 private fun savesData(profile: String) = booleanPreferencesKey("playback.$profile.savesData")
 private fun directPlay(profile: String) = stringPreferencesKey("playback.$profile.directPlay")
+private fun skipInterval(profile: String) = intPreferencesKey("playback.$profile.skipInterval")
+private fun skipTaps(profile: String) = stringPreferencesKey("playback.$profile.skipTaps")
+private fun introSkipDelay(profile: String) = intPreferencesKey("playback.$profile.introSkipDelay")
+private fun autoplaysNext(profile: String) = booleanPreferencesKey("playback.$profile.autoplaysNext")
+private fun creditsAutoplay(profile: String) = stringPreferencesKey("playback.$profile.creditsAutoplay")
+private fun nextEpisodeDelay(profile: String) = intPreferencesKey("playback.$profile.nextEpisodeDelay")
+private fun keepsPlaying(profile: String) = booleanPreferencesKey("playback.$profile.keepsPlaying")
 
 internal fun Preferences.playbackPrefs(profile: String?): PlaybackPrefs {
 	if (profile == null) return PlaybackPrefs()
@@ -43,6 +71,13 @@ internal fun Preferences.playbackPrefs(profile: String?): PlaybackPrefs {
 		quality = this[quality(profile)]?.takeIf { it in QualityPreset.all } ?: defaults.quality,
 		savesData = this[savesData(profile)] ?: defaults.savesData,
 		directPlay = DirectPlayMode.entries.firstOrNull { it.name == this[directPlay(profile)] } ?: defaults.directPlay,
+		skipInterval = this[skipInterval(profile)]?.takeIf { it in PlaybackPrefs.SKIP_INTERVALS } ?: defaults.skipInterval,
+		skipTaps = SkipTapMode.entries.firstOrNull { it.name == this[skipTaps(profile)] } ?: defaults.skipTaps,
+		introSkipDelay = this[introSkipDelay(profile)]?.takeIf { it == 0 || it in PlaybackPrefs.COUNTDOWNS } ?: defaults.introSkipDelay,
+		autoplaysNext = this[autoplaysNext(profile)] ?: defaults.autoplaysNext,
+		creditsAutoplay = CreditsAutoplay.entries.firstOrNull { it.name == this[creditsAutoplay(profile)] } ?: defaults.creditsAutoplay,
+		nextEpisodeDelay = this[nextEpisodeDelay(profile)]?.takeIf { it in PlaybackPrefs.COUNTDOWNS } ?: defaults.nextEpisodeDelay,
+		keepsPlaying = this[keepsPlaying(profile)] ?: defaults.keepsPlaying,
 	)
 }
 
@@ -53,4 +88,11 @@ internal fun MutablePreferences.setPlaybackPrefs(profile: String, prefs: Playbac
 	this[quality(profile)] = prefs.quality
 	this[savesData(profile)] = prefs.savesData
 	this[directPlay(profile)] = prefs.directPlay.name
+	this[skipInterval(profile)] = prefs.skipInterval
+	this[skipTaps(profile)] = prefs.skipTaps.name
+	this[introSkipDelay(profile)] = prefs.introSkipDelay
+	this[autoplaysNext(profile)] = prefs.autoplaysNext
+	this[creditsAutoplay(profile)] = prefs.creditsAutoplay.name
+	this[nextEpisodeDelay(profile)] = prefs.nextEpisodeDelay
+	this[keepsPlaying(profile)] = prefs.keepsPlaying
 }

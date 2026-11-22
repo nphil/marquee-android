@@ -24,4 +24,12 @@ class PlayerCapabilitiesTest {
 		val codecs = PlayerCapabilities.audioCodecs(Decoders { it == "audio/vnd.dts" })
 		assertTrue("dca" in codecs && "dts" in codecs)
 	}
+
+	@Test
+	fun audioFfmpegDecodesCountsLikeTheTabletsOwnDecoders() {
+		val ffmpeg = Decoders { it in setOf("audio/ac3", "audio/eac3", "audio/vnd.dts", "audio/true-hd") }
+		val codecs = PlayerCapabilities.audioCodecs(DeviceDecoders(emptySet(), ffmpeg))
+		assertTrue(listOf("ac3", "eac3", "dca", "dts", "truehd").all { it in codecs })
+		assertFalse("opus" in codecs)
+	}
 }

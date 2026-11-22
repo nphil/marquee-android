@@ -5,9 +5,11 @@ import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.okhttp.OkHttpDataSource
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
@@ -38,7 +40,10 @@ class PlaybackFactory(private val context: Context, private val http: OkHttpClie
 	/** A player for [kind] that fetches with [headers]; the caller sets the media item and releases it. Main thread. */
 	fun create(headers: Map<String, String>, kind: Kind): ExoPlayer {
 		val source = DefaultMediaSourceFactory(data(headers))
-		val player = ExoPlayer.Builder(context).setMediaSourceFactory(source).build()
+		// ON, not PREFER: the FFmpeg audio renderer (:ffmpeg) then sits behind the platform's, so it plays only what the
+		// platform's decoders and any passthrough to a receiver cannot.
+		val renderers = DefaultRenderersFactory(context).setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
+		val player = ExoPlayer.Builder(context, renderers).setMediaSourceFactory(source).build()
 		val content = if (kind == Kind.ThemeMusic) C.AUDIO_CONTENT_TYPE_MUSIC else C.AUDIO_CONTENT_TYPE_MOVIE
 		val attributes = AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(content).build()
 		player.setAudioAttributes(attributes, kind == Kind.Viewer || kind == Kind.Player)
@@ -57,9 +62,9 @@ class PlaybackFactory(private val context: Context, private val http: OkHttpClie
 		return player
 	}
 
-	/** What [url] opens: the server's HLS conversion when [hls], else the file itself, fetched with [headers]. */
-	fun source(headers: Map<String, String>, url: String, hls: Boolean): MediaSource {
-		val item = MediaItem.fromUri(url)
+	/** What [url] opens: the server's HLS conversion when [hls], else the file itself, fetched with [headers]. [about] is what the system's controls show for it. */
+	fun source(headers: Map<String, String>, url: String, hls: Boolean, about: MediaMetadata = MediaMetadata.EMPTY): MediaSource {
+		val item = MediaItem.Builder().setUri(url).setMediaMetadata(about).build()
 		val factory = data(headers)
 		return if (hls) HlsMediaSource.Factory(factory).createMediaSource(item) else ProgressiveMediaSource.Factory(factory).createMediaSource(item)
 	}

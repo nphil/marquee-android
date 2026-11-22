@@ -1,0 +1,13 @@
+# The rules the app takes with the FFmpeg extension, as Media3 ships them.
+
+# This prevents the names of native methods from being obfuscated. The pattern covers the whole package, so it also
+# keeps FfmpegAudioRenderer: DefaultRenderersFactory loads that by name and nothing else references it, and without
+# it R8 removes the renderer and Media3 skips the missing extension without saying so (CI checks the APK has it).
+-keep,includedescriptorclasses class androidx.media3.decoder.ffmpeg.** {
+    native <methods>;
+}
+
+# This method is called from native code
+-keep, includedescriptorclasses class androidx.media3.decoder.ffmpeg.FfmpegAudioDecoder {
+  private java.nio.ByteBuffer growOutputBuffer(androidx.media3.decoder.SimpleDecoderOutputBuffer, int);
+}

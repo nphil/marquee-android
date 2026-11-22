@@ -1,6 +1,8 @@
 package com.nphil.marquee.data
 
 import androidx.datastore.preferences.core.mutablePreferencesOf
+import com.nphil.marquee.core.CreditsAutoplay
+import com.nphil.marquee.core.SkipTapMode
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -25,5 +27,19 @@ class PlaybackPrefsTest {
 		val stored = mutablePreferencesOf()
 		stored.setPlaybackPrefs("a", PlaybackPrefs(themeMusicVolume = 4f))
 		assertEquals(1f, stored.playbackPrefs("a").themeMusicVolume, 0f)
+	}
+
+	@Test
+	fun theSkipAndAutoplayChoicesAreKeptAndAValueOutOfRangeFallsBack() {
+		val stored = mutablePreferencesOf()
+		val chosen = PlaybackPrefs(
+			skipInterval = 30, skipTaps = SkipTapMode.Chained, introSkipDelay = 0,
+			autoplaysNext = false, creditsAutoplay = CreditsAutoplay.SkipInstantly, nextEpisodeDelay = 15, keepsPlaying = false,
+		)
+		stored.setPlaybackPrefs("a", chosen)
+		assertEquals(chosen, stored.playbackPrefs("a"))
+
+		stored.setPlaybackPrefs("a", PlaybackPrefs(skipInterval = 7, introSkipDelay = 4, nextEpisodeDelay = 0))
+		assertEquals(PlaybackPrefs(), stored.playbackPrefs("a"))
 	}
 }

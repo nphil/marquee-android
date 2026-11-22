@@ -125,6 +125,19 @@ jobs:
           rm -f "$bundle/swift-resources/usr/lib/swift/clang"
           ANDROID_NDK_HOME="$HOME/android-ndk-r30" "$bundle/scripts/setup-android-sdk.sh"
 
+      - name: Cache the FFmpeg build
+        id: ffmpeg
+        uses: actions/cache@v4
+        with:
+          path: ffmpeg/src/main/jniLibs
+          key: ffmpeg-${{ env.NDK_SHA256 }}-${{ hashFiles('ffmpeg/build.sh', 'ffmpeg/versions.properties', 'ffmpeg/src/main/jni/**') }}
+
+      # The decoders for audio the tablet lacks (ffmpeg/NOTICE): LGPL only, as shared libraries, for the release ABI and
+      # the emulator's. The APK steps below fail if they are missing.
+      - name: Build FFmpeg
+        if: steps.ffmpeg.outputs.cache-hit != 'true'
+        run: bash ffmpeg/build.sh arm64-v8a x86_64
+
       - name: Swift host tests
         working-directory: bridge
         run: |
@@ -281,9 +294,17 @@ jobs:
           built="$(find app/build/outputs/apk/release -name '*.apk' | head -n1)"
           apk="app/build/outputs/apk/release/marquee-${{ steps.version.outputs.version }}.apk"
           mv "$built" "$apk"
+          listing="$(unzip -l "$apk")"
           # Releases carry the arm64 bridge only; an x86_64 library here means the emulator build leaked in.
-          abis="$(unzip -l "$apk" | grep -oE 'lib/[^/]+/' | sort -u | tr '\n' ' ')"
+          abis="$(grep -oE 'lib/[^/]+/' <<<"$listing" | sort -u | tr '\n' ' ')"
           [ "$abis" = "lib/arm64-v8a/ " ] || { echo "Unexpected native libraries: $abis"; exit 1; }
+          # FFmpeg's audio decoders: the JNI library and the shared libraries it loads.
+          for lib in libffmpegJNI libavcodec libavutil libswresample; do
+            grep -q "lib/arm64-v8a/$lib.so" <<<"$listing" || { echo "The APK has no $lib.so"; exit 1; }
+          done
+          # Media3 loads the FFmpeg renderer by name, so R8 removes it unless the consumer rules keep it.
+          kept="$(unzip -p "$apk" 'classes*.dex' | grep -ac 'Landroidx/media3/decoder/ffmpeg/FfmpegAudioRenderer;' || true)"
+          [ "$kept" -gt 0 ] || { echo "R8 removed the FFmpeg renderer"; exit 1; }
           "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --print-certs "$apk"
           size="$(stat -c %s "$apk")"
           echo "path=$apk" >> "$GITHUB_OUTPUT"

@@ -1,0 +1,15 @@
+Marquee's FFmpeg audio decoding: what is in this directory and where it comes from.
+
+FFmpeg (https://ffmpeg.org), LGPL 2.1 or later.
+  No FFmpeg source is kept here. build.sh downloads the release named in versions.properties, checks its SHA-256,
+  and builds the audio decoders it lists, without --enable-gpl, --enable-version3 or --enable-nonfree, as the shared
+  libraries libavcodec.so, libavutil.so and libswresample.so. Replacing them with libraries rebuilt from the same
+  source changes the decoders without touching the rest of the app. The licence text, from that release, is
+  src/main/assets/licences/FFmpeg-LGPL-2.1.txt; the app shows it under Settings > Licences.
+
+Media3's FFmpeg extension, Apache License 2.0 (LICENSE.Apache-2.0.txt).
+  Copied unmodified from https://github.com/androidx/media at tag 1.11.1 (commit 8c6678b657ed), directory
+  libraries/decoder_ffmpeg: src/main/java/androidx/media3/decoder/ffmpeg without ExperimentalFfmpegVideoRenderer.java
+  (it decodes no video), and src/main/jni/ffmpeg_jni.cc. build.sh replaces Media3's build_ffmpeg.sh and
+  CMakeLists.txt. To move to another Media3 release, copy the same files from its tag and set MEDIA3_VERSION in
+  versions.properties.

@@ -11,6 +11,9 @@ import Testing
     /// A 4K HEVC movie in Matroska with DTS audio and a picture subtitle, 600 s in, and a play queue of three.
     private final class Server: PlexTransport, Sendable {
         private let log = Mutex<[String]>([])
+        private let seen = Mutex<[String: URL]>([:])
+        /// The id of the server's conversion that `/transcode/sessions` reports.
+        let conversion = Mutex<String>("")
 
         var requests: [String] {
             log.withLock { $0 }
@@ -20,8 +23,13 @@ import Testing
             requests.filter { $0.contains(path) }.count
         }
 
+        func lastURL(_ path: String) -> URL? {
+            seen.withLock { $0[path] }
+        }
+
         func send(_ request: PlexRequest) async throws -> PlexHTTPResponse {
             log.withLock { $0.append("\(request.method) \(request.url.path)") }
+            seen.withLock { $0[request.url.path] = request.url }
             switch request.url.path {
             case "/identity":
                 return Self.answer(["machineIdentifier": "machine-1"])
@@ -36,6 +44,14 @@ import Testing
                 ])
             case "/:/timeline", "/library/parts/9", "/video/:/transcode/universal/decision", "/video/:/transcode/universal/stop":
                 return Self.answer([:])
+            case "/library/metadata/14831":
+                return Self.answer(["Metadata": [Self.sharedEpisode()]])
+            case "/transcode/sessions":
+                return Self.answer(["TranscodeSession": [[
+                    "key": "/transcode/sessions/\(conversion.withLock { $0 })", "speed": 0.7, "throttled": false,
+                    "videoDecision": "transcode", "audioDecision": "transcode", "subtitleDecision": "burn",
+                    "transcodeHwFullPipeline": false, "transcodeHwDecoding": "qsv", "transcodeHwEncoding": "qsv",
+                ]]])
             default:
                 return PlexHTTPResponse(status: 404, body: Data())
             }
@@ -72,6 +88,39 @@ import Testing
             return item
         }
 
+        /// The stream set of report r2795: HEVC Main 10 1080p SDR in Matroska, AC3 5.1, a forced English subtitle inside
+        /// the file and a separate English one chosen on the server, and a thumbnail index on the part.
+        static func sharedEpisode() -> [String: Any] {
+            let streams: [[String: Any]] = [
+                [
+                    "id": 82676, "streamType": 1, "codec": "hevc", "bitDepth": 10, "width": 1920, "height": 1080,
+                    "chromaSubsampling": "4:2:0", "colorPrimaries": "bt709", "colorTrc": "bt709", "colorSpace": "bt709",
+                    "frameRate": 23.976, "level": 120, "bitrate": 3860,
+                ],
+                [
+                    "id": 82677, "streamType": 2, "codec": "ac3", "language": "English", "languageCode": "eng", "channels": 6,
+                    "bitrate": 448, "selected": true, "default": true,
+                ],
+                ["id": 82678, "streamType": 3, "codec": "srt", "language": "English", "languageCode": "eng", "forced": true, "default": true],
+                [
+                    "id": 82772, "streamType": 3, "codec": "srt", "format": "srt", "language": "English", "languageCode": "eng",
+                    "key": "/library/streams/82772", "selected": true,
+                ],
+            ]
+            return [
+                "ratingKey": "14831", "key": "/library/metadata/14831", "type": "movie", "title": "Introduction to Finality",
+                "duration": 2_700_000, "librarySectionID": 1,
+                "Media": [[
+                    "id": 7, "duration": 2_700_000, "bitrate": 4300, "width": 1920, "height": 1080, "videoCodec": "hevc",
+                    "audioCodec": "ac3", "container": "mkv",
+                    "Part": [[
+                        "id": 9, "key": "/library/parts/9/1/file.mkv", "duration": 2_700_000, "container": "mkv", "indexes": "sd",
+                        "Stream": streams,
+                    ]],
+                ]],
+            ]
+        }
+
         /// A second audio track, English text inside the file, and a separate Spanish file.
         static var moreTracks: [[String: Any]] {
             [
@@ -96,6 +145,13 @@ import Testing
             "hevc": true, "hevcMain10": true, "av1": false, "hdrDisplay": true, "dolbyVisionProfiles": [Int](),
             "nativeAudioCodecs": ["aac", "ac3", "eac3", "dca", "truehd"], "directContainers": ["mp4", "mkv"],
         ]
+    }
+
+    /// The same tablet with no AC3 decoder.
+    private static var tabletWithoutAC3: [String: Any] {
+        var capabilities = tablet
+        capabilities["nativeAudioCodecs"] = ["aac"]
+        return capabilities
     }
 
     private func services(_ server: Server) -> PlayServices {
@@ -126,6 +182,10 @@ import Testing
 
     private func route(_ plan: [String: Any]) throws -> [String: Any] {
         try #require(plan["route"] as? [String: Any])
+    }
+
+    private func query(_ url: URL?, _ name: String) -> String? {
+        url.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false) }?.queryItems?.first { $0.name == name }?.value
     }
 
     @Test func aMatroskaFileWithDTSPlaysDirectlyFromWhereItLeftOff() async throws {
@@ -259,6 +319,81 @@ import Testing
         }
     }
 
+    @Test func anAC3FilePlaysAsItIsOnATabletThatDecodesAC3() async throws {
+        let server = Server()
+        let services = services(server)
+        let plan = try await start(services, ["ratingKey": "14831"])
+
+        let route = try route(plan)
+        #expect(route["kind"] as? String == "directPlay")
+        #expect(route["reencodesVideo"] as? Bool == false)
+        #expect((route["reasons"] as? [String])?.isEmpty == true)
+        #expect(server.count("transcode") == 0)
+        // The server's selections stay as they are, and the screen is offered the part's thumbnail index.
+        #expect(server.count("/library/parts/9") == 0)
+        let thumbnails = try #require(plan["thumbnails"] as? [String: Any])
+        #expect(thumbnails["url"] as? String == "http://192.0.2.10:32400/library/parts/9/indexes/sd")
+        #expect((thumbnails["headers"] as? [String: String])?["X-Plex-Token"] == "token")
+
+        let session = try #require(plan["session"] as? String)
+        #expect(try await call("play.transcode", services, ["session": session])["active"] as? Bool == false)
+    }
+
+    @Test func withoutAnAC3DecoderTheServerCopiesTheVideoAndHasNoSubtitleToBurnIn() async throws {
+        let server = Server()
+        let services = services(server)
+        let plan = try await start(services, [
+            "ratingKey": "14831", "capabilities": Self.tabletWithoutAC3, "probe": ["bytes": 4_000_000, "seconds": 0.4],
+        ])
+
+        let route = try route(plan)
+        #expect(route["kind"] as? String == "serverTranscode")
+        #expect(route["reencodesVideo"] as? Bool == false)
+        #expect((route["reasons"] as? [String])?.count == 1)
+        let decision = server.lastURL("/video/:/transcode/universal/decision")
+        #expect(query(decision, "directStream") == "1")
+        #expect(query(decision, "subtitles") == "none")
+
+        // The server's own subtitle pick is cleared for the stream, so Plex has none to burn in beside the one the
+        // screen draws; it is put back when the stream ends.
+        #expect(server.count("/library/parts/9") == 1)
+        #expect(query(server.lastURL("/library/parts/9"), "subtitleStreamID") == "0")
+        let session = try #require(plan["session"] as? String)
+        _ = try await call("play.stop", services, ["session": session, "timeMs": 700_000, "durationMs": 2_700_000, "close": true])
+        #expect(server.count("/library/parts/9") == 2)
+        #expect(query(server.lastURL("/library/parts/9"), "subtitleStreamID") == "82772")
+    }
+
+    @Test func aFileBelowTheQualityCapKeepsItsVideoAtEightMbpsAndOnAuto() async throws {
+        for quality in [8000, -1] {
+            let plan = try await start(services(Server()), [
+                "ratingKey": "14831", "capabilities": Self.tabletWithoutAC3, "quality": quality,
+                "view": ["width": 3200, "height": 2136], "probe": ["bytes": 1_500_000, "seconds": 1.0],
+            ])
+
+            let route = try route(plan)
+            #expect(route["reasons"] as? [String] == ["AC3 audio"], "quality \(quality)")
+            #expect(route["reencodesVideo"] as? Bool == false, "quality \(quality)")
+        }
+    }
+
+    @Test func theServersOwnAccountOfTheConversionReachesTheScreen() async throws {
+        let server = Server()
+        let services = services(server)
+        let plan = try await start(services, [
+            "ratingKey": "14831", "capabilities": Self.tabletWithoutAC3, "probe": ["bytes": 4_000_000, "seconds": 0.4],
+        ])
+        let stream = try #require(plan["stream"] as? [String: Any])
+        server.conversion.withLock { $0 = stream["session"] as? String ?? "" }
+
+        let state = try await call("play.transcode", services, ["session": try #require(plan["session"] as? String)])
+        #expect(state["active"] as? Bool == true)
+        #expect(state["video"] as? String == "transcode")
+        #expect(state["subtitle"] as? String == "burn")
+        #expect(state["speed"] as? Double == 0.7)
+        #expect(state["throttled"] as? Bool == false)
+    }
+
     @Test func theQueueNamesTheNeighborsOfTheItemPlaying() async throws {
         let services = services(Server())
         let session = try #require(try await start(services, ["ratingKey": "2"])["session"] as? String)
@@ -267,5 +402,76 @@ import Testing
 
         #expect((neighbors["next"] as? [String: Any])?["ratingKey"] as? String == "3")
         #expect((neighbors["previous"] as? [String: Any])?["ratingKey"] as? String == "1")
+    }
+
+    @Test func autoplayFollowsTheProfilesRuleAtTheCreditsAndTheEnd() async throws {
+        let services = services(Server())
+        func rule(_ fields: [String: Any]) async throws -> [String: Any] {
+            var payload: [String: Any] = ["enabled": true, "credits": "countdown", "delay": 5, "creditsWatched": false]
+            payload.merge(fields) { $1 }
+            return try await call("play.autoplay", services, payload)
+        }
+
+        let counting = try await rule([:])
+        #expect(counting["atCredits"] as? String == "countdown")
+        #expect(counting["seconds"] as? Int == 5)
+        #expect(counting["playsNextAtEnd"] as? Bool == true)
+        #expect(try await rule(["credits": "skipInstantly"])["atCredits"] as? String == "playNow")
+        #expect(try await rule(["creditsWatched": true])["playsNextAtEnd"] as? Bool == false)
+        let off = try await rule(["enabled": false])
+        #expect(off["atCredits"] as? String == "offer")
+        #expect(off["playsNextAtEnd"] as? Bool == false)
+    }
+
+    @Test func aSkipThatDoesNotLandIsTriedOnceMoreThenGivenUp() async throws {
+        let services = services(Server())
+        let session = try #require(try await start(services)["session"] as? String)
+        func check(_ playhead: Double, advanced: Double = 1, pending: Bool = false) async throws -> String? {
+            let fields: [String: Any] = ["session": session, "playhead": playhead, "advanced": advanced, "pending": pending]
+            return try await call("play.skip.check", services, fields)["verdict"] as? String
+        }
+        #expect(try await check(10) == "none")
+
+        _ = try await call("play.skip.begin", services, ["session": session, "target": 90.0])
+        #expect(try await check(10) == "waiting")
+        #expect(try await check(11) == "waiting")
+        #expect(try await check(12) == "retry")
+        // A seek still on its way starts the count again.
+        #expect(try await check(12, pending: true) == "waiting")
+        #expect(try await check(12) == "waiting")
+        #expect(try await check(12) == "waiting")
+        #expect(try await check(12) == "missed")
+        #expect(try await check(12) == "none")
+
+        _ = try await call("play.skip.begin", services, ["session": session, "target": 90.0])
+        #expect(try await check(89.5) == "landed")
+        #expect(try await check(90) == "none")
+    }
+
+    @Test func tapsAreToldApartByTheModeAndTheThirdOfThePicture() async throws {
+        let services = services(Server())
+        let session = try #require(try await start(services)["session"] as? String)
+        func tap(_ x: Double, at: Double, mode: String) async throws -> [String: Any] {
+            try await call("play.tap", services, ["session": session, "mode": mode, "x": x, "width": 900.0, "at": at])
+        }
+
+        // A tap at a side waits for a second one; the middle only brings the controls.
+        let first = try await tap(100, at: 10, mode: "doubleTap")
+        #expect(first["action"] as? String == "single")
+        #expect(first["window"] as? Double == 0.3)
+        let second = try await tap(120, at: 10.2, mode: "doubleTap")
+        #expect(second["action"] as? String == "skip")
+        #expect(second["side"] as? String == "back")
+        #expect(try await tap(450, at: 10.6, mode: "doubleTap")["action"] as? String == "controls")
+
+        // Chained keeps skipping on the same side for 1.5 s after a skip.
+        #expect(try await tap(800, at: 20, mode: "chained")["action"] as? String == "single")
+        #expect(try await tap(800, at: 20.2, mode: "chained")["side"] as? String == "forward")
+        #expect(try await tap(800, at: 21, mode: "chained")["action"] as? String == "skip")
+        #expect(try await tap(800, at: 23, mode: "chained")["action"] as? String == "single")
+
+        // A reset forgets the first tap of a double-tap.
+        _ = try await call("play.tap.reset", services, ["session": session])
+        #expect(try await tap(800, at: 23.1, mode: "doubleTap")["action"] as? String == "single")
     }
 }

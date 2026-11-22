@@ -28,4 +28,12 @@ class PlayerSeekTest {
 		assertFalse(staysInStream(99.5, 100.0))
 		assertFalse(staysInStream(-1.0, 100.0))
 	}
+
+	@Test
+	fun aBufferingIsAStallOnlyOnceTheVideoHasStartedAndNoSeekCausedIt() {
+		assertTrue(beginsStall(started = true, counted = false, now = 10_000, seekedAt = 5_000))
+		assertFalse(beginsStall(started = false, counted = false, now = 10_000, seekedAt = 0))
+		assertFalse(beginsStall(started = true, counted = true, now = 10_000, seekedAt = 5_000))
+		assertFalse(beginsStall(started = true, counted = false, now = 10_000, seekedAt = 9_000))
+	}
 }
