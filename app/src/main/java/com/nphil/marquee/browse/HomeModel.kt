@@ -82,14 +82,16 @@ class HomeModel(private val env: BrowseEnvironment, private val place: BrowsePla
 	}.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeUi())
 
 	init {
-		// A library's hubs are asked for only while one of its rows is shown, so showing one reloads.
+		// A library's hubs are asked for only while one of its rows is shown, so showing one reloads. So does switching a
+		// library on or off in Favorite Libraries.
 		viewModelScope.launch {
 			combine(
 				layout.filterNotNull().map { it.shownLibraries }.distinctUntilChanged(),
+				env.preferences.hiddenLibraries(place.profile).distinctUntilChanged(),
 				env.changes.state.map { it.revision }.distinctUntilChanged(),
 				attempt,
-			) { libraries, _, _ -> libraries }.collectLatest { libraries ->
-				load(libraries)
+			) { libraries, hidden, _, _ -> libraries to hidden }.collectLatest { (libraries, hidden) ->
+				load(libraries, hidden)
 				pulling.value = false
 			}
 		}
@@ -210,11 +212,11 @@ class HomeModel(private val env: BrowseEnvironment, private val place: BrowsePla
 		env.scope.launch { env.preferences.setHomeLayout(place.profile, layout) }
 	}
 
-	private suspend fun load(libraries: Set<String>) {
+	private suspend fun load(libraries: Set<String>, hidden: Set<String>) {
 		val dismissed = env.preferences.rewatchDismissals(place.profile)
 		val snapshot = place.snapshot(env.snapshots)
 		fun request(mode: SnapshotMode, showing: Boolean) =
-			HomeLoad(libraries.toList(), emptyList(), dismissed, mode, snapshot, showing)
+			HomeLoad(libraries.toList(), hidden.toList(), dismissed, mode, snapshot, showing)
 
 		loader.load(
 			cached = {
@@ -243,8 +245,20 @@ class HomeModel(private val env: BrowseEnvironment, private val place: BrowsePla
 		if (followed != null) loader.update { it.copy(rows = followed, late = false) }
 	}
 
+	/** The shelf shows the last saved page at once, as the iPhone's does, and the live answer replaces it and records the next. */
 	private suspend fun loadWatchlist() {
 		val snapshot = place.snapshot(env.snapshots)
+		if (watchlist.value == null) {
+			val saved = try {
+				env.source.onAccount { token -> watchlistPage(token, 0, WATCHLIST_SHELF, snapshot, SnapshotMode.Saved) }
+			} catch (e: CancellationException) {
+				throw e
+			} catch (e: Exception) {
+				// Nothing is saved on a first launch or after a profile switch.
+				null
+			}
+			if (saved != null && watchlist.value == null) watchlist.value = saved
+		}
 		val page = try {
 			env.source.onAccount { token -> watchlistPage(token, 0, WATCHLIST_SHELF, snapshot, SnapshotMode.Live) }
 		} catch (e: CancellationException) {

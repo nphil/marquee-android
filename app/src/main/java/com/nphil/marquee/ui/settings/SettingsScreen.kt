@@ -56,6 +56,8 @@ enum class SettingsPage(val title: String) {
 	Profile("Profiles"),
 	Server("Servers"),
 	Appearance("Theme"),
+	TabBar("Tab Bar"),
+	FavoriteLibraries("Favorite Libraries"),
 	VideoPlayback("Video & Playback"),
 	Seerr("Seerr"),
 	DiagnosticLogs("Diagnostic Logs"),
@@ -126,7 +128,10 @@ private fun SettingsList(
 	val diagnosticsSummary = if (diagnostics?.let { it.configured && it.live } == true) "Sending live logs" else "Kept on this tablet"
 	val themeSummary = remember(choice) { summary(themes, choice) }
 	val playbackSummary = rememberPlaybackPrefs().value?.let { "Trailers ${onOff(it.playsTrailers)} · Theme music ${onOff(it.playsThemeMusic)}" } ?: ""
-	val seerr by LocalContext.current.container.seerr.config.collectAsStateWithLifecycle()
+	val container = LocalContext.current.container
+	val seerr by container.seerr.config.collectAsStateWithLifecycle()
+	val profile = state.user?.uuid.orEmpty()
+	val hidden by remember(profile) { container.browse.preferences.hiddenLibraries(profile) }.collectAsStateWithLifecycle(emptySet())
 	val seerrSummary = when {
 		seerr.enabled -> "On"
 		seerr.configured -> "Off"
@@ -153,9 +158,22 @@ private fun SettingsList(
 			}
 			item(key = "appearance") { Heading("Appearance") }
 			item(key = "theme") {
-				PageRow(0, 1, SettingsPage.Appearance, selected, onOpen) {
+				PageRow(0, 2, SettingsPage.Appearance, selected, onOpen) {
 					IconBadge(R.drawable.ic_palette)
 					Labels("Theme", themeSummary)
+				}
+			}
+			item(key = "tabBar") {
+				PageRow(1, 2, SettingsPage.TabBar, selected, onOpen) {
+					IconBadge(R.drawable.ic_grid_view)
+					Labels("Tab Bar", "Which places are tabs, and their order")
+				}
+			}
+			item(key = "library") { Heading("Library") }
+			item(key = "favoriteLibraries") {
+				PageRow(0, 1, SettingsPage.FavoriteLibraries, selected, onOpen) {
+					IconBadge(R.drawable.ic_video_library)
+					Labels("Favorite Libraries", if (hidden.isEmpty()) "All" else "Some")
 				}
 			}
 			item(key = "playback") { Heading("Playback") }
@@ -224,7 +242,7 @@ private fun Chevron(@DrawableRes icon: Int) {
 }
 
 @Composable
-private fun Heading(text: String) {
+internal fun Heading(text: String) {
 	Text(
 		text,
 		style = MaterialTheme.typography.labelLarge,
@@ -261,6 +279,8 @@ private fun SettingsDetail(
 			SettingsPage.Profile -> ProfilesPage(session, padding.plusInset())
 			SettingsPage.Server -> ServerList(session, isRoot = false, onChosen = { onBack?.invoke() }, contentPadding = padding)
 			SettingsPage.Appearance -> AppearancePage(themes, choice, onTheme, padding.plusInset())
+			SettingsPage.TabBar -> TabBarPage(padding.plusInset())
+			SettingsPage.FavoriteLibraries -> FavoriteLibrariesPage(session, padding.plusInset())
 			SettingsPage.DiagnosticLogs -> DiagnosticLogsPage(padding.plusInset())
 			SettingsPage.VideoPlayback -> VideoPlaybackPage(padding.plusInset())
 			SettingsPage.Seerr -> SeerrPage(padding.plusInset())

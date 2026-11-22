@@ -64,7 +64,7 @@ class SnapshotSpec(val directory: String, val server: String, val profile: Strin
 class HomeLoad(
 	/** The libraries with a shown row ([HomeLayout.shownLibraries]); Home asks only these for their hubs. */
 	val libraries: List<String>,
-	/** Libraries switched off under Favorite Libraries, which the app has no page for yet. */
+	/** Libraries switched off under Favorite Libraries, by library id. */
 	val hidden: List<String> = emptyList(),
 	/** The shows taken off Continue Watching: [RewatchDismissals] as the bridge hands them back. */
 	val dismissed: JsonObject? = null,
