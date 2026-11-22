@@ -23,6 +23,7 @@ import com.nphil.marquee.ui.shell.Shell
 import com.nphil.marquee.ui.signin.SignInScreen
 import com.nphil.marquee.ui.theme.ThemeChoice
 import com.nphil.marquee.ui.theme.lucent
+import com.nphil.marquee.ui.tvremote.TvRemoteOverlay
 
 private enum class RootScreen { SignIn, Servers, Shell }
 
@@ -60,5 +61,6 @@ fun MarqueeApp(container: AppContainer, choice: ThemeChoice, onTheme: ((ThemeCho
 				RootScreen.Shell -> AppNavigation(container) { Shell(container, choice, onTheme) }
 			}
 		}
+		TvRemoteOverlay(container.tvRemote)
 	}
 }

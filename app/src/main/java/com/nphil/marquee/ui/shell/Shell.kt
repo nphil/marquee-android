@@ -25,6 +25,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -37,8 +38,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.layout
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nphil.marquee.AppContainer
 import com.nphil.marquee.browse.BrowseEnvironment
@@ -57,6 +58,7 @@ import com.nphil.marquee.ui.search.SearchScreen
 import com.nphil.marquee.ui.settings.SettingsScreen
 import com.nphil.marquee.ui.theme.ThemeChoice
 import com.nphil.marquee.ui.theme.lucent
+import com.nphil.marquee.ui.tvremote.RemoteEntryIcon
 import com.nphil.marquee.ui.watchlist.WatchlistScreen
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -111,8 +113,10 @@ private fun ShellPages(
 	behavior: TabBarBehavior,
 	choice: ThemeChoice,
 	onTheme: ((ThemeChoice) -> ThemeChoice) -> Unit,
-) {
-	val wide = LocalConfiguration.current.screenWidthDp >= WIDE_WIDTH_DP
+) = BoxWithConstraints(Modifier.fillMaxSize()) {
+	val wide = maxWidth >= WIDE_WIDTH_DP.dp
+	val remote = container.tvRemote.state.collectAsStateWithLifecycle()
+	val remoteEnabled by remember(remote) { derivedStateOf { remote.value.enabled } }
 	val session by container.session.state.collectAsStateWithLifecycle()
 	val settingsProfile = session.user
 	val available = remember(seerr) { TabLayout.available(seerr) }
@@ -146,7 +150,7 @@ private fun ShellPages(
 	LaunchedEffect(showing) { DiagScreen.tab(opened?.title ?: if (page == SETTINGS_KEY) "Settings" else Destination.valueOf(page).title) }
 
 	val pages: @Composable (Modifier) -> Unit = { modifier ->
-		Pages(showing, tabs, wide, container, env, place, places, choice, onTheme, settingsProfile, onSettings = { select(SETTINGS_KEY) }, onBack = { savedPlace = null }, modifier)
+		Pages(showing, tabs, wide, container, env, place, places, choice, onTheme, settingsProfile, remoteEnabled, onSettings = { select(SETTINGS_KEY) }, onBack = { savedPlace = null }, modifier)
 	}
 
 	if (!wide) {
@@ -182,36 +186,35 @@ private fun ShellPages(
 		) { padding ->
 			pages(Modifier.padding(padding).consumeWindowInsets(padding).nestedScroll(scroll))
 		}
-		return
+		return@BoxWithConstraints
 	}
 
 	var expanded by rememberSaveable { mutableStateOf(rememberedExpanded ?: true) }
 	val scope = rememberCoroutineScope()
 	val startInsets = WindowInsets.systemBars.union(WindowInsets.displayCutout).only(WindowInsetsSides.Start)
-	BoxWithConstraints(Modifier.fillMaxSize().background(lucent.canvas)) {
-		val shellWidth = constraints.maxWidth
-		Row(Modifier.fillMaxSize()) {
-			MarqueeSidebar(
-				destinations = tabs.map { it.sidebarEntry() },
-				selected = page,
-				onSelect = select,
-				expanded = expanded,
-				onToggle = {
-					expanded = !expanded
-					scope.launch { env.preferences.setSidebarExpanded(expanded) }
-				},
-				settingsProfile = settingsProfile,
-			)
-			pages(Modifier.weight(1f).fillMaxHeight().clipToBounds().layout { child, available ->
-				val full = shellWidth - startInsets.getLeft(this, layoutDirection) - startInsets.getRight(this, layoutDirection)
-				// Slide the wide page behind the trailing clip. Reflow posters once, not at each spring step.
-				val narrow = (full - ExpandedWidth.roundToPx()).coerceAtLeast(0)
-				val width = if (expanded && available.maxWidth <= narrow) available.maxWidth
-					else (full - CollapsedWidth.roundToPx()).coerceAtLeast(available.maxWidth)
-				val page = child.measure(available.copy(minWidth = width, maxWidth = width))
-				layout(available.maxWidth, page.height) { page.placeRelative(0, 0) }
-			}.consumeWindowInsets(startInsets))
-		}
+	val shellWidth = constraints.maxWidth
+	Row(Modifier.fillMaxSize().background(lucent.canvas)) {
+		MarqueeSidebar(
+			destinations = tabs.map { it.sidebarEntry() },
+			selected = page,
+			onSelect = select,
+			expanded = expanded,
+			onToggle = {
+				expanded = !expanded
+				scope.launch { env.preferences.setSidebarExpanded(expanded) }
+			},
+			settingsProfile = settingsProfile,
+			onRemote = if (remoteEnabled) container.tvRemote::open else null,
+		)
+		pages(Modifier.weight(1f).fillMaxHeight().clipToBounds().layout { child, available ->
+			val full = shellWidth - startInsets.getLeft(this, layoutDirection) - startInsets.getRight(this, layoutDirection)
+			// Slide the wide page behind the trailing clip. Reflow posters once, not at each spring step.
+			val narrow = (full - ExpandedWidth.roundToPx()).coerceAtLeast(0)
+			val width = if (expanded && available.maxWidth <= narrow) available.maxWidth
+				else (full - CollapsedWidth.roundToPx()).coerceAtLeast(available.maxWidth)
+			val page = child.measure(available.copy(minWidth = width, maxWidth = width))
+			layout(available.maxWidth, page.height) { page.placeRelative(0, 0) }
+		}.consumeWindowInsets(startInsets))
 	}
 }
 
@@ -227,6 +230,7 @@ private fun Pages(
 	choice: ThemeChoice,
 	onTheme: ((ThemeChoice) -> ThemeChoice) -> Unit,
 	settingsProfile: PlexHomeUser?,
+	remoteEnabled: Boolean,
 	onSettings: () -> Unit,
 	onBack: () -> Unit,
 	modifier: Modifier,
@@ -252,6 +256,7 @@ private fun Pages(
 					places = places,
 					trailing = {
 						if (!wide) {
+							if (remoteEnabled) RemoteEntryIcon(onClick = container.tvRemote::open)
 							CompactSettingsButton(settingsProfile, onClick = onSettings)
 						}
 					},

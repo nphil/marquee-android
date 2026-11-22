@@ -61,6 +61,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.constrainWidth
 import androidx.compose.ui.unit.dp
+import com.nphil.marquee.R
 import com.nphil.marquee.core.PlexHomeUser
 import com.nphil.marquee.diagnostics.Diag
 import com.nphil.marquee.diagnostics.DiagCategory
@@ -86,7 +87,7 @@ class SidebarDestination(
  * applies the start, top and bottom bar and cutout insets itself, so give it none and keep those insets off the
  * content's start edge. Its width is 72 dp rail or 236 dp open, plus the start inset.
  *
- * [destinations] scroll and Settings stays pinned to the bottom. [selected] is a [SidebarDestination.key]
+ * [destinations] scroll; [onRemote], when present, and Settings stay pinned to the bottom. [selected] is a [SidebarDestination.key]
  * or [SETTINGS_KEY].
  */
 @Composable
@@ -98,6 +99,7 @@ fun MarqueeSidebar(
 	onToggle: () -> Unit,
 	settingsProfile: PlexHomeUser?,
 	modifier: Modifier = Modifier,
+	onRemote: (() -> Unit)? = null,
 ) {
 	val theme = lucent
 	// Both animations are read only in layout and draw below, so a toggle never recomposes the items. The
@@ -158,7 +160,12 @@ fun MarqueeSidebar(
 			}
 		}
 		Spacer(Modifier.height(Space.s2))
-		Column(Modifier.selectableGroup()) {
+		Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(Space.s1)) {
+			if (onRemote != null) {
+				SidebarItem("tv-remote", "TV Remote", false, labelAlpha, { onRemote() }, role = Role.Button) { tint ->
+					Icon(painterResource(R.drawable.ic_tv_remote), contentDescription = null, modifier = Modifier.size(IconSize), tint = tint)
+				}
+			}
 			SidebarItem(SETTINGS_KEY, SettingsLabel, selected == SETTINGS_KEY, labelAlpha, onSelect) {
 				SettingsAvatar(settingsProfile)
 			}
@@ -264,6 +271,7 @@ private fun SidebarItem(
 	selected: Boolean,
 	labelAlpha: () -> Float,
 	onSelect: (String) -> Unit,
+	role: Role = Role.Tab,
 	icon: @Composable (tint: Color) -> Unit,
 ) {
 	val theme = lucent
@@ -283,7 +291,10 @@ private fun SidebarItem(
 			.height(Size.target)
 			.clip(MaterialTheme.shapes.large)
 			.drawBehind { drawRect(pill.value) }
-			.selectable(selected = selected, role = Role.Tab) { onSelect(key) }
+			.then(
+				if (role == Role.Tab) Modifier.selectable(selected = selected, role = role) { onSelect(key) }
+				else Modifier.clickable(role = role) { onSelect(key) },
+			)
 			// The label is mostly invisible in the rail, so the row carries the name itself.
 			.semantics { contentDescription = label },
 		verticalAlignment = Alignment.CenterVertically,

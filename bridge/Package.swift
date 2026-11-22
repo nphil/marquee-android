@@ -14,6 +14,7 @@ let package = Package(
     ],
     dependencies: [
         .package(path: "../core/Packages/MarqueeCore"),
+        .package(url: "https://github.com/nphil/LumaRemoteKit", exact: "1.0.3"),
     ],
     targets: [
         .target(name: "CMarqueeJNI"),
@@ -30,6 +31,7 @@ let package = Package(
                 "CMarqueeJNI",
                 "MarqueeDiagnostics",
                 .product(name: "MarqueeCore", package: "MarqueeCore"),
+                .product(name: "LumaRemoteCore", package: "LumaRemoteKit"),
             ]
         ),
         .testTarget(
@@ -44,8 +46,11 @@ let package = Package(
         .testTarget(
             name: "MarqueeBridgeTests",
             dependencies: [
+                "CMarqueeJNI",
                 "MarqueeBridge",
                 .product(name: "MarqueeCore", package: "MarqueeCore"),
+                .product(name: "LumaRemoteCore", package: "LumaRemoteKit"),
+                .product(name: "LumaRemoteFakeTV", package: "LumaRemoteKit"),
             ]
         ),
     ]

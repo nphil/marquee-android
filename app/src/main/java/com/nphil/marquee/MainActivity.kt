@@ -1,5 +1,6 @@
 package com.nphil.marquee
 
+import android.content.Intent
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
@@ -50,6 +51,7 @@ class MainActivity : ComponentActivity() {
 		reportButton = ReportButtonHost(this).also { it.attach() }
 		val container = container
 		var ready = false
+		openRemoteInvite(intent)
 		// The splash stays until the first frame can show the chosen theme on the screen the kept sign-in
 		// leads to, so neither flashes.
 		splash.setKeepOnScreenCondition { !ready }
@@ -72,6 +74,19 @@ class MainActivity : ComponentActivity() {
 			container.session.state.first { it.phase != AppSession.Phase.Restoring }
 			setContent { Root(container, initial) }
 			ready = true
+		}
+	}
+
+	override fun onNewIntent(intent: Intent) {
+		super.onNewIntent(intent)
+		openRemoteInvite(intent)
+	}
+
+	private fun openRemoteInvite(intent: Intent) {
+		val data = intent.data ?: return
+		if (intent.action == Intent.ACTION_VIEW && data.scheme == "lumaremote" && data.host == "pair") {
+			container.tvRemote.openInvite(data.toString())
+			intent.data = null
 		}
 	}
 

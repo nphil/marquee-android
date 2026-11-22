@@ -1,6 +1,15 @@
 {
-  "originHash" : "380e18fc8fc68d497401416c4c4c3373adbc716763160e67749a6255b270a606",
+  "originHash" : "cb2fabbf2d059260322ae3119736bf8fff94aa4e3356f6357151dc4d08e6b1d8",
   "pins" : [
+    {
+      "identity" : "lumaremotekit",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/nphil/LumaRemoteKit",
+      "state" : {
+        "revision" : "4c45a3885202bcc5e024aa69c8de47839a328bec",
+        "version" : "1.0.3"
+      }
+    },
     {
       "identity" : "swift-asn1",
       "kind" : "remoteSourceControl",

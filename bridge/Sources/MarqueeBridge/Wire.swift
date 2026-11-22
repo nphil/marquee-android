@@ -136,6 +136,9 @@ struct Failure: Encodable {
         case let error as SeerrAddressInvalid:
             kind = "badRequest"
             message = "invalid Seerr address: \(error.problem)"
+        case let error as RemoteFailure:
+            kind = "remote"
+            message = error.message
         case is CancellationError:
             kind = "cancelled"
         case is DecodingError:

@@ -65,6 +65,7 @@ enum class SettingsPage(val title: String) {
 	Seerr("Seerr"),
 	Bazarr("Bazarr"),
 	SpeechDock("SpeechDock"),
+	TvRemote("LumaTV Remote"),
 	DiagnosticLogs("Diagnostic Logs"),
 	Licences("Licences"),
 }
@@ -139,6 +140,7 @@ private fun SettingsList(
 	val seerr by container.seerr.config.collectAsStateWithLifecycle()
 	val bazarr by container.subtitleServices.bazarr.collectAsStateWithLifecycle()
 	val speechDock by container.subtitleServices.speechDock.collectAsStateWithLifecycle(null)
+	val remote by container.tvRemote.state.collectAsStateWithLifecycle()
 	val profile = state.user?.uuid.orEmpty()
 	val hidden by remember(profile) { container.browse.preferences.hiddenLibraries(profile) }.collectAsStateWithLifecycle(emptySet())
 	val seerrSummary = when {
@@ -200,21 +202,27 @@ private fun SettingsList(
 			}
 			item(key = "integrations") { Heading("Integrations") }
 			item(key = "seerr") {
-				PageRow(0, 3, SettingsPage.Seerr, selected, onOpen) {
+				PageRow(0, 4, SettingsPage.Seerr, selected, onOpen) {
 					IconBadge(R.drawable.ic_playlist_add)
 					Labels("Seerr", seerrSummary)
 				}
 			}
 			item(key = "bazarr") {
-				PageRow(1, 3, SettingsPage.Bazarr, selected, onOpen) {
+				PageRow(1, 4, SettingsPage.Bazarr, selected, onOpen) {
 					IconBadge(R.drawable.ic_closed_caption)
 					Labels("Bazarr", if (bazarr == null) "Not set up" else "Subtitle search")
 				}
 			}
 			item(key = "speechDock") {
-				PageRow(2, 3, SettingsPage.SpeechDock, selected, onOpen) {
+				PageRow(2, 4, SettingsPage.SpeechDock, selected, onOpen) {
 					IconBadge(R.drawable.ic_match_case)
 					Labels("SpeechDock", if (speechDock == null) "Off" else "Spoken subtitle timing")
+				}
+			}
+			item(key = "tvRemote") {
+				PageRow(3, 4, SettingsPage.TvRemote, selected, onOpen) {
+					IconBadge(R.drawable.ic_tv_remote)
+					Labels(SettingsPage.TvRemote.title, if (remote.enabled) "On" else "Off")
 				}
 			}
 			item(key = "about") { Heading("About") }
@@ -315,6 +323,7 @@ private fun SettingsDetail(
 			SettingsPage.Seerr -> SeerrPage(padding.plusInset())
 			SettingsPage.Bazarr -> SubtitleServicePage(SubtitleService.Bazarr, padding.plusInset())
 			SettingsPage.SpeechDock -> SubtitleServicePage(SubtitleService.SpeechDock, padding.plusInset())
+			SettingsPage.TvRemote -> TvRemoteSettings(padding.plusInset())
 			SettingsPage.Licences -> LicencesPage(padding.plusInset())
 		}
 	}

@@ -27,6 +27,7 @@ import com.nphil.marquee.live.LiveTv
 import com.nphil.marquee.playback.PlaybackCoordinator
 import com.nphil.marquee.seerr.Seerr
 import com.nphil.marquee.session.AppSession
+import com.nphil.marquee.tvremote.TvRemote
 import com.nphil.marquee.ui.components.ToastCenter
 import com.nphil.marquee.ui.theme.ThemeCatalog
 import com.nphil.marquee.ui.theme.Themes
@@ -58,6 +59,7 @@ class AppContainer(
 	/** Requests: off until Settings › Integrations › Seerr turns it on. Its own secrets survive a Plex sign-out. */
 	val seerr = Seerr(core, settings, SecretStore(context, "seerr"), session, scope)
 	internal val subtitleServices = SubtitleServices(settings, SecretStore(context, "subtitle_services"), scope)
+	internal val tvRemote by lazy { TvRemote(context.applicationContext, scope) }
 
 	/** What this app changed on the server, so every screen showing a changed title refreshes it. */
 	val changes = LibraryChanges()

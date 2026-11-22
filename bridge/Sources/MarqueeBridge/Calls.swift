@@ -108,6 +108,8 @@ final class Methods: Sendable {
             return try await SubtitleCalls.handle(method, payload, using: playServices)
         case _ where method.hasPrefix("download."):
             return try await DownloadCalls.handle(method, payload, library: library(for:))
+        case _ where RemoteCalls.handles(method):
+            return try await RemoteCalls.handle(method, payload)
         default:
             throw BridgeError.unknownMethod(method)
         }
