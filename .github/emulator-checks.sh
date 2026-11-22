@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Runs inside the CI emulator (x86_64): the Swift bridge test, the baseline profile the release build
-# ships, and cold starts of the release build. Results go to the job summary.
+# Runs inside the CI emulator (x86_64): the instrumented tests (the Swift bridge test, and the review
+# screenshots), the baseline profile the release build ships, and cold starts of the release build. Results
+# go to the job summary.
 set -euo pipefail
 
 gradle=(./gradlew --no-daemon -Pmarquee.abis=x86_64)
@@ -8,7 +9,23 @@ app=com.nphil.marquee
 summary="${GITHUB_STEP_SUMMARY:-/dev/stdout}"
 
 adb logcat -c
-"${gradle[@]}" :app:connectedDebugAndroidTest
+# The tests copy their review screenshots here, outside the app's own storage, so they outlive the uninstall
+# that ends the Gradle run. It is emptied first so a pull holds only this run's.
+review=/sdcard/Download/marquee-review
+shots=app/build/review-screenshots
+adb shell rm -rf "$review"
+tests=0
+"${gradle[@]}" :app:connectedDebugAndroidTest || tests=$?
+# Pulled whether the tests passed or not, and never a failure of its own: the tests' result is the script's.
+mkdir -p "$shots"
+adb pull "$review/." "$shots" | tail -n 1 || true
+count=$(find "$shots" -name '*.png' | wc -l)
+[ "$count" -gt 0 ] || echo "::warning title=Review screenshots::the tests published none"
+{
+	echo "### Review screenshots"
+	echo "$count images in the review-screenshots artifact. Emulator display: $(adb shell wm size | tr -d '\r' | paste -sd' ' -), $(adb shell wm density | tr -d '\r' | paste -sd' ' -)."
+} | tee -a "$summary"
+[ "$tests" -eq 0 ] || exit "$tests"
 {
 	echo "### Bridge test"
 	echo '```'

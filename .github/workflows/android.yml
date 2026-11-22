@@ -208,11 +208,21 @@ jobs:
           api-level: 34
           target: google_apis
           arch: x86_64
+          profile: pixel_6
           ram-size: 4096M
           disk-size: 6000M
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
           script: bash .github/emulator-checks.sh
+
+      - name: Upload review screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: review-screenshots
+          path: app/build/review-screenshots
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Upload test reports
         if: failure()

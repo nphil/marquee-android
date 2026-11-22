@@ -43,6 +43,8 @@ import androidx.compose.ui.unit.width
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.nphil.marquee.R
+import com.nphil.marquee.testing.Device
+import com.nphil.marquee.testing.DeviceWindow
 import com.nphil.marquee.testing.saveScreenshot
 import com.nphil.marquee.ui.theme.LucentTheme
 import com.nphil.marquee.ui.theme.MarqueeTheme
@@ -63,8 +65,8 @@ import org.junit.runner.RunWith
 
 /**
  * The sidebar's behaviour, and its review screenshots: closed, open, part-way through opening, and on a light
- * theme. The sidebar sits in a column the height of the window with a strip of placeholder content beside it, so
- * the screenshots fit whatever window the emulator has.
+ * theme, in a tablet-sized window. The sidebar sits in a column the height of the window with a strip of
+ * placeholder content beside it, so the screenshots fit whatever screen the emulator has.
  */
 @RunWith(AndroidJUnit4::class)
 class SidebarScreenshotTest {
@@ -77,11 +79,11 @@ class SidebarScreenshotTest {
 	@Test
 	fun closedThenOpen() {
 		show()
-		rule.onNodeWithTag(Shell).saveScreenshot("sidebar-collapsed")
+		rule.onNodeWithTag(Shell).saveScreenshot("sidebar-tablet-closed")
 
 		brand().performClick()
 		rule.waitForIdle()
-		rule.onNodeWithTag(Shell).saveScreenshot("sidebar-expanded")
+		rule.onNodeWithTag(Shell).saveScreenshot("sidebar-tablet-open")
 	}
 
 	@Test
@@ -96,7 +98,7 @@ class SidebarScreenshotTest {
 		brand().performClick()
 		rule.mainClock.advanceTimeBy(MidAnimationMillis)
 		val moving = sidebarWidth()
-		rule.onNodeWithTag(Shell).saveScreenshot("sidebar-animating")
+		rule.onNodeWithTag(Shell).saveScreenshot("sidebar-tablet-opening")
 
 		rule.mainClock.autoAdvance = true
 		rule.waitForIdle()
@@ -110,7 +112,7 @@ class SidebarScreenshotTest {
 	fun lightTheme() {
 		expanded.value = true
 		show(LucentTheme.DEFAULT_LIGHT, ThemeMode.Light)
-		rule.onNodeWithTag(Shell).saveScreenshot("sidebar-expanded-light")
+		rule.onNodeWithTag(Shell).saveScreenshot("sidebar-tablet-open-light")
 	}
 
 	@Test
@@ -194,17 +196,19 @@ class SidebarScreenshotTest {
 	private fun show(id: String = LucentTheme.DEFAULT_DARK, mode: ThemeMode = ThemeMode.Dark) {
 		val (resolved, typography) = resolveTheme(id, mode)
 		rule.setContent {
-			MarqueeTheme(resolved, typography) {
-				Row(Modifier.fillMaxHeight().background(lucent.canvas).testTag(Shell)) {
-					MarqueeSidebar(
-						destinations = destinations,
-						selected = selected.value,
-						onSelect = { selected.value = it },
-						expanded = expanded.value,
-						onToggle = { expanded.value = !expanded.value },
-						footer = footer,
-					)
-					PlaceholderContent()
+			DeviceWindow(Device.Tablet) {
+				MarqueeTheme(resolved, typography) {
+					Row(Modifier.fillMaxHeight().background(lucent.canvas).testTag(Shell)) {
+						MarqueeSidebar(
+							destinations = destinations,
+							selected = selected.value,
+							onSelect = { selected.value = it },
+							expanded = expanded.value,
+							onToggle = { expanded.value = !expanded.value },
+							footer = footer,
+						)
+						PlaceholderContent()
+					}
 				}
 			}
 		}
