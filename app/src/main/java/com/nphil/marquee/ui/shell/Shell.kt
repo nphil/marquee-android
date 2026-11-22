@@ -36,7 +36,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.painterResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.nphil.marquee.AppContainer
 import com.nphil.marquee.R
 import com.nphil.marquee.browse.BrowseEnvironment
@@ -46,7 +45,6 @@ import com.nphil.marquee.core.TabLayout
 import com.nphil.marquee.diagnostics.DiagScreen
 import com.nphil.marquee.ui.home.HomeScreen
 import com.nphil.marquee.ui.library.LibraryScreen
-import com.nphil.marquee.ui.library.LibraryViewModel
 import com.nphil.marquee.ui.requests.RequestsDestination
 import com.nphil.marquee.ui.search.SearchScreen
 import com.nphil.marquee.ui.settings.SettingsScreen
@@ -188,7 +186,6 @@ private fun Pages(
 	onPage: (Page) -> Unit,
 	modifier: Modifier,
 ) {
-	val libraryModel = viewModel { LibraryViewModel(container.session) }
 	val effects = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
 	Crossfade(targetState = page, modifier = modifier, animationSpec = effects, label = "page") { shown ->
 		when (shown) {
@@ -206,7 +203,7 @@ private fun Pages(
 					}
 				},
 			)
-			Page.Library -> LibraryScreen(container.session, libraryModel)
+			Page.Library -> LibraryScreen(env, place, onSignIn = container.session::signOut)
 			Page.Watchlist -> WatchlistScreen(env, place, onSignIn = container.session::signOut)
 			Page.Requests -> RequestsDestination(container)
 			Page.Search -> SearchScreen(env, place)
