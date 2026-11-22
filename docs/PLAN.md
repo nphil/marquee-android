@@ -34,8 +34,11 @@ core/       git submodule: nphil/marquee-ios, pinned; MarqueeCore and the shared
 - **Plex requests.** Core sends requests through its `PlexTransport` seam. On Android the transport is
   OkHttp, supplied from Kotlin, so requests use Android's certificate store, HTTP/2 and network callbacks.
 - **Player.** Media3 ExoPlayer plays MKV, MP4 and the server's HLS directly. Audio the device cannot
-  decode (DTS, TrueHD and similar) goes through Media3's FFmpeg decoder extension; passthrough to a
-  receiver where one is attached. Subtitles: SRT sidecars as on iPhone, a cue starting `{\an8}` at the
+  decode (DTS, TrueHD and similar, read from `MediaCodecList`) is declared unsupported, so Core's route
+  has Plex convert only the audio and copy the video (a direct stream). The FFmpeg decoder extension is
+  not used: its wrapper is GPLv3, and a tablet's speakers and Bluetooth cannot output those formats
+  anyway. Passthrough to a receiver stays Media3's own where one is attached. Subtitles: SRT sidecars
+  as on iPhone, a cue starting `{\an8}` at the
   top, and the file's own text and picture (PGS, VobSub) tracks; which audio and subtitle play is Core's
   `TrackRules`. VideoEngine's on-device remux is not used: Android needs no repackaging.
 - **UI.** Compose with Material 3 Expressive. `NavigationSuiteScaffold` gives a rail on tablets and a bar

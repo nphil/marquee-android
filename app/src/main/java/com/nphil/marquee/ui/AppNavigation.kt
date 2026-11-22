@@ -53,6 +53,7 @@ import com.nphil.marquee.ui.components.ToastHost
 import com.nphil.marquee.ui.detail.DetailScreen
 import com.nphil.marquee.ui.detail.ExtraScreen
 import com.nphil.marquee.ui.detail.PersonScreen
+import com.nphil.marquee.ui.player.PlayerScreen
 import com.nphil.marquee.ui.theme.Radius
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -83,6 +84,10 @@ data class Person(val id: String, val name: String) : Route
 /** A trailer or other bonus video, full screen. */
 @Serializable
 data class Extra(val item: PlexItem) : Route
+
+/** A title playing full screen. [fromStart] plays from the beginning instead of resuming. */
+@Serializable
+data class Play(val ratingKey: String, val fromStart: Boolean = false) : Route
 
 /** The back stack, for the screens that open pages. */
 @Stable
@@ -139,6 +144,9 @@ class Navigator internal constructor(
 	}
 
 	fun openExtra(item: PlexItem) = push(Extra(item))
+
+	/** Plays [ratingKey] full screen: where the server says it was left, or from the start. */
+	fun openPlayer(ratingKey: String, fromStart: Boolean = false) = push(Play(ratingKey, fromStart))
 
 	fun back() {
 		if (stack.size > 1) stack.removeAt(stack.lastIndex)
@@ -242,6 +250,7 @@ private val BackStack = SavedStateConfiguration {
 			subclass(Detail::class)
 			subclass(Person::class)
 			subclass(Extra::class)
+			subclass(Play::class)
 		}
 	}
 }
@@ -277,6 +286,7 @@ fun AppNavigation(container: AppContainer, shell: @Composable (Navigator) -> Uni
 						entry<Detail> { route -> Visible { DetailScreen(container, route, navigator) } }
 						entry<Person> { route -> Visible { PersonScreen(container, route, navigator) } }
 						entry<Extra> { route -> Visible { ExtraScreen(route.item, navigator) } }
+						entry<Play> { route -> Visible { PlayerScreen(route.ratingKey, route.fromStart, navigator::back) } }
 					},
 				)
 			}

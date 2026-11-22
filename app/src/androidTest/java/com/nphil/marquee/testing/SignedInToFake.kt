@@ -26,15 +26,19 @@ private const val SignInMillis = 20_000L
 /** The file the fixtures would hold for Elephants Dream's trailer; they hold none. */
 private const val TrailerPart = "pms/library/parts/91051/1/trailer.mp4.bin"
 
+/** The file the fixtures would hold for Elephants Dream itself; they hold none either. */
+private const val FilmPart = "pms/library/parts/1051/file.mp4.bin"
+
 /**
  * The real app container signed in to the fake Plex of core/UITests/FakePlex the way a returning person is, with its
  * artwork served by the fake too. A test that renders the real screens takes it as a rule and shows
  * [com.nphil.marquee.ui.MarqueeApp] over [container].
  *
  * The fixtures have no trailer file, and without one the server answers the player with filler it cannot play.
- * [trailer], an androidTest asset such as `trailers/scope.mp4`, is the file Elephants Dream's trailer plays.
+ * [trailer], an androidTest asset such as `trailers/scope.mp4`, is the file Elephants Dream's trailer plays, and [film]
+ * the file the movie itself plays.
  */
-class SignedInToFake(private val trailer: String? = null) : ExternalResource() {
+class SignedInToFake(private val trailer: String? = null, private val film: String? = null) : ExternalResource() {
 	private val instrumentation = InstrumentationRegistry.getInstrumentation()
 	val context: Context = instrumentation.targetContext
 	val container: AppContainer get() = context.container
@@ -45,7 +49,7 @@ class SignedInToFake(private val trailer: String? = null) : ExternalResource() {
 		private set
 
 	override fun before() {
-		fake = if (trailer == null) FakePlexServer.start(instrumentation.context) else FakePlexServer.start(fixturesWith(trailer))
+		fake = if (trailer == null && film == null) FakePlexServer.start(instrumentation.context) else FakePlexServer.start(fixturesWith())
 		fake.install()
 		runBlocking { container.core.reset() }
 		// What a returning person has kept: AppSession's own TOKEN and SERVERS entries.
@@ -77,11 +81,17 @@ class SignedInToFake(private val trailer: String? = null) : ExternalResource() {
 		browse.preferences.block(place.profile)
 	}
 
-	private fun fixturesWith(trailer: String): Fixtures {
+	private fun fixturesWith(): Fixtures {
 		val assets = instrumentation.context.assets
 		return Fixtures { path ->
 			try {
-				assets.open(if (path == TrailerPart) trailer else path).use { it.readBytes() }
+				assets.open(
+					when (path) {
+						TrailerPart -> trailer ?: path
+						FilmPart -> film ?: path
+						else -> path
+					},
+				).use { it.readBytes() }
 			} catch (_: IOException) {
 				null
 			}

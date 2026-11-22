@@ -1,11 +1,14 @@
 package com.nphil.marquee.ui.settings
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
@@ -14,7 +17,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberSliderState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -24,6 +29,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nphil.marquee.R
 import com.nphil.marquee.container
+import com.nphil.marquee.core.DirectPlayMode
+import com.nphil.marquee.core.QualityPreset
 import com.nphil.marquee.data.PlaybackPrefs
 import com.nphil.marquee.playback.rememberPlaybackPrefs
 import com.nphil.marquee.ui.components.GroupGap
@@ -35,8 +42,8 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 /**
- * Video & Playback (DESIGN §8.7): the hero trailer, and a show's theme music with its volume. Saved for the active
- * profile and applied at once.
+ * Video & Playback (DESIGN §8.7): how titles stream, the hero trailer, and a show's theme music with its volume.
+ * Saved for the active profile and applied at once.
  */
 @Composable
 fun VideoPlaybackPage(contentPadding: PaddingValues) {
@@ -58,6 +65,26 @@ fun VideoPlaybackPage(contentPadding: PaddingValues) {
 		contentPadding = contentPadding,
 		verticalArrangement = Arrangement.spacedBy(GroupGap),
 	) {
+		item(key = "quality") {
+			ChoiceRow("Streaming Quality", prefs.quality, QualityPreset.all, QualityPreset::title, index = 0, count = 3) { quality ->
+				change { it.copy(quality = quality) }
+			}
+		}
+		item(key = "savesData") {
+			SwitchRow("Save Data on Metered Networks", prefs.savesData, index = 1, count = 3) { on -> change { it.copy(savesData = on) } }
+		}
+		item(key = "directPlay") {
+			ChoiceRow("Direct Play", prefs.directPlay, DirectPlayMode.entries, ::directPlayTitle, index = 2, count = 3) { mode ->
+				change { it.copy(directPlay = mode) }
+			}
+		}
+		item(key = "streamingNote") {
+			Footnote(
+				"Auto picks a quality for the connection and changes it as the connection does. A lower quality has the " +
+					"server convert the video. Direct Play plays a file as it is when the tablet can: Always tries it even " +
+					"where the tablet may not cope, Never has the server convert every title.",
+			)
+		}
 		item(key = "trailers") {
 			SwitchRow("Play Trailers Automatically", prefs.playsTrailers) { on -> change { it.copy(playsTrailers = on) } }
 		}
@@ -98,6 +125,35 @@ private fun SwitchRow(label: String, checked: Boolean, index: Int = 0, count: In
 		Text(label, style = MaterialTheme.typography.titleMedium, color = lucent.ink, modifier = Modifier.weight(1f))
 		Switch(checked = checked, onCheckedChange = null)
 	}
+}
+
+/** A row that shows its choice and opens a menu of the [options]. */
+@Composable
+private fun <T> ChoiceRow(label: String, value: T, options: List<T>, title: (T) -> String, index: Int, count: Int, onChange: (T) -> Unit) {
+	var open by remember { mutableStateOf(false) }
+	GroupRow(index, count, onClick = { open = true }) {
+		Text(label, style = MaterialTheme.typography.titleMedium, color = lucent.ink, modifier = Modifier.weight(1f))
+		Box {
+			Text(title(value), style = MaterialTheme.typography.bodyLarge, color = lucent.ink2)
+			DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+				options.forEach { option ->
+					DropdownMenuItem(
+						text = { Text(title(option)) },
+						onClick = {
+							open = false
+							onChange(option)
+						},
+					)
+				}
+			}
+		}
+	}
+}
+
+private fun directPlayTitle(mode: DirectPlayMode): String = when (mode) {
+	DirectPlayMode.Auto -> "Auto"
+	DirectPlayMode.Force -> "Always"
+	DirectPlayMode.Disabled -> "Never"
 }
 
 @Composable

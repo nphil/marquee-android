@@ -210,9 +210,13 @@ private fun DetailPage(
 		val heroOnScreen by remember { derivedStateOf { listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset < heroPx / 2 } }
 		val context = LocalContext.current
 		val actions = item?.let { page ->
+			val target = if (state.onServer) playTarget(page, state) else null
 			ItemActions(
 				state = state,
 				item = page,
+				playLabel = target?.let { playLabel(it, page) },
+				onPlay = target?.let { { navigator.openPlayer(it.ratingKey) } },
+				onPlayFromStart = target?.takeIf { it.isResumable }?.let { { navigator.openPlayer(it.ratingKey, fromStart = true) } },
 				onWatched = { model.setWatched(page.ratingKey, !page.isWatched) },
 				onWatchlist = model::toggleWatchlist,
 				onTrailer = trailer?.let { extra -> { navigator.openExtra(extra) } },
@@ -282,6 +286,10 @@ private fun DetailPage(
 private class ItemActions(
 	val state: DetailState,
 	val item: PlexItem,
+	/** The Play button's words and what it does; null when nothing plays from this page. */
+	val playLabel: String?,
+	val onPlay: (() -> Unit)?,
+	val onPlayFromStart: (() -> Unit)?,
 	val onWatched: () -> Unit,
 	val onWatchlist: () -> Unit,
 	val onTrailer: (() -> Unit)?,
@@ -485,25 +493,48 @@ private fun TitleBlock(item: PlexItem, navigator: Navigator, modifier: Modifier)
 private fun ActionRow(actions: ItemActions, modifier: Modifier) {
 	val item = actions.item
 	val state = actions.state
-	Row(modifier, horizontalArrangement = Arrangement.spacedBy(Space.s3)) {
-		if (state.onServer) {
-			RoundAction(
-				icon = if (item.isWatched) R.drawable.ic_check_circle_filled else R.drawable.ic_check_circle,
-				label = if (item.isWatched) "Mark unwatched" else "Mark watched",
-				selected = item.isWatched,
-				onClick = actions.onWatched,
-			)
+	Column(modifier, verticalArrangement = Arrangement.spacedBy(Space.s3)) {
+		val play = actions.onPlay
+		if (actions.playLabel != null && play != null) PlayButton(actions.playLabel, play)
+		Row(horizontalArrangement = Arrangement.spacedBy(Space.s3)) {
+			if (state.onServer) {
+				RoundAction(
+					icon = if (item.isWatched) R.drawable.ic_check_circle_filled else R.drawable.ic_check_circle,
+					label = if (item.isWatched) "Mark unwatched" else "Mark watched",
+					selected = item.isWatched,
+					onClick = actions.onWatched,
+				)
+			}
+			val listed = state.watchlisted
+			if (listed != null) {
+				RoundAction(
+					icon = if (listed) R.drawable.ic_bookmark_filled else R.drawable.ic_bookmark,
+					label = if (listed) "Remove from Watchlist" else "Add to Watchlist",
+					selected = listed,
+					onClick = actions.onWatchlist,
+				)
+			}
+			MoreMenu(actions)
 		}
-		val listed = state.watchlisted
-		if (listed != null) {
-			RoundAction(
-				icon = if (listed) R.drawable.ic_bookmark_filled else R.drawable.ic_bookmark,
-				label = if (listed) "Remove from Watchlist" else "Add to Watchlist",
-				selected = listed,
-				onClick = actions.onWatchlist,
-			)
-		}
-		MoreMenu(actions)
+	}
+}
+
+/** The page's main action: a full-width pill on the accent. */
+@Composable
+private fun PlayButton(label: String, onClick: () -> Unit) {
+	Row(
+		modifier = Modifier
+			.fillMaxWidth()
+			.height(Size.target)
+			.clip(CircleShape)
+			.background(lucent.accent)
+			.clickable(role = Role.Button, onClick = onClick),
+		horizontalArrangement = Arrangement.Center,
+		verticalAlignment = Alignment.CenterVertically,
+	) {
+		Icon(painterResource(R.drawable.ic_play_arrow), contentDescription = null, tint = lucent.accentInk, modifier = Modifier.size(24.dp))
+		Spacer(Modifier.width(Space.s2))
+		Text(label, style = MaterialTheme.typography.labelLarge, color = lucent.accentInk, maxLines = 1)
 	}
 }
 
@@ -527,6 +558,7 @@ private fun MoreMenu(actions: ItemActions) {
 					onClick()
 				},
 			)
+			actions.onPlayFromStart?.let { entry("Play from Beginning", R.drawable.ic_replay, it) }
 			actions.onTrailer?.let { entry("Play Trailer", R.drawable.ic_play_arrow, it) }
 			if (hasTracks && state.onServer) entry("Audio & Subtitles", R.drawable.ic_closed_caption, actions.onTracks)
 			if (shareable) entry("Share", R.drawable.ic_share, actions.onShare)

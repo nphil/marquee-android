@@ -261,6 +261,7 @@ dependencies {
 	implementation(libs.androidx.navigation3.runtime)
 	implementation(libs.androidx.navigation3.ui)
 	implementation(libs.androidx.media3.exoplayer)
+	implementation(libs.androidx.media3.exoplayer.hls)
 	implementation(libs.androidx.media3.ui)
 	implementation(libs.androidx.media3.datasource.okhttp)
 	implementation(libs.androidx.splashscreen)

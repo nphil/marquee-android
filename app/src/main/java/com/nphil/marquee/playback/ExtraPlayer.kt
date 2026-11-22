@@ -179,9 +179,9 @@ private fun Stage(player: ExoPlayer) {
 	}
 }
 
-/** Full screen: the system bars are hidden while the viewer is open and a swipe from the edge shows them briefly. */
+/** Full screen: the system bars are hidden while a player is open and a swipe from the edge shows them briefly. */
 @Composable
-private fun HideSystemBars() {
+internal fun HideSystemBars() {
 	val view = LocalView.current
 	DisposableEffect(view) {
 		val window = view.context.findActivity()?.window
