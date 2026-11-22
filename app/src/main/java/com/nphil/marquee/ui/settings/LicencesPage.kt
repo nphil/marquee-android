@@ -10,7 +10,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyColumn
+import com.nphil.marquee.ui.components.BrowseList
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -49,7 +49,7 @@ fun LicencesPage(contentPadding: PaddingValues) {
 		"FFmpeg ${FfmpegBuild.FFMPEG_VERSION} source code" to "https://ffmpeg.org/releases/ffmpeg-${FfmpegBuild.FFMPEG_VERSION}.tar.xz",
 		"Build script and extension source" to "https://github.com/nphil/marquee-android/tree/main/ffmpeg",
 	)
-	LazyColumn(
+	BrowseList(
 		modifier = Modifier.fillMaxSize(),
 		contentPadding = contentPadding,
 		verticalArrangement = Arrangement.spacedBy(Space.s4),

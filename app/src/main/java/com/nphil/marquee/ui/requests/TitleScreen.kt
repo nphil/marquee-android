@@ -25,7 +25,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -63,6 +62,8 @@ import com.nphil.marquee.ui.components.posterHeight
 import com.nphil.marquee.ui.theme.Radius
 import com.nphil.marquee.ui.theme.Size
 import com.nphil.marquee.ui.theme.Space
+import com.nphil.marquee.ui.components.BrowseScaffold
+import com.nphil.marquee.ui.components.pageScroll
 import com.nphil.marquee.ui.theme.lucent
 import kotlinx.coroutines.launch
 
@@ -75,7 +76,7 @@ internal fun TitleScreen(container: AppContainer, kind: SeerrKind, tmdbId: Int, 
 	val model = viewModel { TitleModel(container.seerr, kind, tmdbId) }
 	val state by model.state.collectAsStateWithLifecycle()
 	var requesting by rememberSaveable { mutableStateOf(false) }
-	Scaffold(
+	BrowseScaffold(
 		topBar = {
 			TopAppBar(
 				title = {},
@@ -84,7 +85,6 @@ internal fun TitleScreen(container: AppContainer, kind: SeerrKind, tmdbId: Int, 
 				},
 			)
 		},
-		containerColor = lucent.canvas,
 	) { padding ->
 		BoxWithConstraints(Modifier.fillMaxSize().padding(top = padding.calculateTopPadding()).then(padding.sides())) {
 			val wide = maxWidth >= WideBreakpoint
@@ -127,8 +127,9 @@ private fun TitlePage(details: SeerrDetails, wide: Boolean, windowWidth: Dp, bot
 	val meta = remember(details) { RequestsRules.metaLine(details) }
 	// The art is asked of TMDB at the pixels it takes, so it needs the width it will be drawn at.
 	val column = windowWidth - Space.inset * 2
+	val scroll = rememberScrollState()
 	Column(
-		modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = Space.inset),
+		modifier = Modifier.fillMaxSize().pageScroll(scroll, bottom = bottom).verticalScroll(scroll).padding(horizontal = Space.inset),
 		verticalArrangement = Arrangement.spacedBy(Space.s4),
 	) {
 		if (wide) {

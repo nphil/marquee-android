@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -18,7 +17,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TextButton
@@ -58,6 +56,8 @@ import com.nphil.marquee.ui.components.TextAction
 import com.nphil.marquee.ui.theme.Radius
 import com.nphil.marquee.ui.theme.Size
 import com.nphil.marquee.ui.theme.Space
+import com.nphil.marquee.ui.components.BrowseList
+import com.nphil.marquee.ui.components.BrowseScaffold
 import com.nphil.marquee.ui.theme.lucent
 import kotlinx.coroutines.launch
 
@@ -67,7 +67,7 @@ internal fun RecordingsDestination(container: AppContainer, route: Recordings, b
 	val guide by container.live.guide.collectAsStateWithLifecycle()
 	val model = guide?.takeIf { it.key == route.scope }?.dvr
 	val navigator = LocalNavigator.current
-	Scaffold(containerColor = lucent.canvas, topBar = {
+	BrowseScaffold(topBar = {
 		TopAppBar(title = { Text("Recordings", Modifier.semantics { heading() }) }, navigationIcon = { BackArrow(back) })
 	}) { padding ->
 		if (model == null) {
@@ -137,7 +137,7 @@ private fun RecordingsScreen(model: DvrModel, modifier: Modifier, play: (DvrItem
 					if (error != null || dataLoaded) RetryButton(if (error == null) "Refresh" else "Try again", refresh)
 				}
 			} else {
-				LazyColumn(Modifier.fillMaxSize()) {
+				BrowseList(Modifier.fillMaxSize()) {
 					when (tab) {
 						RecordingTab.Scheduled -> items(scheduled, key = { "airing:${it.id}" }) { airing ->
 							ScheduledRow(airing, model.canRecord && !model.working) { actionError = null; airingToCancel = airing }

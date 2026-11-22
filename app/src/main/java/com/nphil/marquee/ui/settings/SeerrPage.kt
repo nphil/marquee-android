@@ -14,7 +14,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
+import com.nphil.marquee.ui.components.BrowseList
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ButtonGroupDefaults
@@ -103,7 +103,7 @@ fun SeerrPage(contentPadding: PaddingValues) {
 		if (focus) focused = field else if (focused == field) focused = null
 	}
 
-	LazyColumn(
+	BrowseList(
 		modifier = Modifier.fillMaxSize().imePadding(),
 		contentPadding = contentPadding,
 		verticalArrangement = Arrangement.spacedBy(GroupGap),

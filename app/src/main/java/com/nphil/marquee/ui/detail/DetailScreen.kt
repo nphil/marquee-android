@@ -25,7 +25,6 @@ import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -101,6 +100,7 @@ import com.nphil.marquee.ui.heroSharedElement
 import com.nphil.marquee.ui.theme.Radius
 import com.nphil.marquee.ui.theme.Size
 import com.nphil.marquee.ui.theme.Space
+import com.nphil.marquee.ui.components.BrowseList
 import com.nphil.marquee.ui.theme.lucent
 
 /** Wide enough for the hero to sit beside the title and actions, and for episodes to run in two columns. */
@@ -230,7 +230,7 @@ private fun DetailPage(
 				onDelete = { deleting = DeleteTarget.Title(page) },
 			)
 		}
-		LazyColumn(
+		BrowseList(
 			state = listState,
 			modifier = Modifier.fillMaxSize(),
 			contentPadding = PaddingValues(bottom = bottom + Space.s8 * 2),

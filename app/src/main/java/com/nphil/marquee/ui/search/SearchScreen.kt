@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -24,7 +23,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
@@ -79,6 +77,8 @@ import com.nphil.marquee.ui.components.TextAction
 import com.nphil.marquee.ui.theme.Radius
 import com.nphil.marquee.ui.theme.Size
 import com.nphil.marquee.ui.theme.Space
+import com.nphil.marquee.ui.components.BrowseList
+import com.nphil.marquee.ui.components.BrowseScaffold
 import com.nphil.marquee.ui.theme.lucent
 
 /**
@@ -93,7 +93,7 @@ fun SearchScreen(env: BrowseEnvironment, place: BrowsePlace, modifier: Modifier 
 	val ui by model.ui.collectAsStateWithLifecycle()
 	val navigator = LocalNavigator.current
 	val focus = LocalFocusManager.current
-	Scaffold(
+	BrowseScaffold(
 		modifier = modifier,
 		topBar = {
 			TopAppBar(
@@ -102,7 +102,6 @@ fun SearchScreen(env: BrowseEnvironment, place: BrowsePlace, modifier: Modifier 
 				colors = TopAppBarDefaults.topAppBarColors(containerColor = lucent.canvas, scrolledContainerColor = lucent.canvas),
 			)
 		},
-		containerColor = lucent.canvas,
 	) { padding ->
 		Column(Modifier.padding(padding).fillMaxSize()) {
 			SearchField(
@@ -185,7 +184,7 @@ private fun Recents(recents: List<String>, onPick: (String) -> Unit, onForget: (
 		Centered { EmptyState(R.drawable.ic_search, "Search your library", "Find movies, shows and episodes.") }
 		return
 	}
-	LazyColumn(Modifier.fillMaxSize()) {
+	BrowseList(Modifier.fillMaxSize()) {
 		item(key = "header") {
 			Row(Modifier.fillMaxWidth().padding(start = Space.inset, end = Space.s2), verticalAlignment = Alignment.CenterVertically) {
 				Text("Recent Searches", style = MaterialTheme.typography.titleMedium, color = lucent.ink, modifier = Modifier.weight(1f))
@@ -257,7 +256,7 @@ private val EpisodeCardMin = 280.dp
 
 @Composable
 private fun ResultList(groups: List<PlexHub>, onOpen: (PlexItem) -> Unit) {
-	LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = Space.s6)) {
+	BrowseList(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = Space.s6)) {
 		groups.forEachIndexed { index, hub ->
 			item(key = "hub:$index") {
 				Text(
@@ -301,13 +300,13 @@ private fun ResultGrids(groups: List<PlexHub>, width: Dp, onOpen: (PlexItem) -> 
 	val posters = PosterGridMetrics.of(width, fontScale)
 	val cards = PosterGridMetrics.of(width, fontScale, minCell = EpisodeCardMin)
 	val entries = remember(groups, posters.columns, cards.columns) { resultEntries(groups, posters.columns, cards.columns) }
-	LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = Space.s1, bottom = Space.s7)) {
+	BrowseList(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = Space.s1, bottom = Space.s7)) {
 		items(entries, key = { it.key }, contentType = { it::class }) { entry ->
 			when (entry) {
 				is ResultEntry.Header -> SectionHeader(entry.title)
 				is ResultEntry.Posters -> GridRow(posters.gutter) {
 					for (item in entry.items) {
-						ItemPoster(item, posters.cellWidth, onClick = { onOpen(item) }, line = item.kindLine, reserveLine = true)
+						ItemPoster(item, posters.cellWidth, onClick = { onOpen(item) })
 					}
 				}
 				is ResultEntry.Episodes -> GridRow(cards.gutter) {

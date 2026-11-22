@@ -55,16 +55,11 @@ import com.nphil.marquee.core.PlexItem
 import com.nphil.marquee.core.PlexPart
 import com.nphil.marquee.core.PlexRole
 import com.nphil.marquee.core.SubtitleChoice
-import com.nphil.marquee.core.posterPath
-import com.nphil.marquee.core.posterTitle
-import com.nphil.marquee.core.progress
-import com.nphil.marquee.core.showsWatched
-import com.nphil.marquee.core.unwatchedBadge
 import com.nphil.marquee.core.versionLabel
 import com.nphil.marquee.ui.Navigator
+import com.nphil.marquee.ui.browse.ItemPoster
 import com.nphil.marquee.ui.components.LocalPlexImages
 import com.nphil.marquee.ui.components.PlexArt
-import com.nphil.marquee.ui.components.PosterCard
 import com.nphil.marquee.ui.components.SectionHeader
 import com.nphil.marquee.ui.components.ShelfRow
 import com.nphil.marquee.ui.components.cardHeight
@@ -380,15 +375,9 @@ fun LazyListScope.relatedSection(state: DetailState, navigator: Navigator) {
 				// External hubs list titles the server may not have: the Watchlist's rule decides where they open.
 				val external = hub.identifier.startsWith("external")
 				ShelfRow(hub.items, key = { it.ratingKey }) { related ->
-					PosterCard(
-						title = related.posterTitle,
-						artPath = related.posterPath,
+					ItemPoster(
+						item = related,
 						width = ShelfPoster,
-						modifier = Modifier,
-						line = related.year?.toString(),
-						progress = related.progress,
-						watched = related.showsWatched,
-						unwatchedCount = related.unwatchedBadge,
 						onClick = { if (external) navigator.openWatchlistTitle(related) else navigator.openItem(related.ratingKey) },
 					)
 				}

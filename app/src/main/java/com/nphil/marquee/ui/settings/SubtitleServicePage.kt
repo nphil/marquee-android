@@ -6,7 +6,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
+import com.nphil.marquee.ui.components.BrowseList
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
@@ -68,7 +68,7 @@ internal fun SubtitleServicePage(service: SubtitleService, contentPadding: Paddi
 		keyboard?.hide()
 		model.test()
 	}
-	LazyColumn(
+	BrowseList(
 		modifier = Modifier.fillMaxSize().imePadding(),
 		contentPadding = contentPadding,
 		verticalArrangement = Arrangement.spacedBy(GroupGap),

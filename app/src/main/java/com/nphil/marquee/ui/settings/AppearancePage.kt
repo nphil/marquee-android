@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -51,6 +52,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.nphil.marquee.R
 import com.nphil.marquee.ui.components.GroupRow
+import com.nphil.marquee.ui.components.pageScroll
 import com.nphil.marquee.ui.theme.LucentTheme
 import com.nphil.marquee.ui.theme.Radius
 import com.nphil.marquee.ui.theme.Size
@@ -75,9 +77,11 @@ fun AppearancePage(
 	var shownMode by rememberSaveable { mutableStateOf<ThemeMode?>(null) }
 	val mode = shownMode ?: choice.mode(systemDark)
 	val tiles = remember(mode) { themes.choices(mode) }
+	val grid = rememberLazyGridState()
 	LazyVerticalGrid(
 		columns = GridCells.Adaptive(Size.gridMin),
-		modifier = Modifier.fillMaxSize(),
+		modifier = Modifier.fillMaxSize().pageScroll(grid, top = contentPadding.calculateTopPadding(), bottom = contentPadding.calculateBottomPadding()),
+		state = grid,
 		contentPadding = contentPadding,
 		horizontalArrangement = Arrangement.spacedBy(Space.s4),
 		verticalArrangement = Arrangement.spacedBy(Space.s4),

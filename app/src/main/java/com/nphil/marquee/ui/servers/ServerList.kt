@@ -13,11 +13,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -46,6 +44,8 @@ import com.nphil.marquee.core.Reach
 import com.nphil.marquee.session.AppSession
 import com.nphil.marquee.ui.components.EmptyState
 import com.nphil.marquee.ui.components.GroupGap
+import com.nphil.marquee.ui.components.BrowseList
+import com.nphil.marquee.ui.components.BrowseScaffold
 import com.nphil.marquee.ui.components.GroupRow
 import com.nphil.marquee.ui.components.RetryButton
 import com.nphil.marquee.ui.components.TextAction
@@ -62,14 +62,13 @@ val ContentWidth = 720.dp
 @Composable
 fun ServerChoiceScreen(session: AppSession) {
 	var confirmingSignOut by rememberSaveable { mutableStateOf(false) }
-	Scaffold(
+	BrowseScaffold(
 		topBar = {
 			TopAppBar(
 				title = { Text("Servers") },
 				actions = { TextAction("Sign Out", onClick = { confirmingSignOut = true }) },
 			)
 		},
-		containerColor = lucent.canvas,
 	) { padding ->
 		ServerList(session, isRoot = true, onChosen = {}, contentPadding = padding)
 	}
@@ -120,7 +119,7 @@ fun ServerList(
 		onRefresh = refresh,
 		modifier = modifier.fillMaxSize().padding(top = contentPadding.calculateTopPadding()),
 	) {
-		LazyColumn(
+		BrowseList(
 			modifier = Modifier.fillMaxSize(),
 			contentPadding = PaddingValues(
 				start = contentPadding.calculateStartPadding(direction) + Space.inset,

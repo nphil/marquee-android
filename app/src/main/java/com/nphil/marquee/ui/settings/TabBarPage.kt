@@ -55,6 +55,7 @@ import com.nphil.marquee.ui.shell.title
 import com.nphil.marquee.ui.theme.Radius
 import com.nphil.marquee.ui.theme.Size
 import com.nphil.marquee.ui.theme.Space
+import com.nphil.marquee.ui.components.pageScroll
 import com.nphil.marquee.ui.theme.lucent
 
 /** Room for a title and a note of two lines; the reorder needs every row of one height. */
@@ -81,6 +82,7 @@ fun TabBarPage(contentPadding: PaddingValues) {
 		Modifier
 			.fillMaxSize()
 			.reorderContainer(reorder)
+			.pageScroll(scroll, top = contentPadding.calculateTopPadding(), bottom = contentPadding.calculateBottomPadding())
 			.verticalScroll(scroll)
 			.padding(contentPadding),
 	) {

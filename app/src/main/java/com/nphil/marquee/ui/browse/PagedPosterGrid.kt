@@ -19,6 +19,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import com.nphil.marquee.core.Paged
 import com.nphil.marquee.core.PlexItem
+import com.nphil.marquee.ui.components.pageScroll
 import com.nphil.marquee.ui.theme.Space
 import kotlinx.coroutines.flow.filterNotNull
 
@@ -56,6 +57,7 @@ fun PagedPosterGrid(
 		) {
 			LazyVerticalGrid(
 				columns = GridCells.Fixed(metrics.columns),
+				modifier = Modifier.pageScroll(state, end = endInset - minOf(Space.s2, endInset)),
 				state = state,
 				contentPadding = PaddingValues(start = startInset, end = endInset, top = Space.s3, bottom = Space.s7),
 				horizontalArrangement = Arrangement.spacedBy(metrics.gutter),

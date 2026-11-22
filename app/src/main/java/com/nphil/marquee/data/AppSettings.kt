@@ -12,6 +12,7 @@ import com.nphil.marquee.core.CoreJson
 import com.nphil.marquee.core.HomeLayout
 import com.nphil.marquee.core.TabBarBehavior
 import com.nphil.marquee.core.TabLayout
+import com.nphil.marquee.ui.theme.HeaderStyle
 import com.nphil.marquee.ui.theme.ThemeChoice
 import com.nphil.marquee.ui.theme.ThemeMode
 import kotlinx.coroutines.flow.Flow
@@ -38,7 +39,16 @@ class AppSettings(context: Context) : BrowsePreferences {
 			prefs[THEME_LIGHT] = next.lightId
 			prefs[THEME_DARK] = next.darkId
 			prefs[THEME_FIXED] = next.fixedMode.name
+			prefs[HEADER_STYLE] = next.headerStyle.name
+			prefs[SCROLL_BARS] = next.showsScrollBars
 		}
+	}
+
+	internal fun posterLabels(profile: String): Flow<PosterLabels> =
+		store.data.map { it.posterLabels(profile) }.distinctUntilChanged()
+
+	internal suspend fun updatePosterLabels(profile: String, change: (PosterLabels) -> PosterLabels) {
+		store.edit { prefs -> prefs.setPosterLabels(profile, change(prefs.posterLabels(profile))) }
 	}
 
 	/** The trailer and theme music choices of a Home profile; defaults for one that never chose, or no profile. */
@@ -217,6 +227,8 @@ class AppSettings(context: Context) : BrowsePreferences {
 		lightId = this[THEME_LIGHT] ?: ThemeChoice().lightId,
 		darkId = this[THEME_DARK] ?: ThemeChoice().darkId,
 		fixedMode = if (this[THEME_FIXED] == ThemeMode.Light.name) ThemeMode.Light else ThemeMode.Dark,
+		headerStyle = HeaderStyle.entries.firstOrNull { it.name == this[HEADER_STYLE] } ?: HeaderStyle.Soft,
+		showsScrollBars = this[SCROLL_BARS] ?: true,
 	)
 
 	private fun Preferences.addresses(): Map<String, String> =
@@ -227,6 +239,8 @@ class AppSettings(context: Context) : BrowsePreferences {
 		val THEME_LIGHT = stringPreferencesKey("theme.light")
 		val THEME_DARK = stringPreferencesKey("theme.dark")
 		val THEME_FIXED = stringPreferencesKey("theme.fixedMode")
+		val HEADER_STYLE = stringPreferencesKey("theme.headerStyle")
+		val SCROLL_BARS = booleanPreferencesKey("theme.scrollBars")
 		val CLIENT_ID = stringPreferencesKey("plex.clientIdentifier")
 		val SERVER_ID = stringPreferencesKey("plex.serverId")
 		val LEGACY_PROFILE = stringPreferencesKey("plex.profile")

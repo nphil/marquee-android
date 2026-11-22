@@ -7,7 +7,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyColumn
+import com.nphil.marquee.ui.components.BrowseList
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LoadingIndicator
@@ -83,7 +83,7 @@ fun ProfilesPage(session: AppSession, contentPadding: PaddingValues) {
 		}
 	}
 
-	LazyColumn(
+	BrowseList(
 		modifier = Modifier.fillMaxSize(),
 		contentPadding = contentPadding,
 		verticalArrangement = Arrangement.spacedBy(GroupGap),

@@ -67,6 +67,7 @@ import com.nphil.marquee.ui.settings.SettingsFootnote
 import com.nphil.marquee.ui.settings.SettingsSwitchRow
 import com.nphil.marquee.ui.theme.Radius
 import com.nphil.marquee.ui.theme.Space
+import com.nphil.marquee.ui.components.BrowseList
 import com.nphil.marquee.ui.theme.lucent
 
 /** Keep the current receiver through a lock, but only look for new ones while one of these pages is visible. */
@@ -86,7 +87,7 @@ internal fun CastSettingsPage(padding: PaddingValues, provider: CastProvider) {
 	LookForCastDevices(cast, provider = provider)
 	val sender = cast[provider]
 	val devices = sender.devices
-	LazyColumn(Modifier.fillMaxSize(), contentPadding = padding, verticalArrangement = Arrangement.spacedBy(GroupGap)) {
+	BrowseList(Modifier.fillMaxSize(), contentPadding = padding, verticalArrangement = Arrangement.spacedBy(GroupGap)) {
 		item(key = "toggle") {
 			SettingsSwitchRow(0, 1, provider.label, sender.enabled, enabled = true, onChange = sender::setOptIn)
 		}

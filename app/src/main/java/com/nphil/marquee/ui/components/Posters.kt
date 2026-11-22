@@ -169,10 +169,11 @@ fun PosterCard(
 	watched: Boolean = false,
 	unwatchedCount: Int? = null,
 	description: String? = null,
-	onClick: () -> Unit,
+	onClick: (() -> Unit)?,
 	onLongClick: (() -> Unit)? = null,
 	onLongClickLabel: String? = null,
 	opens: String? = null,
+	showsTitle: Boolean = true,
 ) {
 	val radius = if (width >= 96.dp) Radius.tile else Radius.control
 	val shape = RoundedCornerShape(radius)
@@ -180,7 +181,7 @@ fun PosterCard(
 	Column(
 		modifier = modifier
 			.width(width)
-			.pressable(onClick, onLongClick, onLongClickLabel)
+			.then(if (onClick == null) Modifier else Modifier.pressable(onClick, onLongClick, onLongClickLabel))
 			.semantics(mergeDescendants = true) { contentDescription = spoken },
 		verticalArrangement = Arrangement.spacedBy(Space.s1),
 	) {
@@ -189,15 +190,17 @@ fun PosterCard(
 			PosterBadge(unwatchedCount, watched)
 		}
 		if (progress != null) ProgressBar(progress) else Spacer(Modifier.height(3.dp))
-		Column(Modifier.clearAndSetSemantics { }) {
-			Text(
-				title,
-				style = MaterialTheme.typography.bodySmall,
-				fontWeight = if (reserveLine || line != null) FontWeight.SemiBold else null,
-				color = lucent.ink,
-				maxLines = 1,
-				overflow = TextOverflow.Ellipsis,
-			)
+		if (showsTitle || reserveLine || line != null) Column(Modifier.clearAndSetSemantics { }) {
+			if (showsTitle) {
+				Text(
+					title,
+					style = MaterialTheme.typography.bodySmall,
+					fontWeight = if (reserveLine || line != null) FontWeight.SemiBold else null,
+					color = lucent.ink,
+					maxLines = 1,
+					overflow = TextOverflow.Ellipsis,
+				)
+			}
 			if (reserveLine || line != null) {
 				// A space keeps the room when this title has no value, so a grid row lines up.
 				Text(

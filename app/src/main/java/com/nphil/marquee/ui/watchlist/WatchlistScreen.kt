@@ -4,7 +4,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -28,6 +27,7 @@ import com.nphil.marquee.ui.browse.ItemPoster
 import com.nphil.marquee.ui.browse.MenuAction
 import com.nphil.marquee.ui.browse.PagedPosterGrid
 import com.nphil.marquee.ui.components.BackArrow
+import com.nphil.marquee.ui.components.BrowseScaffold
 import com.nphil.marquee.ui.components.EmptyState
 import com.nphil.marquee.ui.theme.lucent
 
@@ -42,7 +42,7 @@ fun WatchlistScreen(env: BrowseEnvironment, place: BrowsePlace, onSignIn: () -> 
 	val model: WatchlistModel = viewModel(key = "watchlist:${place.key}") { WatchlistModel(env) }
 	val paged by model.state.collectAsStateWithLifecycle()
 	val navigator = LocalNavigator.current
-	Scaffold(
+	BrowseScaffold(
 		modifier = modifier,
 		topBar = {
 			TopAppBar(
@@ -51,7 +51,6 @@ fun WatchlistScreen(env: BrowseEnvironment, place: BrowsePlace, onSignIn: () -> 
 				colors = TopAppBarDefaults.topAppBarColors(containerColor = lucent.canvas, scrolledContainerColor = lucent.canvas),
 			)
 		},
-		containerColor = lucent.canvas,
 	) { padding ->
 		PullToRefreshBox(
 			isRefreshing = paged.isLoading && paged.items.isNotEmpty(),

@@ -445,6 +445,14 @@ val PlexMedia.formatChips: List<String>
 		if (hasAtmos) add("Atmos")
 	}
 
+/** The video line under a poster: resolution and range, without sound or file details. */
+internal val PlexMedia.videoMarks: String?
+	get() {
+		val quality = resolution
+		val range = dynamicRange
+		return if (quality == null) range else if (range == null) quality else "$quality · $range"
+	}
+
 /** "4K HDR · 12 GB", naming one version in the Version menu. */
 val PlexMedia.versionLabel: String
 	get() {

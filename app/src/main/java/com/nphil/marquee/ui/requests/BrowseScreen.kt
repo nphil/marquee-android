@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -27,7 +28,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
@@ -64,6 +64,8 @@ import com.nphil.marquee.ui.components.EmptyState
 import com.nphil.marquee.ui.components.RetryButton
 import com.nphil.marquee.ui.components.TextAction
 import com.nphil.marquee.ui.theme.Space
+import com.nphil.marquee.ui.components.BrowseScaffold
+import com.nphil.marquee.ui.components.pageScroll
 import com.nphil.marquee.ui.theme.lucent
 
 /** A list to page through: trending, or a kind with a genre and the View menu's filters. */
@@ -86,7 +88,7 @@ internal fun BrowseScreen(container: AppContainer, feed: SeerrFeed, nav: Request
 		current.kind == SeerrKind.Movie -> "Movies"
 		else -> "Series"
 	}
-	Scaffold(
+	BrowseScaffold(
 		topBar = {
 			TopAppBar(
 				title = { Text(title) },
@@ -106,7 +108,6 @@ internal fun BrowseScreen(container: AppContainer, feed: SeerrFeed, nav: Request
 				},
 			)
 		},
-		containerColor = lucent.canvas,
 	) { padding ->
 		BoxWithConstraints(Modifier.fillMaxSize().padding(top = padding.calculateTopPadding()).then(padding.sides())) {
 			val wide = maxWidth >= WideBreakpoint
@@ -228,6 +229,7 @@ private fun BrowseList(
 ) {
 	val width = posterWidth(wide)
 	val failure = page.failure
+	val grid = rememberLazyGridState()
 	when {
 		failure != null && page.items.isEmpty() -> Centered {
 			EmptyState(
@@ -261,7 +263,8 @@ private fun BrowseList(
 		}
 		else -> LazyVerticalGrid(
 			columns = GridCells.Adaptive(width),
-			modifier = Modifier.fillMaxSize(),
+			modifier = Modifier.fillMaxSize().pageScroll(grid, bottom = bottom + Space.inset),
+			state = grid,
 			contentPadding = PaddingValues(start = Space.inset, end = Space.inset, top = Space.s2, bottom = bottom + Space.inset),
 			horizontalArrangement = Arrangement.spacedBy(Space.s3),
 			verticalArrangement = Arrangement.spacedBy(Space.s4),

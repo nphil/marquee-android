@@ -11,7 +11,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
+import com.nphil.marquee.ui.components.BrowseList
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -119,7 +119,7 @@ fun DiagnosticLogsPage(contentPadding: PaddingValues) {
 		}
 	}
 
-	LazyColumn(
+	BrowseList(
 		modifier = Modifier.fillMaxSize().imePadding(),
 		contentPadding = contentPadding,
 		verticalArrangement = Arrangement.spacedBy(GroupGap),

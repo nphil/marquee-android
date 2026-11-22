@@ -4,7 +4,6 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -21,6 +20,7 @@ import com.nphil.marquee.browse.HubGridModel
 import com.nphil.marquee.ui.LocalNavigator
 import com.nphil.marquee.ui.components.BackArrow
 import com.nphil.marquee.ui.components.EmptyState
+import com.nphil.marquee.ui.components.BrowseScaffold
 import com.nphil.marquee.ui.theme.lucent
 
 /** A hub's whole list ("See all"), over the page it came from; Back returns to that page. Home and Library share it. */
@@ -39,7 +39,7 @@ fun HubGridScreen(
 	val paged by model.state.collectAsStateWithLifecycle()
 	val navigator = LocalNavigator.current
 	BackHandler(onBack = onBack)
-	Scaffold(
+	BrowseScaffold(
 		modifier = modifier,
 		topBar = {
 			TopAppBar(
@@ -48,7 +48,6 @@ fun HubGridScreen(
 				colors = TopAppBarDefaults.topAppBarColors(containerColor = lucent.canvas, scrolledContainerColor = lucent.canvas),
 			)
 		},
-		containerColor = lucent.canvas,
 	) { padding ->
 		PullToRefreshBox(
 			isRefreshing = paged.isLoading && paged.items.isNotEmpty(),

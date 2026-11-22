@@ -8,12 +8,10 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -53,6 +51,8 @@ import com.nphil.marquee.ui.shell.Places
 import com.nphil.marquee.ui.shell.PlacesTitle
 import com.nphil.marquee.ui.shell.homeMenu
 import com.nphil.marquee.ui.theme.Space
+import com.nphil.marquee.ui.components.BrowseList
+import com.nphil.marquee.ui.components.BrowseScaffold
 import com.nphil.marquee.ui.theme.lucent
 
 /**
@@ -110,7 +110,7 @@ fun HomeScreen(
 		return
 	}
 
-	Scaffold(
+	BrowseScaffold(
 		modifier = modifier,
 		topBar = {
 			TopAppBar(
@@ -124,7 +124,6 @@ fun HomeScreen(
 				colors = TopAppBarDefaults.topAppBarColors(containerColor = lucent.canvas, scrolledContainerColor = lucent.canvas),
 			)
 		},
-		containerColor = lucent.canvas,
 	) { padding ->
 		PullToRefreshBox(
 			isRefreshing = ui.pulling,
@@ -195,7 +194,7 @@ private fun Shelves(ui: HomeUi, posterWidth: Dp, cardWidth: Dp, actions: HomeAct
 				RetryButton("Refresh", onRefresh)
 			}
 		}
-		else -> LazyColumn(
+		else -> BrowseList(
 			Modifier.fillMaxSize(),
 			contentPadding = PaddingValues(vertical = Space.s3),
 			verticalArrangement = Arrangement.spacedBy(Space.s7),

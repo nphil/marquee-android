@@ -8,7 +8,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyColumn
+import com.nphil.marquee.ui.components.BrowseList
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
@@ -72,7 +72,7 @@ fun VideoPlaybackPage(contentPadding: PaddingValues) {
 		container.scope.launch { container.settings.updatePlayback(id, edit) }
 	}
 
-	LazyColumn(
+	BrowseList(
 		modifier = Modifier.fillMaxSize(),
 		contentPadding = contentPadding,
 		verticalArrangement = Arrangement.spacedBy(GroupGap),

@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -69,6 +68,7 @@ import com.nphil.marquee.ui.components.TextAction
 import com.nphil.marquee.ui.theme.Radius
 import com.nphil.marquee.ui.theme.Size
 import com.nphil.marquee.ui.theme.Space
+import com.nphil.marquee.ui.components.BrowseList
 import com.nphil.marquee.ui.theme.lucent
 import kotlin.math.ceil
 import kotlin.math.floor
@@ -129,7 +129,7 @@ private fun CompactSchedule(
 			}
 		}
 		HorizontalDivider(color = lucent.edge)
-		LazyColumn(state = rows, modifier = Modifier.weight(1f)) {
+		BrowseList(state = rows, modifier = Modifier.weight(1f)) {
 			items(channels, key = { it.id }) { channel ->
 				val (on, next) = guide.programmes(channel.id, at)
 				Column(Modifier.fillMaxWidth().padding(horizontal = Space.inset, vertical = Space.s2)) {
@@ -240,7 +240,7 @@ private fun WideSchedule(
 				}
 			}
 			HorizontalDivider(color = lucent.edge)
-			LazyColumn(state = rows, modifier = Modifier.weight(1f)) {
+			BrowseList(state = rows, modifier = Modifier.weight(1f)) {
 				items(channels, key = { it.id }) { channel ->
 					Row(Modifier.fillMaxWidth().height(GridRow)) {
 						ChannelButton(channel, channel.id in lists.favourites, { watch(channel) }, { favourite(channel) },

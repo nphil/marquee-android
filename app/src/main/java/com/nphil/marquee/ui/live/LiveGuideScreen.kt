@@ -28,7 +28,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -78,6 +77,7 @@ import com.nphil.marquee.ui.components.TextAction
 import com.nphil.marquee.ui.theme.Radius
 import com.nphil.marquee.ui.theme.Size
 import com.nphil.marquee.ui.theme.Space
+import com.nphil.marquee.ui.components.BrowseScaffold
 import com.nphil.marquee.ui.theme.lucent
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -143,8 +143,7 @@ private fun LiveGuideScreen(model: LiveGuideModel, back: (() -> Unit)?, recordin
 		detailChannel = channel.id
 		detailAiring = programme.id
 	}
-	Scaffold(
-		containerColor = lucent.canvas,
+	BrowseScaffold(
 		topBar = {
 			TopAppBar(
 				title = { Text("Live TV", modifier = Modifier.semantics { heading() }) },

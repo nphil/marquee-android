@@ -6,7 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
+import com.nphil.marquee.ui.components.BrowseList
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
@@ -69,7 +69,7 @@ fun FavoriteLibrariesPage(session: AppSession, contentPadding: PaddingValues) {
 
 @Composable
 private fun LibraryList(libraries: List<FavoriteLibrary>, model: FavoriteLibrariesModel, contentPadding: PaddingValues) {
-	LazyColumn(
+	BrowseList(
 		modifier = Modifier.fillMaxSize(),
 		contentPadding = contentPadding,
 		verticalArrangement = Arrangement.spacedBy(GroupGap),

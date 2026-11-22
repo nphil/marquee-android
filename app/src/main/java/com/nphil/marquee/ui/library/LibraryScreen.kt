@@ -11,10 +11,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -44,13 +42,12 @@ import com.nphil.marquee.browse.LibrarySegment
 import com.nphil.marquee.browse.LibraryViewModel
 import com.nphil.marquee.browse.SectionBrowser
 import com.nphil.marquee.browse.markedWatched
-import com.nphil.marquee.browse.showsValue
-import com.nphil.marquee.browse.sortValue
 import com.nphil.marquee.core.Destination
 import com.nphil.marquee.core.MediaType
 import com.nphil.marquee.core.Paged
 import com.nphil.marquee.core.PlexHub
 import com.nphil.marquee.core.PlexItem
+import com.nphil.marquee.core.SectionQuery
 import com.nphil.marquee.ui.LocalNavigator
 import com.nphil.marquee.ui.browse.ActionButton
 import com.nphil.marquee.ui.browse.ActionMenu
@@ -67,6 +64,8 @@ import com.nphil.marquee.ui.browse.ShelfSkeleton
 import com.nphil.marquee.ui.browse.failureKind
 import com.nphil.marquee.ui.browse.posterMinWidth
 import com.nphil.marquee.ui.components.BackArrow
+import com.nphil.marquee.ui.components.BrowseList
+import com.nphil.marquee.ui.components.BrowseScaffold
 import com.nphil.marquee.ui.components.EmptyState
 import com.nphil.marquee.ui.components.RetryButton
 import com.nphil.marquee.ui.components.SectionHeader
@@ -112,7 +111,7 @@ fun LibraryScreen(
 	BackHandler(enabled = onBack != null) { onBack?.invoke() }
 	val inMenu = remember(places) { places.inLibraryMenu() }
 
-	Scaffold(
+	BrowseScaffold(
 		modifier = modifier,
 		topBar = {
 			TopAppBar(
@@ -146,7 +145,6 @@ fun LibraryScreen(
 				colors = TopAppBarDefaults.topAppBarColors(containerColor = lucent.canvas, scrolledContainerColor = lucent.canvas),
 			)
 		},
-		containerColor = lucent.canvas,
 	) { padding ->
 		BoxWithConstraints(Modifier.padding(padding).fillMaxSize()) {
 			val posterWidth = posterMinWidth(maxWidth)
@@ -283,13 +281,11 @@ private fun TitlesView(browser: SectionBrowser, options: LibraryOptions, place: 
 							}
 						},
 					) { item, width ->
-						val value = remember(item, query.sort) { item.sortValue(query.sort, clock) }
 						ShowMenuPoster(
 							item = item,
 							width = width,
-							line = value?.text,
-							quiet = value?.quiet == true,
-							reserveLine = query.sort.showsValue,
+							sort = query.sort,
+							clock = clock,
 							onOpen = { navigator?.openItem(item.ratingKey) },
 							onMark = { watched ->
 								actions.setWatched(watched, item) { now -> browser.patch(item.markedWatched(now)) }
@@ -378,7 +374,7 @@ private fun RecommendedView(
 					)
 				}
 			} else {
-				LazyColumn(
+				BrowseList(
 					modifier = Modifier.fillMaxSize(),
 					contentPadding = PaddingValues(top = Space.s3, bottom = Space.s7),
 					verticalArrangement = Arrangement.spacedBy(Space.s7),
@@ -414,9 +410,8 @@ private fun ShowMenuPoster(
 	width: Dp,
 	onOpen: () -> Unit,
 	onMark: (watched: Boolean) -> Unit,
-	line: String? = null,
-	quiet: Boolean = false,
-	reserveLine: Boolean = false,
+	sort: SectionQuery.Sort? = null,
+	clock: DayClock? = null,
 ) {
 	var menu by remember { mutableStateOf(false) }
 	val isShow = item.type == MediaType.Show
@@ -425,9 +420,8 @@ private fun ShowMenuPoster(
 			item = item,
 			width = width,
 			onClick = onOpen,
-			line = line,
-			reserveLine = reserveLine,
-			quietLine = quiet,
+			sort = sort,
+			clock = clock,
 			onLongClick = if (isShow) ({ menu = true }) else null,
 			onLongClickLabel = if (isShow) "More options" else null,
 		)

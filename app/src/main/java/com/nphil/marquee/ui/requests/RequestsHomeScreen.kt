@@ -11,9 +11,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -23,7 +23,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
@@ -74,6 +73,9 @@ import com.nphil.marquee.ui.components.cardHeight
 import com.nphil.marquee.ui.components.pressable
 import com.nphil.marquee.ui.theme.Radius
 import com.nphil.marquee.ui.theme.Space
+import com.nphil.marquee.ui.components.BrowseList
+import com.nphil.marquee.ui.components.BrowseScaffold
+import com.nphil.marquee.ui.components.pageScroll
 import com.nphil.marquee.ui.theme.lucent
 import java.text.DateFormat
 
@@ -87,9 +89,8 @@ internal fun RequestsHomeScreen(container: AppContainer, nav: RequestsNav, onBac
 	val text by search.text.collectAsStateWithLifecycle()
 	var tab by rememberSaveable { mutableIntStateOf(0) }
 	val searching = text.isNotBlank()
-	Scaffold(
+	BrowseScaffold(
 		topBar = { TopAppBar(title = { Text("Requests") }, navigationIcon = { if (onBack != null) BackArrow(onBack) }) },
-		containerColor = lucent.canvas,
 	) { padding ->
 		BoxWithConstraints(Modifier.fillMaxSize().padding(top = padding.calculateTopPadding()).then(padding.sides())) {
 			val wide = maxWidth >= WideBreakpoint
@@ -191,7 +192,7 @@ private fun DiscoverContent(
 			},
 			modifier = Modifier.fillMaxSize(),
 		) {
-			LazyColumn(
+			BrowseList(
 				modifier = Modifier.fillMaxSize(),
 				contentPadding = PaddingValues(top = Space.s2, bottom = bottom + Space.inset),
 				verticalArrangement = Arrangement.spacedBy(Space.s3),
@@ -274,9 +275,11 @@ private fun MyRequests(model: MyRequestsModel, bottom: Dp, onTitle: (SeerrTitle)
 			},
 			modifier = Modifier.fillMaxSize(),
 		) {
+			val grid = rememberLazyGridState()
 			LazyVerticalGrid(
 				columns = GridCells.Adaptive(360.dp),
-				modifier = Modifier.fillMaxSize(),
+				modifier = Modifier.fillMaxSize().pageScroll(grid, bottom = bottom + Space.inset),
+				state = grid,
 				contentPadding = PaddingValues(start = Space.inset, end = Space.inset, top = Space.s2, bottom = bottom + Space.inset),
 				horizontalArrangement = Arrangement.spacedBy(Space.s3),
 				verticalArrangement = Arrangement.spacedBy(Space.s3),
@@ -350,9 +353,11 @@ private fun SearchResults(model: SearchModel, wide: Boolean, bottom: Dp, onTitle
 /** Titles in a grid that fills the width with as many columns as fit. */
 @Composable
 internal fun PosterGrid(titles: List<SeerrTitle>, width: Dp, bottom: Dp, onTitle: (SeerrTitle) -> Unit) {
+	val grid = rememberLazyGridState()
 	LazyVerticalGrid(
 		columns = GridCells.Adaptive(width),
-		modifier = Modifier.fillMaxSize(),
+		modifier = Modifier.fillMaxSize().pageScroll(grid, bottom = bottom + Space.inset),
+		state = grid,
 		contentPadding = PaddingValues(start = Space.inset, end = Space.inset, top = Space.s2, bottom = bottom + Space.inset),
 		horizontalArrangement = Arrangement.spacedBy(Space.s3),
 		verticalArrangement = Arrangement.spacedBy(Space.s4),

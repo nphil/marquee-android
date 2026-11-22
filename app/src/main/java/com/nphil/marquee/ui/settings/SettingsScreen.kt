@@ -6,11 +6,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.adaptive.layout.AnimatedPane
@@ -39,8 +37,11 @@ import com.nphil.marquee.diagnostics.DiagScreen
 import com.nphil.marquee.playback.rememberPlaybackPrefs
 import com.nphil.marquee.session.AppSession
 import com.nphil.marquee.cast.CastProvider
+import com.nphil.marquee.ui.browse.LocalPosterLabels
 import com.nphil.marquee.ui.cast.CastSettingsPage
 import com.nphil.marquee.ui.components.Avatar
+import com.nphil.marquee.ui.components.BrowseList
+import com.nphil.marquee.ui.components.BrowseScaffold
 import com.nphil.marquee.ui.components.GroupGap
 import com.nphil.marquee.ui.components.GroupRow
 import com.nphil.marquee.ui.components.IconBadge
@@ -61,7 +62,9 @@ enum class SettingsPage(val title: String) {
 	Server("Servers"),
 	Appearance("Theme"),
 	TabBar("Tab Bar"),
+	HeaderStyle("Header Style"),
 	FavoriteLibraries("Favorite Libraries"),
+	UnderPosters("Under Posters"),
 	VideoPlayback("Video & Playback"),
 	Downloads("Downloads"),
 	Seerr("Seerr"),
@@ -103,6 +106,7 @@ fun SettingsScreen(
 					session = session,
 					themes = themes,
 					choice = choice,
+					onTheme = onTheme,
 					selected = page.takeIf { twoPane },
 					onOpen = { next -> scope.launch { navigator.navigateTo(ListDetailPaneScaffoldRole.Detail, next) } },
 					onSignOut = { confirmingSignOut = true },
@@ -131,6 +135,7 @@ private fun SettingsList(
 	session: AppSession,
 	themes: Themes,
 	choice: ThemeChoice,
+	onTheme: ((ThemeChoice) -> ThemeChoice) -> Unit,
 	selected: SettingsPage?,
 	onOpen: (SettingsPage) -> Unit,
 	onSignOut: () -> Unit,
@@ -152,8 +157,9 @@ private fun SettingsList(
 		seerr.configured -> "Off"
 		else -> "Not set up"
 	}
-	Scaffold(topBar = { TopAppBar(title = { Text("Settings") }) }, containerColor = lucent.canvas) { padding ->
-		LazyColumn(
+	val posterSummary = LocalPosterLabels.current.summary
+	BrowseScaffold(topBar = { TopAppBar(title = { Text("Settings") }) }) { padding ->
+		BrowseList(
 			modifier = Modifier.fillMaxSize(),
 			contentPadding = padding.plusInset(),
 			verticalArrangement = Arrangement.spacedBy(GroupGap),
@@ -173,22 +179,39 @@ private fun SettingsList(
 			}
 			item(key = "appearance") { Heading("Appearance") }
 			item(key = "theme") {
-				PageRow(0, 2, SettingsPage.Appearance, selected, onOpen) {
+				PageRow(0, 4, SettingsPage.Appearance, selected, onOpen) {
 					IconBadge(R.drawable.ic_palette)
 					Labels("Theme", themeSummary)
 				}
 			}
 			item(key = "tabBar") {
-				PageRow(1, 2, SettingsPage.TabBar, selected, onOpen) {
+				PageRow(1, 4, SettingsPage.TabBar, selected, onOpen) {
 					IconBadge(R.drawable.ic_grid_view)
 					Labels("Tab Bar", "Which places are tabs, and their order")
 				}
 			}
+			item(key = "headerStyle") {
+				PageRow(2, 4, SettingsPage.HeaderStyle, selected, onOpen) {
+					IconBadge(R.drawable.ic_tune)
+					Labels("Header Style", choice.headerStyle.name)
+				}
+			}
+			item(key = "scrollBars") {
+				AppearanceSwitch(3, 4, "Show Scroll Bars", "The Library’s A–Z rail still shows", choice.showsScrollBars) { on ->
+					onTheme { it.copy(showsScrollBars = on) }
+				}
+			}
 			item(key = "library") { Heading("Library") }
 			item(key = "favoriteLibraries") {
-				PageRow(0, 1, SettingsPage.FavoriteLibraries, selected, onOpen) {
+				PageRow(0, 2, SettingsPage.FavoriteLibraries, selected, onOpen) {
 					IconBadge(R.drawable.ic_video_library)
 					Labels("Favorite Libraries", if (hidden.isEmpty()) "All" else "Some")
+				}
+			}
+			item(key = "underPosters") {
+				PageRow(1, 2, SettingsPage.UnderPosters, selected, onOpen) {
+					IconBadge(R.drawable.ic_edit)
+					Labels("Under Posters", posterSummary)
 				}
 			}
 			item(key = "playback") { Heading("Playback") }
@@ -312,7 +335,7 @@ private fun SettingsDetail(
 	onDownloads: () -> Unit,
 	onBack: (() -> Unit)?,
 ) {
-	Scaffold(
+	BrowseScaffold(
 		topBar = {
 			TopAppBar(
 				title = { Text(page.title) },
@@ -325,14 +348,20 @@ private fun SettingsDetail(
 				},
 			)
 		},
-		containerColor = lucent.canvas,
 	) { padding ->
 		when (page) {
 			SettingsPage.Profile -> ProfilesPage(session, padding.plusInset())
 			SettingsPage.Server -> ServerList(session, isRoot = false, onChosen = { onBack?.invoke() }, contentPadding = padding)
 			SettingsPage.Appearance -> AppearancePage(themes, choice, onTheme, padding.plusInset())
 			SettingsPage.TabBar -> TabBarPage(padding.plusInset())
+			SettingsPage.HeaderStyle -> HeaderStylePage(choice.headerStyle, padding.plusInset()) { style ->
+				onTheme { it.copy(headerStyle = style) }
+			}
 			SettingsPage.FavoriteLibraries -> FavoriteLibrariesPage(session, padding.plusInset())
+			SettingsPage.UnderPosters -> {
+				val profile by session.state.collectAsStateWithLifecycle()
+				UnderPostersPage(LocalContext.current.container, profile.user?.uuid.orEmpty(), padding.plusInset())
+			}
 			SettingsPage.DiagnosticLogs -> DiagnosticLogsPage(padding.plusInset())
 			SettingsPage.VideoPlayback -> VideoPlaybackPage(padding.plusInset())
 			SettingsPage.Downloads -> DownloadSettingsPage(LocalContext.current.container.downloads, padding.plusInset(), onDownloads)

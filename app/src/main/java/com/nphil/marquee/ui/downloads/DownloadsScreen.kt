@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -31,7 +30,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -69,6 +67,9 @@ import com.nphil.marquee.ui.components.GroupRow
 import com.nphil.marquee.ui.components.plusInset
 import com.nphil.marquee.ui.theme.Radius
 import com.nphil.marquee.ui.theme.Space
+import com.nphil.marquee.ui.components.BrowseList
+import com.nphil.marquee.ui.components.BrowseScaffold
+import com.nphil.marquee.ui.components.pageScroll
 import com.nphil.marquee.ui.theme.lucent
 import java.io.File
 import kotlin.math.roundToInt
@@ -82,7 +83,7 @@ internal fun DownloadsScreen(downloads: Downloads, onBack: (() -> Unit)?) {
 	val preferences by downloads.preferences.collectAsStateWithLifecycle()
 	val verifyProfile by downloads.needsProfileVerification.collectAsStateWithLifecycle()
 	val navigator = LocalNavigator.current
-	Scaffold(
+	BrowseScaffold(
 		topBar = {
 			TopAppBar(title = { Text("Downloads") }, navigationIcon = {
 				if (onBack != null) IconButton(onClick = onBack) {
@@ -90,7 +91,6 @@ internal fun DownloadsScreen(downloads: Downloads, onBack: (() -> Unit)?) {
 				}
 			})
 		},
-		containerColor = lucent.canvas,
 	) { padding ->
 		DownloadsContent(
 			records = records, metered = preferences.metered, verifyProfile = verifyProfile, padding = padding.plusInset(),
@@ -135,7 +135,8 @@ internal fun DownloadsContent(
 			val stacked = largeText || maxWidth < 320.dp
 			LazyVerticalGrid(
 				columns = GridCells.Fixed(columns),
-				modifier = Modifier.widthIn(max = if (columns == 2) DownloadGridMax else DownloadColumnMax).fillMaxWidth(),
+				modifier = Modifier.widthIn(max = if (columns == 2) DownloadGridMax else DownloadColumnMax).fillMaxWidth()
+					.pageScroll(gridState, top = padding.calculateTopPadding(), bottom = padding.calculateBottomPadding(), end = 0.dp),
 				state = gridState,
 				contentPadding = verticalPadding,
 				verticalArrangement = Arrangement.spacedBy(Space.s3),
@@ -272,7 +273,7 @@ internal fun DownloadSettingsPage(downloads: Downloads, padding: PaddingValues, 
 	val completed = records.count { it.phase == DownloadPhase.Ready }
 	val disk by produceState<DownloadDisk?>(null, downloads, completed, records.size) { value = downloads.usage() }
 	Box(Modifier.fillMaxSize().downloadSidePadding(padding), contentAlignment = Alignment.TopCenter) {
-		LazyColumn(
+		BrowseList(
 			Modifier.widthIn(max = DownloadColumnMax).fillMaxWidth(),
 			contentPadding = PaddingValues(top = padding.calculateTopPadding(), bottom = padding.calculateBottomPadding()),
 			verticalArrangement = Arrangement.spacedBy(GroupGap),

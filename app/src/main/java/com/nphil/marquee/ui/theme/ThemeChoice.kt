@@ -2,6 +2,12 @@ package com.nphil.marquee.ui.theme
 
 import androidx.compose.runtime.Immutable
 
+enum class HeaderStyle(val description: String) {
+	Soft("Fades the page edge"),
+	Hard("Draws a line under the header"),
+	Blur("Frosts the page edge on Android 12 and later"),
+}
+
 /**
  * Which themes are chosen (iPhone ThemeStore, DESIGN §8.7): one for light and one for dark, following the
  * system; or, with [matchSystem] off, the theme of [fixedMode] in both appearances.
@@ -12,6 +18,8 @@ data class ThemeChoice(
 	val lightId: String = LucentTheme.DEFAULT_LIGHT,
 	val darkId: String = LucentTheme.DEFAULT_DARK,
 	val fixedMode: ThemeMode = ThemeMode.Dark,
+	val headerStyle: HeaderStyle = HeaderStyle.Soft,
+	val showsScrollBars: Boolean = true,
 ) {
 	/** The appearance on screen. */
 	fun mode(systemDark: Boolean): ThemeMode = when {

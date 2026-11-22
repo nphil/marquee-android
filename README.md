@@ -7,6 +7,10 @@ Compose.
 
 Plan and status: [docs/PLAN.md](docs/PLAN.md).
 
+Settings offers Soft, Hard and Blur headers, and an option to hide scroll bars without
+hiding the Library’s A–Z rail. Under Posters sets the title, details and library sort
+value separately for each Plex profile.
+
 ## AirPlay video
 
 The Android sender uses [Airkast 0.6.0](https://github.com/aivanyuk/airkast/tree/0.6.0)

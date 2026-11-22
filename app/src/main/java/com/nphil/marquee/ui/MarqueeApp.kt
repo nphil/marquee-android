@@ -8,15 +8,21 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nphil.marquee.AppContainer
+import com.nphil.marquee.data.PosterLabels
 import com.nphil.marquee.diagnostics.DiagScreen
 import com.nphil.marquee.session.AppSession
+import com.nphil.marquee.ui.browse.LocalPosterLabels
+import com.nphil.marquee.ui.components.LocalHeaderStyle
+import com.nphil.marquee.ui.components.LocalShowsScrollBars
 import com.nphil.marquee.ui.components.ProvidePlexImages
 import com.nphil.marquee.ui.servers.ServerChoiceScreen
 import com.nphil.marquee.ui.shell.Shell
@@ -57,8 +63,24 @@ fun MarqueeApp(container: AppContainer, choice: ThemeChoice, onTheme: ((ThemeCho
 		) { screen ->
 			when (screen) {
 				RootScreen.SignIn -> SignInScreen(container.session)
-				RootScreen.Servers -> ServerChoiceScreen(container.session)
-				RootScreen.Shell -> AppNavigation(container) { Shell(container, choice, onTheme) }
+				RootScreen.Servers -> CompositionLocalProvider(
+					LocalHeaderStyle provides choice.headerStyle,
+					LocalShowsScrollBars provides choice.showsScrollBars,
+				) { ServerChoiceScreen(container.session) }
+				RootScreen.Shell -> {
+					val profile = state.value.user?.uuid.orEmpty()
+					val labels = key(profile) {
+						remember(container, profile) { container.settings.posterLabels(profile) }
+							.collectAsStateWithLifecycle(PosterLabels()).value
+					}
+					CompositionLocalProvider(
+						LocalPosterLabels provides labels,
+						LocalHeaderStyle provides choice.headerStyle,
+						LocalShowsScrollBars provides choice.showsScrollBars,
+					) {
+						AppNavigation(container) { Shell(container, choice, onTheme) }
+					}
+				}
 			}
 		}
 		TvRemoteOverlay(container.tvRemote)
