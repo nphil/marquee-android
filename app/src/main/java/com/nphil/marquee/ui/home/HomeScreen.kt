@@ -1,6 +1,5 @@
 package com.nphil.marquee.ui.home
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -38,20 +37,21 @@ import com.nphil.marquee.browse.BrowseEnvironment
 import com.nphil.marquee.browse.BrowsePlace
 import com.nphil.marquee.browse.HomeModel
 import com.nphil.marquee.browse.HomeUi
-import com.nphil.marquee.browse.HubGridModel
 import com.nphil.marquee.core.HomeRow
 import com.nphil.marquee.core.PlexItem
 import com.nphil.marquee.ui.LocalNavigator
 import com.nphil.marquee.ui.browse.ActionButton
 import com.nphil.marquee.ui.browse.ContinueSkeleton
-import com.nphil.marquee.ui.browse.ItemPoster
-import com.nphil.marquee.ui.browse.PagedPosterGrid
+import com.nphil.marquee.ui.browse.HubGridScreen
 import com.nphil.marquee.ui.browse.RemoteContent
 import com.nphil.marquee.ui.browse.ShelfSkeleton
 import com.nphil.marquee.ui.browse.continueCardWidth
 import com.nphil.marquee.ui.browse.posterMinWidth
 import com.nphil.marquee.ui.components.EmptyState
 import com.nphil.marquee.ui.components.RetryButton
+import com.nphil.marquee.ui.shell.Places
+import com.nphil.marquee.ui.shell.PlacesTitle
+import com.nphil.marquee.ui.shell.homeMenu
 import com.nphil.marquee.ui.theme.Space
 import com.nphil.marquee.ui.theme.lucent
 
@@ -69,6 +69,7 @@ fun HomeScreen(
 	onOpenWatchlist: () -> Unit,
 	onSignIn: () -> Unit,
 	modifier: Modifier = Modifier,
+	places: Places = Places.None,
 	trailing: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {},
 ) {
 	val model: HomeModel = viewModel(key = "home:${place.key}") { HomeModel(env, place) }
@@ -112,7 +113,7 @@ fun HomeScreen(
 		modifier = modifier,
 		topBar = {
 			TopAppBar(
-				title = { Text("Home") },
+				title = { PlacesTitle("Home", homeMenu(places), places.open) },
 				actions = {
 					IconButton(onClick = { editing = true }) {
 						Icon(painterResource(R.drawable.ic_tune), contentDescription = "Edit Home")
@@ -205,57 +206,6 @@ private fun Shelves(ui: HomeUi, posterWidth: Dp, cardWidth: Dp, actions: HomeAct
 						if (shelf.row.continueWatching) ContinueShelf(shelf.row, cardWidth, actions)
 						else PosterShelf(shelf.row, posterWidth, actions)
 				}
-			}
-		}
-	}
-}
-
-/** A hub's whole list, over Home; Back returns to Home. */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun HubGridScreen(
-	env: BrowseEnvironment,
-	place: BrowsePlace,
-	key: String,
-	title: String,
-	onBack: () -> Unit,
-	onSignIn: () -> Unit,
-	modifier: Modifier = Modifier,
-) {
-	val model: HubGridModel = viewModel(key = "hub:${place.key}:$key") { HubGridModel(env, key) }
-	val paged by model.state.collectAsStateWithLifecycle()
-	val navigator = LocalNavigator.current
-	BackHandler(onBack = onBack)
-	Scaffold(
-		modifier = modifier,
-		topBar = {
-			TopAppBar(
-				title = { Text(title) },
-				navigationIcon = {
-					IconButton(onClick = onBack) {
-						Icon(painterResource(R.drawable.ic_arrow_back), contentDescription = "Back")
-					}
-				},
-				colors = TopAppBarDefaults.topAppBarColors(containerColor = lucent.canvas, scrolledContainerColor = lucent.canvas),
-			)
-		},
-		containerColor = lucent.canvas,
-	) { padding ->
-		PullToRefreshBox(
-			isRefreshing = paged.isLoading && paged.items.isNotEmpty(),
-			onRefresh = model::refresh,
-			modifier = Modifier.padding(padding).fillMaxSize(),
-		) {
-			PagedPosterGrid(
-				paged = paged,
-				serverName = place.server.name,
-				onRetry = model::load,
-				onSignIn = onSignIn,
-				onNearEnd = model::nearEnd,
-				modifier = Modifier.fillMaxSize(),
-				empty = { EmptyState(R.drawable.ic_video_library, "Nothing here", "The server lists no titles here.") },
-			) { item, width ->
-				ItemPoster(item, width, onClick = { navigator?.openItem(item.ratingKey) })
 			}
 		}
 	}

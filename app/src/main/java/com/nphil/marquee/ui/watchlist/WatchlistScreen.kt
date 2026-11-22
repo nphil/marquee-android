@@ -27,16 +27,18 @@ import com.nphil.marquee.ui.browse.ActionMenu
 import com.nphil.marquee.ui.browse.ItemPoster
 import com.nphil.marquee.ui.browse.MenuAction
 import com.nphil.marquee.ui.browse.PagedPosterGrid
+import com.nphil.marquee.ui.components.BackArrow
 import com.nphil.marquee.ui.components.EmptyState
 import com.nphil.marquee.ui.theme.lucent
 
 /**
  * The Watchlist (DESIGN §8.3): the titles saved on plex.tv, as a grid of posters. A title opens its page here when the
  * server has it, else its page on the Watchlist; a long press offers to take it off.
+ * [onBack] shows a back arrow when the page was opened from a menu rather than as a tab.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun WatchlistScreen(env: BrowseEnvironment, place: BrowsePlace, onSignIn: () -> Unit, modifier: Modifier = Modifier) {
+fun WatchlistScreen(env: BrowseEnvironment, place: BrowsePlace, onSignIn: () -> Unit, modifier: Modifier = Modifier, onBack: (() -> Unit)? = null) {
 	val model: WatchlistModel = viewModel(key = "watchlist:${place.key}") { WatchlistModel(env) }
 	val paged by model.state.collectAsStateWithLifecycle()
 	val navigator = LocalNavigator.current
@@ -45,6 +47,7 @@ fun WatchlistScreen(env: BrowseEnvironment, place: BrowsePlace, onSignIn: () -> 
 		topBar = {
 			TopAppBar(
 				title = { Text("Watchlist") },
+				navigationIcon = { if (onBack != null) BackArrow(onBack) },
 				colors = TopAppBarDefaults.topAppBarColors(containerColor = lucent.canvas, scrolledContainerColor = lucent.canvas),
 			)
 		},

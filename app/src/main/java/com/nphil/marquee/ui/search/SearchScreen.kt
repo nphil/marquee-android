@@ -1,5 +1,6 @@
 package com.nphil.marquee.ui.search
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -23,11 +24,14 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -36,6 +40,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -52,6 +59,7 @@ import com.nphil.marquee.core.kindLine
 import com.nphil.marquee.core.posterPath
 import com.nphil.marquee.ui.LocalNavigator
 import com.nphil.marquee.ui.browse.RowsSkeleton
+import com.nphil.marquee.ui.components.BackArrow
 import com.nphil.marquee.ui.components.EmptyState
 import com.nphil.marquee.ui.components.PlexArt
 import com.nphil.marquee.ui.components.RetryButton
@@ -64,10 +72,11 @@ import com.nphil.marquee.ui.theme.lucent
 /**
  * Search (DESIGN §8.2): a field, the kinds of title to cover, then the server's groups for what is typed. With nothing
  * typed it lists the profile's recent searches, which a submitted search or an opened result adds to.
+ * A recent search swipes away. [onBack] shows a back arrow when the page was opened from a menu rather than as a tab.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SearchScreen(env: BrowseEnvironment, place: BrowsePlace, modifier: Modifier = Modifier) {
+fun SearchScreen(env: BrowseEnvironment, place: BrowsePlace, modifier: Modifier = Modifier, onBack: (() -> Unit)? = null) {
 	val model: SearchModel = viewModel(key = "search:${place.key}") { SearchModel(env, place) }
 	val ui by model.ui.collectAsStateWithLifecycle()
 	val navigator = LocalNavigator.current
@@ -77,6 +86,7 @@ fun SearchScreen(env: BrowseEnvironment, place: BrowsePlace, modifier: Modifier 
 		topBar = {
 			TopAppBar(
 				title = { Text("Search") },
+				navigationIcon = { if (onBack != null) BackArrow(onBack) },
 				colors = TopAppBarDefaults.topAppBarColors(containerColor = lucent.canvas, scrolledContainerColor = lucent.canvas),
 			)
 		},
@@ -171,23 +181,42 @@ private fun Recents(recents: List<String>, onPick: (String) -> Unit, onForget: (
 			}
 		}
 		items(recents, key = { it }) { search ->
-			Row(
-				Modifier.fillMaxWidth().heightIn(min = Size.rowMin).clickable(onClickLabel = "Search for $search") { onPick(search) }.padding(start = Space.inset),
-				verticalAlignment = Alignment.CenterVertically,
-			) {
-				Icon(painterResource(R.drawable.ic_search), contentDescription = null, tint = lucent.ink3)
-				Text(
-					search,
-					style = MaterialTheme.typography.bodyLarge,
-					color = lucent.ink,
-					maxLines = 1,
-					overflow = TextOverflow.Ellipsis,
-					modifier = Modifier.weight(1f).padding(horizontal = Space.s3),
-				)
-				IconButton(onClick = { onForget(search) }) {
-					Icon(painterResource(R.drawable.ic_close), contentDescription = "Remove $search", tint = lucent.ink3)
-				}
+			RecentRow(search, onPick = { onPick(search) }, onForget = { onForget(search) }, modifier = Modifier.animateItem())
+		}
+	}
+}
+
+/** One recent search: a tap searches for it, a swipe toward the start takes it off the list (TalkBack gets a "Remove" action). */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RecentRow(search: String, onPick: () -> Unit, onForget: () -> Unit, modifier: Modifier = Modifier) {
+	val state = rememberSwipeToDismissBoxState(
+		confirmValueChange = { target -> (target == SwipeToDismissBoxValue.EndToStart).also { if (it) onForget() } },
+	)
+	SwipeToDismissBox(
+		state = state,
+		backgroundContent = {
+			Box(Modifier.fillMaxSize().background(lucent.danger).padding(end = Space.inset), contentAlignment = Alignment.CenterEnd) {
+				Icon(painterResource(R.drawable.ic_delete), contentDescription = null, tint = lucent.canvas)
 			}
+		},
+		modifier = modifier.semantics { customActions = listOf(CustomAccessibilityAction("Remove $search") { onForget(); true }) },
+		enableDismissFromStartToEnd = false,
+	) {
+		Row(
+			Modifier.fillMaxWidth().background(lucent.canvas).heightIn(min = Size.rowMin)
+				.clickable(onClickLabel = "Search for $search", onClick = onPick).padding(horizontal = Space.inset),
+			verticalAlignment = Alignment.CenterVertically,
+		) {
+			Icon(painterResource(R.drawable.ic_search), contentDescription = null, tint = lucent.ink3)
+			Text(
+				search,
+				style = MaterialTheme.typography.bodyLarge,
+				color = lucent.ink,
+				maxLines = 1,
+				overflow = TextOverflow.Ellipsis,
+				modifier = Modifier.weight(1f).padding(start = Space.s3),
+			)
 		}
 	}
 }

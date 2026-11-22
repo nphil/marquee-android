@@ -34,7 +34,7 @@ import kotlinx.serialization.modules.subclass
  * [com.nphil.marquee.seerr.Seerr.enabled] is true.
  */
 @Composable
-fun RequestsDestination(container: AppContainer, modifier: Modifier = Modifier) {
+fun RequestsDestination(container: AppContainer, modifier: Modifier = Modifier, onBack: (() -> Unit)? = null) {
 	val config = container.seerr.config.collectAsStateWithLifecycle()
 	val settings = config.value
 	Box(modifier.fillMaxSize().background(lucent.canvas), contentAlignment = Alignment.Center) {
@@ -45,7 +45,7 @@ fun RequestsDestination(container: AppContainer, modifier: Modifier = Modifier) 
 				title = "Set up Seerr",
 				message = "Add Seerr in Settings under Integrations to discover and request movies and series.",
 			)
-			else -> RequestsStack(container)
+			else -> RequestsStack(container, onBack)
 		}
 	}
 }
@@ -77,7 +77,7 @@ internal class RequestsNav(private val stack: NavBackStack<NavKey>) {
 }
 
 @Composable
-private fun RequestsStack(container: AppContainer) {
+private fun RequestsStack(container: AppContainer, onBack: (() -> Unit)?) {
 	val stack = rememberNavBackStack(StackConfig, RequestsHome)
 	val nav = remember(stack) { RequestsNav(stack) }
 	NavDisplay(
@@ -88,7 +88,7 @@ private fun RequestsStack(container: AppContainer) {
 			rememberViewModelStoreNavEntryDecorator<NavKey>(),
 		),
 		entryProvider = entryProvider {
-			entry<RequestsHome> { RequestsHomeScreen(container, nav) }
+			entry<RequestsHome> { RequestsHomeScreen(container, nav, onBack) }
 			entry<RequestsBrowse> { route -> BrowseScreen(container, route.feed, nav) }
 			entry<RequestsTitle> { route -> TitleScreen(container, route.kind, route.tmdbId, nav) }
 		},

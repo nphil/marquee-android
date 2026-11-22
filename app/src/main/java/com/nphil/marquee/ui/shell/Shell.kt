@@ -1,7 +1,6 @@
 package com.nphil.marquee.ui.shell
 
 import androidx.activity.compose.BackHandler
-import androidx.annotation.DrawableRes
 import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -25,14 +24,18 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.painterResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -41,6 +44,7 @@ import com.nphil.marquee.R
 import com.nphil.marquee.browse.BrowseEnvironment
 import com.nphil.marquee.browse.BrowsePlace
 import com.nphil.marquee.core.Destination
+import com.nphil.marquee.core.TabBarBehavior
 import com.nphil.marquee.core.TabLayout
 import com.nphil.marquee.diagnostics.DiagScreen
 import com.nphil.marquee.ui.home.HomeScreen
@@ -53,37 +57,27 @@ import com.nphil.marquee.ui.theme.lucent
 import com.nphil.marquee.ui.watchlist.WatchlistScreen
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 /** Windows at least this wide (dp) get the sidebar; narrower ones keep the bottom bar. */
 private const val WIDE_WIDTH_DP = 600
 
-private enum class Page(val label: String, @DrawableRes val icon: Int, @DrawableRes val selectedIcon: Int) {
-	Home("Home", R.drawable.ic_home, R.drawable.ic_home_filled),
-	Library("Library", R.drawable.ic_video_library, R.drawable.ic_video_library_filled),
-	Watchlist("Watchlist", R.drawable.ic_bookmark, R.drawable.ic_bookmark_filled),
-	Requests("Requests", R.drawable.ic_playlist_add, R.drawable.ic_playlist_add),
-	Search("Search", R.drawable.ic_search, R.drawable.ic_search),
-	Settings("Settings", R.drawable.ic_settings, R.drawable.ic_settings_filled),
-}
+private val SettingsEntry = SidebarDestination(SETTINGS_KEY, "Settings", R.drawable.ic_settings, R.drawable.ic_settings_filled)
 
-private fun Destination.page(): Page? = when (this) {
-	Destination.Home -> Page.Home
-	Destination.Library -> Page.Library
-	Destination.Watchlist -> Page.Watchlist
-	Destination.Requests -> Page.Requests
-	Destination.Search -> Page.Search
-	else -> null
-}
-
-private fun Page.destination() = SidebarDestination(name, label, icon, selectedIcon)
+private fun Destination.sidebarEntry() = SidebarDestination(name, title, tabIcon(false), tabIcon(true))
 
 /** What the person chose for the sidebar before; [expanded] is null while they have not chosen. */
 private class RememberedSidebar(val expanded: Boolean?)
 
+/** What the content area shows: a tab or Settings, or a [place] opened over it. Equal values are the same screen. */
+private data class Showing(val page: String, val place: Destination?) {
+	val key: String get() = "$page/${place?.name}"
+}
+
 /**
- * The signed-in app: Home, Library and the rest in a bottom bar on a phone, in the sidebar on a tablet. The sidebar
- * opens by default when the window is wide, and keeps the person's choice after that. On a phone Settings is the
- * button on Home's bar.
+ * The signed-in app: the tabs the person chose in a bottom bar on a phone, in the sidebar on a tablet. A destination
+ * that is not a tab opens from a Places menu over the page. The sidebar opens by default when the window is wide, and
+ * keeps the person's choice after that. On a phone Settings is the button on Home's bar.
  */
 @Composable
 fun Shell(container: AppContainer, choice: ThemeChoice, onTheme: ((ThemeChoice) -> ThemeChoice) -> Unit) {
@@ -93,13 +87,16 @@ fun Shell(container: AppContainer, choice: ThemeChoice, onTheme: ((ThemeChoice) 
 	}
 	val place by env.source.place.collectAsStateWithLifecycle()
 	val seerr by container.seerr.enabled.collectAsStateWithLifecycle()
+	val layout by env.preferences.tabLayout.collectAsStateWithLifecycle(initialValue = null as TabLayout?)
+	val behavior by env.preferences.tabBarBehavior.collectAsStateWithLifecycle(initialValue = TabBarBehavior.Always)
 	val sidebar = remembered
 	val where = place
-	if (sidebar == null || where == null) {
+	val tabLayout = layout
+	if (sidebar == null || where == null || tabLayout == null) {
 		Box(Modifier.fillMaxSize().background(lucent.canvas))
 		return
 	}
-	ShellPages(container, env, where, sidebar.expanded, seerr, choice, onTheme)
+	ShellPages(container, env, where, sidebar.expanded, tabLayout, seerr, behavior, choice, onTheme)
 }
 
 @Composable
@@ -108,40 +105,71 @@ private fun ShellPages(
 	env: BrowseEnvironment,
 	place: BrowsePlace,
 	rememberedExpanded: Boolean?,
+	layout: TabLayout,
 	seerr: Boolean,
+	behavior: TabBarBehavior,
 	choice: ThemeChoice,
 	onTheme: ((ThemeChoice) -> ThemeChoice) -> Unit,
 ) {
 	val wide = LocalConfiguration.current.screenWidthDp >= WIDE_WIDTH_DP
-	val tabs = remember(seerr) {
-		val available = setOfNotNull(
-			Destination.Home,
-			Destination.Library,
-			Destination.Watchlist,
-			Destination.Search,
-			Destination.Requests.takeIf { seerr },
-		)
-		TabLayout.standard.tabs(available).mapNotNull { it.page() }
+	val available = remember(seerr) { TabLayout.available(seerr) }
+	val tabs = remember(layout, available) { layout.tabs(available) }
+	val others = remember(layout, tabs, available) { placesOutsideTabs(layout, tabs, available) }
+	var savedPage by rememberSaveable { mutableStateOf(Destination.Home.name) }
+	var savedPlace by rememberSaveable { mutableStateOf<String?>(null) }
+	val page = selectedPage(savedPage, tabs)
+	val opened = openedPlace(savedPlace, others)
+	val select: (String) -> Unit = { key ->
+		savedPage = key
+		savedPlace = null
 	}
-	var selected by rememberSaveable { mutableStateOf(Page.Home) }
-	val page = if (selected == Page.Settings || selected in tabs) selected else Page.Home
-	BackHandler(enabled = page != Page.Home) { selected = Page.Home }
-	LaunchedEffect(page) { DiagScreen.tab(page.label) }
+	val places = remember(others, tabs, available) {
+		Places(others) { destination ->
+			when (val route = routePlace(destination, tabs, available)) {
+				is PlaceRoute.Switch -> {
+					savedPage = route.destination.name
+					savedPlace = null
+				}
+				is PlaceRoute.Open -> savedPlace = route.destination.name
+				PlaceRoute.Ignore -> Unit
+			}
+		}
+	}
+	// A place that stopped being one (the layout was edited) must not come back if the layout is edited again.
+	LaunchedEffect(opened) { if (opened == null) savedPlace = null }
+	BackHandler(enabled = page != Destination.Home.name) { select(Destination.Home.name) }
+	BackHandler(enabled = opened != null) { savedPlace = null }
+	val showing = Showing(page, opened)
+	LaunchedEffect(showing) { DiagScreen.tab(opened?.title ?: if (page == SETTINGS_KEY) "Settings" else Destination.valueOf(page).title) }
+
 	val pages: @Composable (Modifier) -> Unit = { modifier ->
-		Pages(page, tabs, wide, container, env, place, choice, onTheme, onPage = { selected = it }, modifier)
+		Pages(showing, tabs, wide, container, env, place, places, choice, onTheme, onSettings = { select(SETTINGS_KEY) }, onBack = { savedPlace = null }, modifier)
 	}
 
 	if (!wide) {
+		val settle = MaterialTheme.motionScheme.defaultSpatialSpec<Float>()
+		val scroll = remember { BarScroll(settle) }
+		val hide = behavior == TabBarBehavior.HideOnScroll
+		SideEffect { scroll.enabled = hide }
+		// A page that arrives, and a bar that must stay put, always find the bar shown.
+		LaunchedEffect(showing, hide) { scroll.show() }
 		Scaffold(
 			bottomBar = {
-				NavigationBar {
+				NavigationBar(
+					Modifier.layout { measurable, constraints ->
+						val bar = measurable.measure(constraints)
+						scroll.limit = bar.height.toFloat()
+						// The slot shrinks with the hidden part, so the page grows into it as the bar slides away.
+						layout(bar.width, bar.height - scroll.hidden.roundToInt()) { bar.place(0, 0) }
+					},
+				) {
 					for (item in tabs) {
-						val on = page == item
+						val on = page == item.name
 						NavigationBarItem(
 							selected = on,
-							onClick = { selected = item },
-							icon = { Icon(painterResource(if (on) item.selectedIcon else item.icon), contentDescription = null) },
-							label = { Text(item.label) },
+							onClick = { select(item.name) },
+							icon = { Icon(painterResource(item.tabIcon(on)), contentDescription = null) },
+							label = { Text(item.title) },
 						)
 					}
 				}
@@ -149,7 +177,7 @@ private fun ShellPages(
 			containerColor = lucent.canvas,
 			contentWindowInsets = WindowInsets(0, 0, 0, 0),
 		) { padding ->
-			pages(Modifier.padding(padding).consumeWindowInsets(padding))
+			pages(Modifier.padding(padding).consumeWindowInsets(padding).nestedScroll(scroll))
 		}
 		return
 	}
@@ -159,15 +187,15 @@ private fun ShellPages(
 	val startInsets = WindowInsets.systemBars.union(WindowInsets.displayCutout).only(WindowInsetsSides.Start)
 	Row(Modifier.fillMaxSize().background(lucent.canvas)) {
 		MarqueeSidebar(
-			destinations = tabs.map { it.destination() },
-			selected = page.name,
-			onSelect = { selected = Page.valueOf(it) },
+			destinations = tabs.map { it.sidebarEntry() },
+			selected = page,
+			onSelect = select,
 			expanded = expanded,
 			onToggle = {
 				expanded = !expanded
 				scope.launch { env.preferences.setSidebarExpanded(expanded) }
 			},
-			footer = listOf(Page.Settings.destination()),
+			footer = listOf(SettingsEntry),
 		)
 		pages(Modifier.weight(1f).fillMaxHeight().consumeWindowInsets(startInsets))
 	}
@@ -175,39 +203,53 @@ private fun ShellPages(
 
 @Composable
 private fun Pages(
-	page: Page,
-	tabs: List<Page>,
+	showing: Showing,
+	tabs: List<Destination>,
 	wide: Boolean,
 	container: AppContainer,
 	env: BrowseEnvironment,
 	place: BrowsePlace,
+	places: Places,
 	choice: ThemeChoice,
 	onTheme: ((ThemeChoice) -> ThemeChoice) -> Unit,
-	onPage: (Page) -> Unit,
+	onSettings: () -> Unit,
+	onBack: () -> Unit,
 	modifier: Modifier,
 ) {
 	val effects = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
-	Crossfade(targetState = page, modifier = modifier, animationSpec = effects, label = "page") { shown ->
-		when (shown) {
-			Page.Home -> HomeScreen(
-				env = env,
-				place = place,
-				watchlistShelf = Page.Watchlist !in tabs,
-				onOpenWatchlist = { onPage(Page.Watchlist) },
-				onSignIn = container.session::signOut,
-				trailing = {
-					if (!wide) {
-						IconButton(onClick = { onPage(Page.Settings) }) {
-							Icon(painterResource(R.drawable.ic_settings), contentDescription = "Settings")
+	// Each screen keeps its scroll position and chosen options while another one is shown over it.
+	val saveable = rememberSaveableStateHolder()
+	Crossfade(targetState = showing, modifier = modifier, animationSpec = effects, label = "page") { shown ->
+		saveable.SaveableStateProvider(shown.key) {
+			if (shown.place == null && shown.page == SETTINGS_KEY) {
+				SettingsScreen(container.session, container.themes, choice, onTheme)
+				return@SaveableStateProvider
+			}
+			val destination = shown.place ?: Destination.valueOf(shown.page)
+			val back = if (shown.place != null) onBack else null
+			when (destination) {
+				Destination.Home -> HomeScreen(
+					env = env,
+					place = place,
+					watchlistShelf = Destination.Watchlist !in tabs,
+					onOpenWatchlist = { places.open(Destination.Watchlist) },
+					onSignIn = container.session::signOut,
+					places = places,
+					trailing = {
+						if (!wide) {
+							IconButton(onClick = onSettings) {
+								Icon(painterResource(R.drawable.ic_settings), contentDescription = "Settings")
+							}
 						}
-					}
-				},
-			)
-			Page.Library -> LibraryScreen(env, place, onSignIn = container.session::signOut)
-			Page.Watchlist -> WatchlistScreen(env, place, onSignIn = container.session::signOut)
-			Page.Requests -> RequestsDestination(container)
-			Page.Search -> SearchScreen(env, place)
-			Page.Settings -> SettingsScreen(container.session, container.themes, choice, onTheme)
+					},
+				)
+				Destination.Library -> LibraryScreen(env, place, onSignIn = container.session::signOut, places = places, onBack = back)
+				Destination.Watchlist -> WatchlistScreen(env, place, onSignIn = container.session::signOut, onBack = back)
+				Destination.Requests -> RequestsDestination(container, onBack = back)
+				Destination.Search -> SearchScreen(env, place, onBack = back)
+				// Not built yet: TabLayout.available leaves them out, so neither is ever a tab or a place.
+				Destination.LiveTv, Destination.Downloads -> Unit
+			}
 		}
 	}
 }

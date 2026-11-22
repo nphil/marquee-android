@@ -65,6 +65,7 @@ import com.nphil.marquee.core.SeerrFeed
 import com.nphil.marquee.core.SeerrGenre
 import com.nphil.marquee.core.SeerrRequest
 import com.nphil.marquee.core.SeerrTitle
+import com.nphil.marquee.ui.components.BackArrow
 import com.nphil.marquee.ui.components.EmptyState
 import com.nphil.marquee.ui.components.RetryButton
 import com.nphil.marquee.ui.components.SectionHeader
@@ -78,7 +79,7 @@ import java.text.DateFormat
 
 /** Requests' first page: Discover and My Requests, and a search that takes their place while there is something typed. */
 @Composable
-internal fun RequestsHomeScreen(container: AppContainer, nav: RequestsNav) {
+internal fun RequestsHomeScreen(container: AppContainer, nav: RequestsNav, onBack: (() -> Unit)? = null) {
 	val seerr = container.seerr
 	val discover = viewModel { DiscoverModel(seerr) }
 	val mine = viewModel { MyRequestsModel(seerr) }
@@ -86,7 +87,10 @@ internal fun RequestsHomeScreen(container: AppContainer, nav: RequestsNav) {
 	val text by search.text.collectAsStateWithLifecycle()
 	var tab by rememberSaveable { mutableIntStateOf(0) }
 	val searching = text.isNotBlank()
-	Scaffold(topBar = { TopAppBar(title = { Text("Requests") }) }, containerColor = lucent.canvas) { padding ->
+	Scaffold(
+		topBar = { TopAppBar(title = { Text("Requests") }, navigationIcon = { if (onBack != null) BackArrow(onBack) }) },
+		containerColor = lucent.canvas,
+	) { padding ->
 		BoxWithConstraints(Modifier.fillMaxSize().padding(top = padding.calculateTopPadding()).then(padding.sides())) {
 			val wide = maxWidth >= WideBreakpoint
 			val bottom = padding.calculateBottomPadding()
