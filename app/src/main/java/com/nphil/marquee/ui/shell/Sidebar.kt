@@ -59,6 +59,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.constrainWidth
 import androidx.compose.ui.unit.dp
+import com.nphil.marquee.diagnostics.Diag
+import com.nphil.marquee.diagnostics.DiagCategory
 import com.nphil.marquee.ui.theme.Size
 import com.nphil.marquee.ui.theme.Space
 import com.nphil.marquee.ui.theme.lucent
@@ -184,7 +186,13 @@ private fun SidebarBrand(expanded: Boolean, onToggle: () -> Unit, labelAlpha: ()
 	var toggles by remember { mutableIntStateOf(0) }
 	var armed by remember { mutableStateOf(false) }
 	LaunchedEffect(expanded) {
-		if (armed) toggles++ else armed = true
+		if (armed) {
+			toggles++
+			// The page beside the sidebar changes width on every frame of the animation; a report should show when.
+			Diag.info(DiagCategory.Ui, "sidebar.toggle", "expanded" to expanded)
+		} else {
+			armed = true
+		}
 	}
 
 	Row(

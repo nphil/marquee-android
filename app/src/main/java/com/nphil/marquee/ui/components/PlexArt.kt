@@ -9,10 +9,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -21,6 +24,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
@@ -35,6 +39,7 @@ import com.nphil.marquee.R
 import com.nphil.marquee.core.ClientIdentity
 import com.nphil.marquee.core.PlexServer
 import com.nphil.marquee.ui.theme.lucent
+import kotlinx.coroutines.delay
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import kotlin.math.ceil
 
@@ -125,8 +130,9 @@ object PlexImageUrl {
 }
 
 /**
- * A Plex image at [widthDp] by [heightDp], asked of the server at exactly the pixels that size takes. Art
- * that is missing, or not loaded yet, shows the quiet track colour with a film glyph.
+ * A Plex image at [widthDp] by [heightDp], asked of the server at exactly the pixels that size takes once the size
+ * has held still ([rememberSettled]). Art that is missing, or not loaded yet, shows the quiet track colour with a
+ * film glyph.
  */
 @Composable
 fun PlexArt(
@@ -139,9 +145,9 @@ fun PlexArt(
 	val images = LocalPlexImages.current
 	val context = LocalContext.current
 	val density = LocalDensity.current.density
-	val widthPx = ceil(widthDp.value * density).toInt()
-	val heightPx = ceil(heightDp.value * density).toInt()
-	val request = remember(images, path, widthPx, heightPx) { images?.request(context, path, widthPx, heightPx) }
+	val wanted = IntSize(ceil(widthDp.value * density).toInt(), ceil(heightDp.value * density).toInt())
+	val size = rememberSettled(wanted, path)
+	val request = remember(images, path, size) { images?.request(context, path, size.width, size.height) }
 	Box(
 		modifier = modifier.size(widthDp, heightDp).background(lucent.trackOff),
 		contentAlignment = Alignment.Center,
@@ -159,4 +165,26 @@ fun PlexArt(
 			)
 		}
 	}
+}
+
+/** How long a size must stay put before it counts as the one to ask for. */
+private const val SIZE_SETTLE_MILLIS = 200L
+
+/**
+ * [value] once it has held still for [SIZE_SETTLE_MILLIS]. A pane that grows or shrinks, as when the sidebar opens,
+ * gives every card a new size on every frame, and an image asked for at each is cancelled by the next frame's: in one
+ * report from a 120 Hz tablet, 307 requests in two seconds, 244 of them cancelled within a frame, with the art blank
+ * meanwhile. The first value, and one that returns to what is shown, apply at once; a different [key], the art's
+ * path, starts over.
+ */
+@Composable
+internal fun <T> rememberSettled(value: T, key: Any?): T {
+	var settled by remember(key) { mutableStateOf(value) }
+	if (settled != value) {
+		LaunchedEffect(value) {
+			delay(SIZE_SETTLE_MILLIS)
+			settled = value
+		}
+	}
+	return settled
 }
