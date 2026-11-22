@@ -134,6 +134,15 @@ Each phase ends with a release installed on the tablet.
      floating window (`resizeableActivity`, layouts that hold at small window sizes).
 4. **The rest.** Downloads, Live TV (guide, DVR, direct from tuner), Chromecast, linked phones, the
    LumaTV remote, glasses, the HomeLabber quality map.
+   - Plex Live TV uses Core's lineup, schedule, tuner sessions and stream cleanup. The guide uses a pinned
+     channel/time grid when the content pane has room, and a Now & Next list at narrower widths or larger
+     type sizes. The player has a Quick Guide alongside the picture in wide windows and below it otherwise.
+     Direct from Tuner in Video & Playback allows an attached-LAN HDHomeRun stream, with Core choosing
+     the route and Plex handling unsupported streams or a direct read/decoder failure. LumaTV refusals
+     stay visible, and the player releases the tuner for Plex recordings or when it stops. Android 17
+     requires local-network permission. Direct streams do not have a rewind buffer on Android; Plex
+     playback can rewind within the server's live window. DVR rules and scheduled airings use Plex's
+     recording templates; Recorded opens the completed DVR version in the normal player.
 5. **Android extras** (section 6).
 
 ## 5. Verification

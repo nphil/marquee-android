@@ -51,6 +51,7 @@ import com.nphil.marquee.diagnostics.DiagScreen
 import com.nphil.marquee.ui.downloads.DownloadsScreen
 import com.nphil.marquee.ui.home.HomeScreen
 import com.nphil.marquee.ui.library.LibraryScreen
+import com.nphil.marquee.ui.live.LiveGuideDestination
 import com.nphil.marquee.ui.requests.RequestsDestination
 import com.nphil.marquee.ui.search.SearchScreen
 import com.nphil.marquee.ui.settings.SettingsScreen
@@ -260,7 +261,7 @@ private fun Pages(
 				Destination.Requests -> RequestsDestination(container, onBack = back)
 				Destination.Search -> SearchScreen(env, place, onBack = back)
 				Destination.Downloads -> DownloadsScreen(container.downloads, onBack = back)
-				Destination.LiveTv -> Unit
+				Destination.LiveTv -> LiveGuideDestination(container, place, onBack = back)
 			}
 		}
 	}

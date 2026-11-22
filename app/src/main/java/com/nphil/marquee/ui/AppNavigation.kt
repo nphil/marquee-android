@@ -54,6 +54,8 @@ import com.nphil.marquee.ui.components.ToastHost
 import com.nphil.marquee.ui.detail.DetailScreen
 import com.nphil.marquee.ui.detail.ExtraScreen
 import com.nphil.marquee.ui.detail.PersonScreen
+import com.nphil.marquee.ui.live.LivePlayerDestination
+import com.nphil.marquee.ui.live.RecordingsDestination
 import com.nphil.marquee.ui.player.PlayerScreen
 import com.nphil.marquee.ui.theme.Radius
 import kotlinx.coroutines.CoroutineScope
@@ -91,7 +93,20 @@ data class Extra(val item: PlexItem) : Route
  * subtitle choices: the show's key for an episode, and the title's own when null.
  */
 @Serializable
-data class Play(val ratingKey: String, val fromStart: Boolean = false, val titleKey: String? = null, val downloadId: String? = null) : Route
+data class Play(
+	val ratingKey: String,
+	val fromStart: Boolean = false,
+	val titleKey: String? = null,
+	val downloadId: String? = null,
+	val recordingMediaID: Int? = null,
+) : Route
+
+/** A Plex channel; only the lineup key and the account scope are saved with the navigation stack. */
+@Serializable
+internal data class WatchLive(val scope: String, val channel: String) : Route
+
+@Serializable
+internal data class Recordings(val scope: String) : Route
 
 /** The back stack, for the screens that open pages. */
 @Stable
@@ -156,6 +171,13 @@ class Navigator internal constructor(
 	internal fun openDownload(entry: DownloadEntry) = push(Play(
 		entry.title.ratingKey, titleKey = entry.title.showKey ?: entry.title.ratingKey, downloadId = entry.id,
 	))
+
+	internal fun openLive(scope: String, channel: String) = push(WatchLive(scope, channel))
+
+	internal fun openRecordings(scope: String) = push(Recordings(scope))
+
+	internal fun openRecording(ratingKey: String, titleKey: String, mediaID: Int) =
+		push(Play(ratingKey, titleKey = titleKey, recordingMediaID = mediaID))
 
 	fun back() {
 		if (stack.size > 1) stack.removeAt(stack.lastIndex)
@@ -260,6 +282,8 @@ private val BackStack = SavedStateConfiguration {
 			subclass(Person::class)
 			subclass(Extra::class)
 			subclass(Play::class)
+			subclass(WatchLive::class)
+			subclass(Recordings::class)
 		}
 	}
 }
@@ -296,8 +320,15 @@ fun AppNavigation(container: AppContainer, shell: @Composable (Navigator) -> Uni
 						entry<Person> { route -> Visible { PersonScreen(container, route, navigator) } }
 						entry<Extra> { route -> Visible { ExtraScreen(route.item, navigator) } }
 						entry<Play> { route ->
-							Visible { PlayerScreen(route.ratingKey, route.titleKey ?: route.ratingKey, route.fromStart, route.downloadId, navigator::back) }
+							Visible {
+								PlayerScreen(
+									route.ratingKey, route.titleKey ?: route.ratingKey, route.fromStart,
+									downloadId = route.downloadId, recordingMediaID = route.recordingMediaID, onClose = navigator::back,
+								)
+							}
 						}
+						entry<WatchLive> { route -> Visible { LivePlayerDestination(container, route, navigator::back) } }
+						entry<Recordings> { route -> Visible { RecordingsDestination(container, route, navigator::back) } }
 					},
 				)
 			}

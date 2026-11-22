@@ -15,22 +15,15 @@ import org.junit.Test
 class TabBarModelTest {
 	@Test
 	fun theRowsAreTheDestinationsTheAppHasWithoutSearch() {
-		assertEquals(listOf(Home, Library, Watchlist, Requests, Downloads), TabLayout.standard.movable())
+		assertEquals(listOf(Home, Library, LiveTv, Watchlist, Requests, Downloads), TabLayout.standard.movable())
 	}
 
 	@Test
 	fun aRowMovesAndSearchStaysLast() {
-		val moved = TabLayout.standard.movedRow(from = 4, to = 1)
+		val moved = TabLayout.standard.movedRow(from = 5, to = 1)
 
-		assertEquals(listOf(Home, Downloads, Library, Watchlist, Requests), moved.movable())
+		assertEquals(listOf(Home, Downloads, Library, LiveTv, Watchlist, Requests), moved.movable())
 		assertEquals(Search, moved.order.last())
-	}
-
-	@Test
-	fun theDestinationsNotListedKeepTheirPlaceAmongTheOthers() {
-		val layout = TabLayout(order = listOf(Home, LiveTv, Library, Watchlist, Requests), shown = setOf(Home))
-
-		assertEquals(listOf(Home, LiveTv, Watchlist, Library, Requests), layout.movedRow(from = 1, to = 2).order.dropLast(2))
 	}
 
 	@Test

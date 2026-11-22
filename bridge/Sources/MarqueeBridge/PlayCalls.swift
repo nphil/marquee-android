@@ -100,7 +100,14 @@ enum PlayCalls {
 
         var item = try await library.metadata(call.ratingKey)
         item.playQueueItemID = await session.queued(item) ?? item.playQueueItemID
-        let mediaIndex = item.media.indices.contains(call.mediaIndex ?? 0) ? call.mediaIndex ?? 0 : 0
+        let mediaIndex: Int
+        if let recording = call.recordingMediaID {
+            // Match the listed version by identity: Plex can reorder versions between requests.
+            guard let index = item.index(ofMediaID: recording) else { throw PlayError.noFile }
+            mediaIndex = index
+        } else {
+            mediaIndex = item.media.indices.contains(call.mediaIndex ?? 0) ? call.mediaIndex ?? 0 : 0
+        }
         guard item.media.indices.contains(mediaIndex), let part = item.media[mediaIndex].parts.first else {
             throw PlayError.noFile
         }

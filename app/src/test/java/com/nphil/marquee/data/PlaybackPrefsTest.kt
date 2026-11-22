@@ -42,4 +42,12 @@ class PlaybackPrefsTest {
 		stored.setPlaybackPrefs("a", PlaybackPrefs(skipInterval = 7, introSkipDelay = 4, nextEpisodeDelay = 0))
 		assertEquals(PlaybackPrefs(), stored.playbackPrefs("a"))
 	}
+
+	@Test
+	fun directTunerIsOnByDefaultAndCanBeDisabledPerProfile() {
+		val stored = mutablePreferencesOf()
+		stored.setPlaybackPrefs("a", PlaybackPrefs(readsTunerDirectly = false))
+		assertEquals(false, stored.playbackPrefs("a").readsTunerDirectly)
+		assertEquals(true, stored.playbackPrefs("b").readsTunerDirectly)
+	}
 }

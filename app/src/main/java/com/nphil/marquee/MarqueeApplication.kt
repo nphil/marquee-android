@@ -23,6 +23,7 @@ import com.nphil.marquee.data.SubtitleServices
 import com.nphil.marquee.diagnostics.Diag
 import com.nphil.marquee.diagnostics.DiagRequestLog
 import com.nphil.marquee.downloads.Downloads
+import com.nphil.marquee.live.LiveTv
 import com.nphil.marquee.playback.PlaybackCoordinator
 import com.nphil.marquee.seerr.Seerr
 import com.nphil.marquee.session.AppSession
@@ -67,6 +68,7 @@ class AppContainer(
 	val browse = BrowseEnvironment(
 		SessionBrowseSource(session, core, scope), settings, changes, toasts, Snapshots.directory(context.cacheDir), scope,
 	)
+	internal val live = LiveTv(this, context.cacheDir.resolve("live-tv"))
 
 	/** What the trailer, the theme tune and the extras viewer tell each other (who is sounding, whether a player is open). */
 	val playback = PlaybackCoordinator()

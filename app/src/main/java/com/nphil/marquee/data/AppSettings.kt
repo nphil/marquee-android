@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.JsonObject
@@ -187,6 +188,17 @@ class AppSettings(context: Context) : BrowsePreferences {
 		}
 	}
 
+	internal fun liveLists(scope: String): Flow<LiveLists> =
+		store.data.map { it.liveLists(liveListsKey(scope)) }.distinctUntilChanged()
+
+	internal suspend fun updateLiveLists(scope: String, change: (LiveLists) -> LiveLists) {
+		val key = liveListsKey(scope)
+		store.edit { it[key] = CoreJson.encodeToString(LiveLists.serializer(), change(it.liveLists(key))) }
+	}
+
+	private fun Preferences.liveLists(key: Preferences.Key<String>): LiveLists =
+		this[key]?.let { runCatching { CoreJson.decodeFromString(LiveLists.serializer(), it) }.getOrNull() } ?: LiveLists()
+
 	private fun Preferences.themeChoice() = ThemeChoice(
 		matchSystem = this[THEME_MATCH] ?: true,
 		lightId = this[THEME_LIGHT] ?: ThemeChoice().lightId,
@@ -219,8 +231,12 @@ class AppSettings(context: Context) : BrowsePreferences {
 		fun hiddenLibrariesKey(profile: String) = stringSetPreferencesKey("library.hidden.$profile")
 		fun libraryChoiceKey(profile: String) = stringPreferencesKey("library.chosen.$profile")
 		fun libraryViewKey(profile: String, libraryKey: String) = stringPreferencesKey("library.view.$profile.$libraryKey")
+		fun liveListsKey(scope: String) = stringPreferencesKey("live.channels.$scope")
 	}
 }
 
 /** The kept choices of a sign-in. */
 class StoredAccount(val serverId: String?, val addresses: Map<String, String>)
+
+@Serializable
+internal data class LiveLists(val favourites: List<String> = emptyList(), val recents: List<String> = emptyList())

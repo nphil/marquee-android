@@ -17,12 +17,10 @@ class TabLayoutTest {
 
 	@Test
 	fun theTabletsBarIsWhatIsBuiltWithSearchLastAndAtMostFive() {
-		val built = setOf(Home, Library, Watchlist, Search)
-
-		assertEquals(listOf(Home, Library, Watchlist, Search), TabLayout.standard.tabs(built))
-		assertEquals(listOf(Home, Library, Watchlist, Requests, Search), TabLayout.standard.tabs(built + Requests))
-		// Every destination built: the sixth tab gives way before Search.
-		assertEquals(listOf(Home, Library, LiveTv, Watchlist, Search), TabLayout.standard.tabs(all))
+		val tabs = listOf(Home, Library, LiveTv, Watchlist, Search)
+		assertEquals(tabs, TabLayout.standard.tabs(TabLayout.available(false)))
+		// Requests is still available in Library's Places when the tab bar is full.
+		assertEquals(tabs, TabLayout.standard.tabs(TabLayout.available(true)))
 	}
 
 	@Test
@@ -50,7 +48,7 @@ class TabLayoutTest {
 		val roomy = TabLayout(Destination.entries, setOf(Home, Library, Watchlist, Search))
 
 		assertFalse(roomy.canSwitch(Home, built))
-		assertFalse(roomy.canSwitch(LiveTv, built))
+		assertTrue(roomy.canSwitch(LiveTv, built))
 		assertTrue(roomy.canSwitch(Requests, built))
 		assertEquals(listOf(Home, Library, Watchlist, Requests, Search), roomy.withTab(Requests, true, built).tabs(built))
 		// Five tabs fill the bar: an off one cannot come on, an on one can still go off.
@@ -66,7 +64,7 @@ class TabLayoutTest {
 
 		assertEquals(listOf(Watchlist, Home, Library), moved.order.take(3))
 		assertEquals(Search, moved.order.last())
-		assertEquals(setOf(Home, Library, Watchlist, Search, Downloads), TabLayout.available(seerrEnabled = false))
+		assertEquals(setOf(Home, Library, LiveTv, Watchlist, Search, Downloads), TabLayout.available(seerrEnabled = false))
 		assertEquals(Requests in TabLayout.available(seerrEnabled = true), true)
 	}
 

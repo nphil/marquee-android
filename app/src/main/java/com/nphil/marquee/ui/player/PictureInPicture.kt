@@ -73,9 +73,9 @@ private data class WindowState(
 	val surface: Rect?,
 )
 
-private enum class WindowOffer { None, SkipIntro, NextEpisode }
+internal enum class WindowOffer { None, SkipIntro, NextEpisode }
 
-private enum class WindowAction {
+internal enum class WindowAction {
 	Back,
 	PlayPause,
 	Forward,
@@ -89,15 +89,43 @@ private enum class WindowAction {
 
 @Composable
 fun rememberPictureInPicture(model: PlayerModel): PictureInPicture {
-	val activity = LocalActivity.current as ComponentActivity
+	val offer = when (model.offers.offer) {
+		is Offer.SkipIntro -> WindowOffer.SkipIntro
+		is Offer.UpNext -> WindowOffer.NextEpisode
+		null -> WindowOffer.None
+	}
+	return rememberPictureInPicture(
+		model.player, model.player != null && model.phase == PlayerPhase.Playing, model.isPlaying,
+		model.finished, model.skipInterval, offer,
+	) { action ->
+		when (action) {
+			WindowAction.Back -> model.skip(-model.skipInterval)
+			WindowAction.Forward -> model.skip(model.skipInterval)
+			WindowAction.PlayPause -> model.toggle()
+			WindowAction.SkipIntro -> { model.userActed(); model.offers.skipIntro() }
+			WindowAction.NextEpisode -> model.playNext()
+		}
+	}
+}
+
+@Composable
+internal fun rememberPictureInPicture(
+	player: Player?,
+	ready: Boolean,
+	playing: Boolean,
+	finished: Boolean,
+	skipSeconds: Int,
+	offer: WindowOffer = WindowOffer.None,
+	onAction: (WindowAction) -> Unit,
+): PictureInPicture {
+	val activity = LocalActivity.current as? MainActivity
 	val pip = remember(activity) {
 		// Only MainActivity opts into PiP in the manifest; device support alone is not enough.
-		val supported = activity is MainActivity && activity.packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)
-		PictureInPicture(supported, supported && activity.isInPictureInPictureMode)
+		val supported = activity?.packageManager?.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE) == true
+		PictureInPicture(supported, supported && (activity?.isInPictureInPictureMode == true))
 	}
-	if (!pip.supported) return pip
+	if (!pip.supported || activity == null) return pip
 
-	val player = model.player
 	var size by remember(player) { mutableStateOf(player?.videoSize ?: VideoSize.UNKNOWN) }
 	DisposableEffect(player) {
 		val listener = object : Player.Listener {
@@ -108,19 +136,7 @@ fun rememberPictureInPicture(model: PlayerModel): PictureInPicture {
 		player?.addListener(listener)
 		onDispose { player?.removeListener(listener) }
 	}
-	val state = WindowState(
-		ready = player != null && model.phase == PlayerPhase.Playing,
-		playing = model.isPlaying,
-		finished = model.finished,
-		skipSeconds = model.skipInterval,
-		offer = when (model.offers.offer) {
-			is Offer.SkipIntro -> WindowOffer.SkipIntro
-			is Offer.UpNext -> WindowOffer.NextEpisode
-			null -> WindowOffer.None
-		},
-		size = size,
-		surface = pip.surface,
-	)
+	val state = WindowState(ready, playing, finished, skipSeconds, offer, size, pip.surface)
 	val current by rememberUpdatedState(state)
 
 	LaunchedEffect(state) { activity.setPictureInPictureParams(params(activity, state)) }
@@ -149,20 +165,12 @@ fun rememberPictureInPicture(model: PlayerModel): PictureInPicture {
 		}
 	}
 
-	DisposableEffect(activity, model) {
+	val perform by rememberUpdatedState(onAction)
+	DisposableEffect(activity) {
 		val receiver = object : BroadcastReceiver() {
 			override fun onReceive(context: Context, intent: Intent) {
-				when (WindowAction.entries.firstOrNull { it.action(context) == intent.action }) {
-					WindowAction.Back -> model.skip(-model.skipInterval)
-					WindowAction.Forward -> model.skip(model.skipInterval)
-					WindowAction.PlayPause -> model.toggle()
-					WindowAction.SkipIntro -> {
-						model.userActed()
-						model.offers.skipIntro()
-					}
-					WindowAction.NextEpisode -> model.playNext()
-					null -> return
-				}
+				val action = WindowAction.entries.firstOrNull { it.action(context) == intent.action } ?: return
+				perform(action)
 				activity.setPictureInPictureParams(params(activity, current))
 			}
 		}

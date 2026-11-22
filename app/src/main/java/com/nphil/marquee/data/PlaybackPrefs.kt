@@ -37,6 +37,7 @@ data class PlaybackPrefs(
 	val nextEpisodeDelay: Int = 5,
 	/** The sound carries on when the player leaves the screen, held by a notification with lock-screen controls. */
 	val keepsPlaying: Boolean = true,
+	val readsTunerDirectly: Boolean = true,
 ) {
 	companion object {
 		val SKIP_INTERVALS = listOf(5, 10, 15, 30, 60)
@@ -60,6 +61,7 @@ private fun autoplaysNext(profile: String) = booleanPreferencesKey("playback.$pr
 private fun creditsAutoplay(profile: String) = stringPreferencesKey("playback.$profile.creditsAutoplay")
 private fun nextEpisodeDelay(profile: String) = intPreferencesKey("playback.$profile.nextEpisodeDelay")
 private fun keepsPlaying(profile: String) = booleanPreferencesKey("playback.$profile.keepsPlaying")
+private fun readsTunerDirectly(profile: String) = booleanPreferencesKey("playback.$profile.readsTunerDirectly")
 
 internal fun Preferences.playbackPrefs(profile: String?): PlaybackPrefs {
 	if (profile == null) return PlaybackPrefs()
@@ -78,6 +80,7 @@ internal fun Preferences.playbackPrefs(profile: String?): PlaybackPrefs {
 		creditsAutoplay = CreditsAutoplay.entries.firstOrNull { it.name == this[creditsAutoplay(profile)] } ?: defaults.creditsAutoplay,
 		nextEpisodeDelay = this[nextEpisodeDelay(profile)]?.takeIf { it in PlaybackPrefs.COUNTDOWNS } ?: defaults.nextEpisodeDelay,
 		keepsPlaying = this[keepsPlaying(profile)] ?: defaults.keepsPlaying,
+		readsTunerDirectly = this[readsTunerDirectly(profile)] ?: defaults.readsTunerDirectly,
 	)
 }
 
@@ -95,4 +98,5 @@ internal fun MutablePreferences.setPlaybackPrefs(profile: String, prefs: Playbac
 	this[creditsAutoplay(profile)] = prefs.creditsAutoplay.name
 	this[nextEpisodeDelay(profile)] = prefs.nextEpisodeDelay
 	this[keepsPlaying(profile)] = prefs.keepsPlaying
+	this[readsTunerDirectly(profile)] = prefs.readsTunerDirectly
 }

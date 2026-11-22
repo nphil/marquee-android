@@ -18,6 +18,7 @@ struct StartCall: Decodable {
     let startAt: Double?
     let fromStart: Bool?
     let mediaIndex: Int?
+    let recordingMediaID: Int?
     let quality: QualitySetting
     let savesData: Bool
     let metered: Bool

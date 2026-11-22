@@ -1,5 +1,8 @@
 package com.nphil.marquee.ui.settings
 
+import android.Manifest
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,13 +17,17 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberSliderState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nphil.marquee.R
 import com.nphil.marquee.container
@@ -29,6 +36,7 @@ import com.nphil.marquee.core.DirectPlayMode
 import com.nphil.marquee.core.QualityPreset
 import com.nphil.marquee.core.SkipTapMode
 import com.nphil.marquee.data.PlaybackPrefs
+import com.nphil.marquee.live.canReadLocalTuner
 import com.nphil.marquee.playback.rememberPlaybackPrefs
 import com.nphil.marquee.ui.components.ChoiceRow
 import com.nphil.marquee.ui.components.GroupGap
@@ -45,7 +53,13 @@ import kotlinx.coroutines.launch
  */
 @Composable
 fun VideoPlaybackPage(contentPadding: PaddingValues) {
-	val container = LocalContext.current.container
+	val context = LocalContext.current
+	val container = context.container
+	var tunerPermission by remember(context) { mutableStateOf(canReadLocalTuner(context)) }
+	val requestLocalNetwork = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+		tunerPermission = canReadLocalTuner(context)
+	}
+	LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { tunerPermission = canReadLocalTuner(context) }
 	val profile by remember(container) {
 		container.session.state.map { it.user?.uuid }.distinctUntilChanged()
 	}.collectAsStateWithLifecycle(null)
@@ -162,6 +176,25 @@ fun VideoPlaybackPage(contentPadding: PaddingValues) {
 			Footnote(
 				"Plays on a show's page and its seasons', fading out when the page closes or a video starts. " +
 					"It waits while other audio plays.",
+			)
+		}
+		item(key = "directTuner") {
+			SwitchRow("Direct from Tuner", prefs.readsTunerDirectly) { on ->
+				change { it.copy(readsTunerDirectly = on) }
+			}
+		}
+		if (prefs.readsTunerDirectly && !tunerPermission) {
+			item(key = "tunerPermission") {
+				GroupRow(index = 0, count = 1, onClick = { requestLocalNetwork.launch(Manifest.permission.ACCESS_LOCAL_NETWORK) }) {
+					Text("Allow Local Network Access", style = MaterialTheme.typography.titleMedium, color = lucent.ink)
+				}
+			}
+		}
+		item(key = "directTunerNote") {
+			Footnote(
+				if (prefs.readsTunerDirectly && !tunerPermission)
+					"Allow local network access so Marquee can reach the nearby tuner. Until then, Live TV uses Plex where available."
+				else "Live TV can play straight from a nearby tuner at home. Away from home, it uses Plex.",
 			)
 		}
 	}

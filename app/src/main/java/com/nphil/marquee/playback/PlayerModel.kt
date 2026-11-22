@@ -108,6 +108,7 @@ class PlayerModel(
 	private var titleKey: String,
 	private var fromStart: Boolean,
 	downloadId: String? = null,
+	private var recordingMediaID: Int? = null,
 ) : ViewModel() {
 	private val app = context.applicationContext
 	private val factory = PlaybackFactory(app, http)
@@ -518,6 +519,7 @@ class PlayerModel(
 				onDeviceFailed = if (onDeviceFailed) true else null,
 				audio = audioPick,
 				subtitle = subtitlePick,
+				recordingMediaID = recordingMediaID,
 			)
 			Diag.info(
 				DiagCategory.Player, "play.request",
@@ -787,6 +789,7 @@ class PlayerModel(
 		ratingKey = target.ratingKey
 		titleKey = target.grandparentRatingKey ?: target.ratingKey
 		fromStart = false
+		recordingMediaID = null
 		plan = null
 		stream = null
 		origin = 0.0

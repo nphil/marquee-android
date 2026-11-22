@@ -42,6 +42,7 @@ final class Methods: Sendable {
     }
 
     private let state = Mutex(State())
+    private let live = LiveCalls()
 
     func reply(to method: String, payload: Data) async -> Data {
         do {
@@ -99,6 +100,8 @@ final class Methods: Sendable {
             return try await SeerrCalls.handle(method, payload, on: self)
         case _ where BrowseCalls.handles(method):
             return try await BrowseCalls.handle(method, payload, using: browseServices)
+        case _ where LiveCalls.handles(method):
+            return try await live.handle(method, payload, library: library(for:))
         case _ where PlayCalls.handles(method):
             return try await PlayCalls.handle(method, payload, using: playServices)
         case _ where SubtitleCalls.handles(method):

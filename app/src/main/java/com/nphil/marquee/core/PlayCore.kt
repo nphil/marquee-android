@@ -72,6 +72,7 @@ data class StartRequest(
 	val audio: Int? = null,
 	val subtitle: SubtitlePick? = null,
 	val memory: JsonElement? = null,
+	val recordingMediaID: Int? = null,
 )
 
 /** How an item plays: the route Core chose, what opens it, and what the screen needs around it. */
