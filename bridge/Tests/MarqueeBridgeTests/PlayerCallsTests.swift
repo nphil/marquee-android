@@ -27,6 +27,8 @@ import Testing
                 return Self.answer(["machineIdentifier": "machine-1"])
             case "/library/metadata/1", "/library/metadata/2", "/library/metadata/3":
                 return Self.answer(["Metadata": [Self.movie(String(request.url.path.last!))]])
+            case "/library/metadata/4":
+                return Self.answer(["Metadata": [Self.movie("4", extra: Self.moreTracks)]])
             case "/playQueues":
                 return Self.answer([
                     "playQueueID": 7, "playQueueSelectedItemID": 71,
@@ -43,7 +45,7 @@ import Testing
             PlexHTTPResponse(status: 200, body: try! JSONSerialization.data(withJSONObject: ["MediaContainer": fields]))
         }
 
-        static func movie(_ key: String, queueItem: Int? = nil) -> [String: Any] {
+        static func movie(_ key: String, queueItem: Int? = nil, extra: [[String: Any]] = []) -> [String: Any] {
             let streams: [[String: Any]] = [
                 [
                     "id": 1, "streamType": 1, "codec": "hevc", "bitDepth": 10, "width": 3840, "height": 2160,
@@ -63,11 +65,23 @@ import Testing
                 "Media": [[
                     "id": 7, "duration": 7_200_000, "bitrate": 20_000, "width": 3840, "height": 2160, "videoCodec": "hevc",
                     "audioCodec": "dca", "container": "mkv",
-                    "Part": [["id": 9, "key": "/library/parts/9/1/file.mkv", "duration": 7_200_000, "container": "mkv", "Stream": streams]],
+                    "Part": [["id": 9, "key": "/library/parts/9/1/file.mkv", "duration": 7_200_000, "container": "mkv", "Stream": streams + extra]],
                 ]],
             ]
             if let queueItem { item["playQueueItemID"] = queueItem }
             return item
+        }
+
+        /// A second audio track, English text inside the file, and a separate Spanish file.
+        static var moreTracks: [[String: Any]] {
+            [
+                ["id": 3, "streamType": 2, "codec": "aac", "language": "Japanese", "languageCode": "jpn", "channels": 2],
+                ["id": 4, "streamType": 3, "codec": "srt", "language": "English", "languageCode": "eng"],
+                [
+                    "id": 6, "streamType": 3, "codec": "srt", "format": "srt", "language": "Spanish", "languageCode": "spa",
+                    "key": "/library/streams/6",
+                ],
+            ]
         }
     }
 
@@ -183,6 +197,38 @@ import Testing
         #expect(route["kind"] as? String == "directPlay")
         #expect(route["reencodesVideo"] as? Bool == false)
         #expect((route["subtitle"] as? [String: Any])?["kind"] as? String == "notShown")
+    }
+
+    @Test func theTracksMenuSaysHowEachSubtitleShowsOnThisRoute() async throws {
+        let plan = try await start(services(Server()), ["ratingKey": "4"])
+
+        let tracks = try #require(plan["tracks"] as? [String: Any])
+        let audio = try #require(tracks["audio"] as? [[String: Any]])
+        #expect(audio.map { $0["id"] as? Int } == [2, 3])
+        #expect(audio.first?["label"] as? String == "English")
+
+        let subtitles = try #require(tracks["subtitles"] as? [[String: Any]])
+        func track(_ id: Int) -> [String: Any]? { subtitles.first { $0["id"] as? Int == id } }
+        // Text inside the file the tablet plays itself, a picture it cannot draw, and a separate file it loads.
+        #expect(track(4)?["delivery"] as? String == "inStream")
+        #expect(track(5)?["delivery"] as? String == "notShown")
+        #expect(track(6)?["delivery"] as? String == "sidecar")
+        #expect(track(6)?["url"] as? String == "http://192.0.2.10:32400/library/streams/6?encoding=utf-8&format=srt")
+        #expect(track(4)?["url"] == nil)
+        #expect(tracks["automatic"] as? Int == 4)
+        #expect((tracks["headers"] as? [String: String])?["X-Plex-Token"] == "token")
+    }
+
+    @Test func aPickIsKeptForTheNextTimeTheTitlePlays() async throws {
+        let services = services(Server())
+        let session = try #require(try await start(services, ["ratingKey": "4"])["session"] as? String)
+
+        let memory = try await call("play.remember", services, ["session": session, "audio": 3, "subtitle": ["kind": "off"]])
+
+        let next = try await start(services, ["ratingKey": "4", "memory": memory])
+        let route = try route(next)
+        #expect(route["audio"] as? Int == 3)
+        #expect((route["subtitle"] as? [String: Any])?["kind"] as? String == "none")
     }
 
     @Test func reportsGoOutOnTheCadenceCoreSets() async throws {

@@ -2,6 +2,7 @@ package com.nphil.marquee.core
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
@@ -67,6 +68,10 @@ data class StartRequest(
 	val move: Int? = null,
 	/** The read [PlayPlan.probe] asked for. */
 	val probe: Reading? = null,
+	/** Hand picks: an audio stream, the subtitles menu's choice, and what the profile remembers of the title (Core's JSON, kept as it came). */
+	val audio: Int? = null,
+	val subtitle: SubtitlePick? = null,
+	val memory: JsonElement? = null,
 )
 
 /** How an item plays: the route Core chose, what opens it, and what the screen needs around it. */
@@ -85,6 +90,7 @@ data class PlayPlan(
 	val intro: List<Marker> = emptyList(),
 	val credits: List<Marker> = emptyList(),
 	val chapters: List<Chapter> = emptyList(),
+	val tracks: PlayTracks = PlayTracks(),
 	val isAnime: Boolean = false,
 	/** The quality the route was decided at: kbit/s, 0 for Original. */
 	val quality: Int = 0,
@@ -118,9 +124,9 @@ enum class RouteKind {
 	@SerialName("serverTranscode") ServerTranscode,
 }
 
-/** How the chosen subtitle reaches the screen: none, sidecar, inStream, burnedIn or notShown. */
+/** How the chosen subtitle reaches the screen: none, sidecar, inStream or notShown. This player never has the server burn one in. */
 @Serializable
-data class Delivery(val kind: String = "none", val track: Int? = null)
+data class Delivery(val kind: String = DELIVERY_NONE, val track: Int? = null)
 
 /** What the player opens: the file itself, or the server's HLS conversion, whose address carries the token. */
 @Serializable
@@ -156,6 +162,53 @@ data class Marker(val start: Int, val end: Int, val isFinal: Boolean = false)
 
 @Serializable
 data class Chapter(val title: String? = null, val start: Int, val end: Int)
+
+/** The subtitles menu's choice: off, automatic (what the rules pick), or one track by its stream id. */
+@Serializable
+data class SubtitlePick(val kind: String, val id: Int? = null) {
+	companion object {
+		val Off = SubtitlePick("off")
+		val Automatic = SubtitlePick("automatic")
+		fun track(id: Int) = SubtitlePick("track", id)
+	}
+}
+
+/** The playing file's tracks as the Tracks menu lists them, named by Core. */
+@Serializable
+data class PlayTracks(
+	val audio: List<AudioOption> = emptyList(),
+	/** Every subtitle in file order, separate files last, so the embedded ones line up with the player's own text tracks. */
+	val subtitles: List<SubtitleOption> = emptyList(),
+	/** The track On puts on screen; null when the file has no English text. */
+	val automatic: Int? = null,
+	/** Sent with a subtitle download. */
+	val headers: Map<String, String> = emptyMap(),
+) {
+	/** What a menu lists: a separate file that replaces an embedded copy hides it. */
+	val menuSubtitles: List<SubtitleOption> get() = subtitles.filterNot { it.isHidden }
+}
+
+@Serializable
+data class AudioOption(val id: Int, val label: String, val language: String? = null, val isDefault: Boolean = false)
+
+@Serializable
+data class SubtitleOption(
+	val id: Int,
+	val label: String,
+	val language: String? = null,
+	val isDefault: Boolean = false,
+	val isExternal: Boolean = false,
+	val isHidden: Boolean = false,
+	/** How it shows on this route if picked: `sidecar` (a file the app loads), `inStream` (inside the played file) or `notShown`. */
+	val delivery: String = DELIVERY_NOT_SHOWN,
+	/** Where a separate text file downloads as SRT; null for a track inside the file and for pictures. */
+	val url: String? = null,
+)
+
+const val DELIVERY_NONE = "none"
+const val DELIVERY_SIDECAR = "sidecar"
+const val DELIVERY_IN_STREAM = "inStream"
+const val DELIVERY_NOT_SHOWN = "notShown"
 
 /** The items on either side of the one playing in the play queue. */
 @Serializable
@@ -241,3 +294,16 @@ suspend fun MarqueeCore.playLink(server: PlexServer, remembered: String?, sessio
 		put("now", now)
 	})
 }
+
+/**
+ * Folds a hand pick into what the profile remembers of the title ([memory], null when nothing yet) and returns what to
+ * keep. [audio] is a stream id; [subtitle] is the menu's choice.
+ */
+suspend fun MarqueeCore.playRemember(
+	server: PlexServer, remembered: String?, session: String, audio: Int?, subtitle: SubtitlePick?, memory: JsonElement?,
+): JsonElement = call("play.remember", serverParams(server, remembered) {
+	put("session", session)
+	if (audio != null) put("audio", audio)
+	if (subtitle != null) put("subtitle", CoreJson.encodeToJsonElement(SubtitlePick.serializer(), subtitle))
+	if (memory != null) put("memory", memory)
+})

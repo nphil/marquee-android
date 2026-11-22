@@ -1,5 +1,8 @@
 package com.nphil.marquee.ui.player
 
+import android.os.SystemClock
+import android.view.View
+import androidx.activity.compose.BackHandler
 import androidx.annotation.DrawableRes
 import androidx.annotation.OptIn
 import androidx.compose.animation.AnimatedVisibility
@@ -11,6 +14,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -47,12 +51,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.media3.common.text.Cue
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import com.nphil.marquee.R
 import com.nphil.marquee.container
+import com.nphil.marquee.data.SubtitleLook
 import com.nphil.marquee.playback.HideSystemBars
 import com.nphil.marquee.playback.LocalPlaybackHttp
 import com.nphil.marquee.playback.PlayerModel
@@ -61,6 +68,9 @@ import com.nphil.marquee.ui.theme.Radius
 import com.nphil.marquee.ui.theme.Space
 import com.nphil.marquee.ui.theme.lucent
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import java.util.Locale
 
 /** How long the controls stay up after the last touch while the title plays, then they hide: a bright overlay does not sit on the picture. */
@@ -72,14 +82,20 @@ private const val CONTROLS_DWELL_MS = 3_000L
  */
 @OptIn(UnstableApi::class)
 @Composable
-fun PlayerScreen(ratingKey: String, fromStart: Boolean, onClose: () -> Unit) {
+fun PlayerScreen(ratingKey: String, titleKey: String, fromStart: Boolean, onClose: () -> Unit) {
 	val context = LocalContext.current
 	val container = context.container
 	val http = LocalPlaybackHttp.current ?: container.http
-	val model = viewModel { PlayerModel(container, http, context, ratingKey, fromStart) }
+	val model = viewModel { PlayerModel(container, http, context, ratingKey, titleKey, fromStart) }
 	val playing = model.isPlaying
 	var shown by remember { mutableStateOf(true) }
 	var touches by remember { mutableIntStateOf(0) }
+	// The track panel: the page it is on, or null while it is closed. Closes when left alone, see PANEL_DWELL_MS.
+	var panel by remember { mutableStateOf<TracksPage?>(null) }
+	var panelTouched by remember { mutableLongStateOf(0L) }
+	val profile by remember(container) { container.session.state.map { it.user?.uuid }.distinctUntilChanged() }.collectAsStateWithLifecycle(null)
+	val look by remember(container, profile) { container.settings.subtitleLook(profile) }.collectAsStateWithLifecycle(SubtitleLook())
+	val sample = remember { listOf(Cue.Builder().setText("Subtitles look like this").build()) }
 
 	// Holds the page's trailer and theme tune quiet for as long as the player is open, and the app's own sound while it plays.
 	DisposableEffect(container) {
@@ -92,14 +108,26 @@ fun PlayerScreen(ratingKey: String, fromStart: Boolean, onClose: () -> Unit) {
 	}
 	LifecycleEventEffect(Lifecycle.Event.ON_STOP) { model.pause() }
 	LaunchedEffect(model.finished) { if (model.finished) onClose() }
-	LaunchedEffect(shown, playing, touches) {
-		if (!playing) {
+	LaunchedEffect(shown, playing, touches, panel) {
+		if (!playing || panel != null) {
 			shown = true
 		} else if (shown) {
 			delay(CONTROLS_DWELL_MS)
 			shown = false
 		}
 	}
+	LaunchedEffect(panel != null) {
+		if (panel == null) return@LaunchedEffect
+		panelTouched = SystemClock.elapsedRealtime()
+		while (true) {
+			val left = PANEL_DWELL_MS - (SystemClock.elapsedRealtime() - panelTouched)
+			if (left <= 0) break
+			delay(left)
+		}
+		panel = null
+	}
+	// Back goes up a page, then closes the panel.
+	BackHandler(enabled = panel != null) { panel = panel?.parent }
 	HideSystemBars()
 
 	// A video's letterbox is black on every theme; the theme's canvas would frame it in light on a light one.
@@ -107,6 +135,13 @@ fun PlayerScreen(ratingKey: String, fromStart: Boolean, onClose: () -> Unit) {
 		val engine = model.player
 		if (engine != null) {
 			Video(engine, keepScreenOn = playing)
+			// The subtitle lines are the app's own, over the picture and under the controls and the tap that brings them up.
+			CaptionView(
+				cues = if (panel == TracksPage.Style && model.tracks.cues.isEmpty()) sample else model.tracks.cues,
+				look = look,
+				controlsUp = shown,
+				modifier = Modifier.fillMaxSize(),
+			)
 			Box(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures(onTap = { shown = !shown }) })
 			if (model.isBuffering && !shown) LoadingIndicator(Modifier.align(Alignment.Center))
 		}
@@ -129,15 +164,36 @@ fun PlayerScreen(ratingKey: String, fromStart: Boolean, onClose: () -> Unit) {
 			)
 		}
 		AnimatedVisibility(visible = shown || engine == null, enter = fadeIn(), exit = fadeOut()) {
-			Controls(model, onClose = onClose, onTouch = { touches++ })
+			Controls(model, onClose = onClose, onTouch = { touches++ }, onPanel = { panel = it })
+		}
+		panel?.let { page ->
+			// A tap outside the panel closes it. The picture stays in view, so a change of look is seen as it is made.
+			Box(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures(onTap = { panel = null }) })
+			TracksPanel(
+				model = model,
+				look = look,
+				onLook = { change -> profile?.let { id -> container.scope.launch { container.settings.updateSubtitleLook(id, change) } } },
+				page = page,
+				onPage = { panel = it },
+				onClose = { panel = null },
+				onTouch = { panelTouched = SystemClock.elapsedRealtime() },
+				modifier = Modifier.align(Alignment.CenterEnd),
+			)
 		}
 	}
 }
 
 @Composable
+@OptIn(UnstableApi::class)
 private fun Video(engine: ExoPlayer, keepScreenOn: Boolean) {
 	AndroidView(
-		factory = { context -> PlayerView(context).apply { useController = false } },
+		factory = { context ->
+			PlayerView(context).apply {
+				useController = false
+				// CaptionView draws the lines, in the person's own look.
+				subtitleView?.visibility = View.GONE
+			}
+		},
 		// The screen stays on while the video plays, and times out when it is paused.
 		update = {
 			it.player = engine
@@ -161,9 +217,9 @@ private fun Failure(message: String, onRetry: () -> Unit, onClose: () -> Unit, m
 
 /** The back arrow and title above; once a player is open, skip and play in the middle and the seek bar below. */
 @Composable
-private fun Controls(model: PlayerModel, onClose: () -> Unit, onTouch: () -> Unit) {
+private fun Controls(model: PlayerModel, onClose: () -> Unit, onTouch: () -> Unit, onPanel: (TracksPage) -> Unit) {
 	Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(lucent.scrim, Color.Transparent, lucent.scrim)))) {
-		TopBar(model, onClose, Modifier.align(Alignment.TopStart))
+		TopBar(model, onClose, onPanel, Modifier.align(Alignment.TopStart))
 		if (model.player != null) {
 			Transport(model, onTouch, Modifier.align(Alignment.Center))
 			Progress(model, onTouch, Modifier.align(Alignment.BottomCenter))
@@ -172,9 +228,9 @@ private fun Controls(model: PlayerModel, onClose: () -> Unit, onTouch: () -> Uni
 }
 
 @Composable
-private fun TopBar(model: PlayerModel, onClose: () -> Unit, modifier: Modifier) {
+private fun TopBar(model: PlayerModel, onClose: () -> Unit, onPanel: (TracksPage) -> Unit, modifier: Modifier) {
 	Row(
-		modifier = modifier.safeDrawingPadding().padding(Space.s3),
+		modifier = modifier.fillMaxWidth().safeDrawingPadding().padding(Space.s3),
 		verticalAlignment = Alignment.CenterVertically,
 		horizontalArrangement = Arrangement.spacedBy(Space.s3),
 	) {
@@ -189,6 +245,17 @@ private fun TopBar(model: PlayerModel, onClose: () -> Unit, modifier: Modifier) 
 			) {
 				Text(model.title, style = MaterialTheme.typography.titleMedium, color = lucent.ink, maxLines = 1)
 				model.subtitle?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = lucent.ink2, maxLines = 1) }
+			}
+		}
+		Spacer(Modifier.weight(1f))
+		if (model.tracks.lists.menuSubtitles.isNotEmpty()) {
+			FilledTonalIconButton(onClick = { onPanel(TracksPage.Subtitles) }) {
+				Icon(painterResource(R.drawable.ic_closed_caption), contentDescription = "Subtitles")
+			}
+		}
+		if (model.tracks.lists.audio.size > 1) {
+			FilledTonalIconButton(onClick = { onPanel(TracksPage.Audio) }) {
+				Icon(painterResource(R.drawable.ic_volume_up), contentDescription = "Audio")
 			}
 		}
 	}

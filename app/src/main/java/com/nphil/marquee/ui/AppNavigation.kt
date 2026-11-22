@@ -85,9 +85,12 @@ data class Person(val id: String, val name: String) : Route
 @Serializable
 data class Extra(val item: PlexItem) : Route
 
-/** A title playing full screen. [fromStart] plays from the beginning instead of resuming. */
+/**
+ * A title playing full screen. [fromStart] plays from the beginning instead of resuming. [titleKey] files the audio and
+ * subtitle choices: the show's key for an episode, and the title's own when null.
+ */
 @Serializable
-data class Play(val ratingKey: String, val fromStart: Boolean = false) : Route
+data class Play(val ratingKey: String, val fromStart: Boolean = false, val titleKey: String? = null) : Route
 
 /** The back stack, for the screens that open pages. */
 @Stable
@@ -145,8 +148,9 @@ class Navigator internal constructor(
 
 	fun openExtra(item: PlexItem) = push(Extra(item))
 
-	/** Plays [ratingKey] full screen: where the server says it was left, or from the start. */
-	fun openPlayer(ratingKey: String, fromStart: Boolean = false) = push(Play(ratingKey, fromStart))
+	/** Plays [item] full screen: where the server says it was left, or from the start. */
+	fun openPlayer(item: PlexItem, fromStart: Boolean = false) =
+		push(Play(item.ratingKey, fromStart, item.grandparentRatingKey ?: item.ratingKey))
 
 	fun back() {
 		if (stack.size > 1) stack.removeAt(stack.lastIndex)
@@ -286,7 +290,9 @@ fun AppNavigation(container: AppContainer, shell: @Composable (Navigator) -> Uni
 						entry<Detail> { route -> Visible { DetailScreen(container, route, navigator) } }
 						entry<Person> { route -> Visible { PersonScreen(container, route, navigator) } }
 						entry<Extra> { route -> Visible { ExtraScreen(route.item, navigator) } }
-						entry<Play> { route -> Visible { PlayerScreen(route.ratingKey, route.fromStart, navigator::back) } }
+						entry<Play> { route ->
+							Visible { PlayerScreen(route.ratingKey, route.titleKey ?: route.ratingKey, route.fromStart, navigator::back) }
+						}
 					},
 				)
 			}

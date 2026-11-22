@@ -14,10 +14,13 @@ import androidx.lifecycle.viewModelScope
 import androidx.media3.common.C
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.Tracks
+import androidx.media3.common.text.CueGroup
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import com.nphil.marquee.AppContainer
 import com.nphil.marquee.core.CoreException
+import com.nphil.marquee.core.CoreJson
 import com.nphil.marquee.core.Frame
 import com.nphil.marquee.core.LinkProbe
 import com.nphil.marquee.core.PlayPlan
@@ -26,7 +29,9 @@ import com.nphil.marquee.core.PlexServer
 import com.nphil.marquee.core.Reading
 import com.nphil.marquee.core.RouteKind
 import com.nphil.marquee.core.StartRequest
+import com.nphil.marquee.core.SubtitlePick
 import com.nphil.marquee.core.episodeCode
+import com.nphil.marquee.core.playRemember
 import com.nphil.marquee.core.playReport
 import com.nphil.marquee.core.playStop
 import com.nphil.marquee.core.setWatched
@@ -39,7 +44,10 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.JsonElement
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.IOException
@@ -69,10 +77,15 @@ class PlayerModel(
 	private val http: OkHttpClient,
 	context: Context,
 	private val ratingKey: String,
+	/** What the profile's remembered tracks are filed under: the show for an episode, else the title itself. */
+	private val titleKey: String,
 	private val fromStart: Boolean,
 ) : ViewModel() {
 	private val app = context.applicationContext
 	private val factory = PlaybackFactory(app, http)
+
+	/** The audio and subtitle tracks the menus list, and the subtitle on screen. */
+	internal val tracks = PlayerTracks(viewModelScope, http, ::movieMs)
 
 	var phase: PlayerPhase by mutableStateOf(PlayerPhase.Starting)
 		private set
@@ -123,6 +136,11 @@ class PlayerModel(
 	private var skipJob: Job? = null
 	private val skips = SkipBurst()
 
+	/** The picks made on the menus. They outlive the stream, which opens again for another audio. */
+	private var audioPick: Int? = null
+	private var subtitlePick: SubtitlePick? = null
+	private val remembering = Mutex()
+
 	private val listener = object : Player.Listener {
 		override fun onIsPlayingChanged(isPlaying: Boolean) {
 			this@PlayerModel.isPlaying = isPlaying
@@ -137,6 +155,12 @@ class PlayerModel(
 			}
 			report()
 		}
+
+		override fun onTracksChanged(available: Tracks) {
+			player?.let(tracks::sync)
+		}
+
+		override fun onCues(cueGroup: CueGroup) = tracks.onCues(cueGroup.cues)
 
 		override fun onPlayerError(error: PlaybackException) = failed(error)
 	}
@@ -188,8 +212,31 @@ class PlayerModel(
 		}
 	}
 
+	/** Plays the audio of stream [id]. The stream opens again where it was, so Core decides the route for that audio. */
+	fun pickAudio(id: Int) {
+		if (id == tracks.audioId) return
+		audioPick = id
+		remember(audio = id, subtitle = null)
+		reopen()
+	}
+
+	/** Shows the subtitle [pick] names, now: a separate text file is loaded and a track inside the stream is selected. */
+	fun pickSubtitle(pick: SubtitlePick) {
+		val lists = tracks.lists
+		val id = when (pick) {
+			SubtitlePick.Off -> null
+			SubtitlePick.Automatic -> lists.automatic
+			else -> pick.id
+		}
+		subtitlePick = pick
+		remember(audio = null, subtitle = pick)
+		tracks.show(lists.subtitles.firstOrNull { it.id == id }, player)
+	}
+
 	/** Opens the title again from where it was, after a failure. */
-	fun retry() {
+	fun retry() = reopen()
+
+	private fun reopen() {
 		viewModelScope.launch { open(startAt = movieMs() / 1000.0) }
 	}
 
@@ -215,6 +262,8 @@ class PlayerModel(
 				now = SystemClock.elapsedRealtime() / 1000.0,
 				view = screen(),
 				onDeviceFailed = if (onDeviceFailed) true else null,
+				audio = audioPick,
+				subtitle = subtitlePick,
 			)
 			var chosen = start(request)
 			session = chosen.session
@@ -236,8 +285,30 @@ class PlayerModel(
 		}
 	}
 
-	private suspend fun start(request: StartRequest): PlayPlan =
-		container.session.onServer { server, remembered -> container.core.startPlay(server, remembered, request) }
+	private suspend fun start(request: StartRequest): PlayPlan = container.session.onServer { server, remembered ->
+		container.core.startPlay(server, remembered, request.copy(memory = kept(server)))
+	}
+
+	/** What the profile has kept of this title's track picks, in the form Core reads; null when nothing yet. */
+	private suspend fun kept(server: PlexServer): JsonElement? =
+		container.settings.trackMemory(memoryKey(server))?.let { runCatching { CoreJson.parseToJsonElement(it) }.getOrNull() }
+
+	private fun memoryKey(server: PlexServer) =
+		"tracks.${server.clientIdentifier}.${container.session.state.value.user?.uuid ?: "-"}.$titleKey"
+
+	/** Keeps a hand pick for the title: Core folds it into what the profile remembers, and the app stores that. */
+	private fun remember(audio: Int?, subtitle: SubtitlePick?) {
+		val chosen = plan ?: return
+		// On the app's scope, one at a time: a pick made as the page closes is still kept, and two quick ones fold into each other.
+		container.scope.launch {
+			remembering.withLock {
+				attempt("remember") { server, remembered ->
+					val folded = container.core.playRemember(server, remembered, chosen.session, audio, subtitle, kept(server))
+					container.settings.rememberTracks(memoryKey(server), CoreJson.encodeToString(JsonElement.serializer(), folded))
+				}
+			}
+		}
+	}
 
 	/** A call to the server whose failure is logged, not thrown: playback goes on without it. Null when it failed. */
 	private suspend fun <T : Any> attempt(name: String, call: suspend (PlexServer, String?) -> T): T? = try {
@@ -287,6 +358,7 @@ class PlayerModel(
 		title = chosen.item.grandparentTitle ?: chosen.item.title
 		subtitle = if (chosen.item.grandparentTitle == null) null else listOfNotNull(chosen.item.episodeCode, chosen.item.title).joinToString(" · ")
 		durationMs = (chosen.duration * 1000).toLong()
+		tracks.begin(chosen, isFile = !hls)
 		val engine = factory.create(opens.headers, PlaybackFactory.Kind.Player)
 		engine.addListener(listener)
 		val source = factory.source(opens.headers, opens.url, hls)
@@ -358,6 +430,7 @@ class PlayerModel(
 			it.release()
 		}
 		player = null
+		tracks.stop()
 		isPlaying = false
 		isBuffering = true
 		skipping = null

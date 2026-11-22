@@ -38,9 +38,12 @@ core/       git submodule: nphil/marquee-ios, pinned; MarqueeCore and the shared
   has Plex convert only the audio and copy the video (a direct stream). The FFmpeg decoder extension is
   not used: its wrapper is GPLv3, and a tablet's speakers and Bluetooth cannot output those formats
   anyway. Passthrough to a receiver stays Media3's own where one is attached. Subtitles: SRT sidecars
-  as on iPhone, a cue starting `{\an8}` at the
-  top, and the file's own text and picture (PGS, VobSub) tracks; which audio and subtitle play is Core's
-  `TrackRules`. VideoEngine's on-device remux is not used: Android needs no repackaging.
+  as on iPhone, a cue starting `{\an8}` at the top, and the file's own text tracks; which audio and
+  subtitle play is Core's `TrackRules`. The app draws the lines itself (Media3's `SubtitleView` over the
+  picture, the player's own one hidden) in the profile's subtitle style; a file's own font sizes never
+  override it. The server never burns a subtitle in for this player: picture subtitles (PGS,
+  VobSub) are listed as not shown on the tablet. VideoEngine's on-device remux is not used: Android
+  needs no repackaging.
 - **UI.** Compose with Material 3 Expressive. `NavigationSuiteScaffold` gives a rail on tablets and a bar
   on phones; list-detail and supporting-pane layouts on wide windows; shared-element transitions and
   predictive back.

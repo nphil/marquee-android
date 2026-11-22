@@ -48,6 +48,20 @@ class AppSettings(context: Context) : BrowsePreferences {
 		store.edit { prefs -> prefs.setPlaybackPrefs(profile, change(prefs.playbackPrefs(profile))) }
 	}
 
+	/** How subtitles look for a Home profile (the player's Subtitle Style); the Blend look for one that never chose. */
+	fun subtitleLook(profile: String?): Flow<SubtitleLook> = store.data.map { it.subtitleLook(profile) }.distinctUntilChanged()
+
+	suspend fun updateSubtitleLook(profile: String, change: (SubtitleLook) -> SubtitleLook) {
+		store.edit { prefs -> prefs.setSubtitleLook(profile, change(prefs.subtitleLook(profile))) }
+	}
+
+	/** What a profile remembers of a title's audio and subtitle picks, as Core wrote it; null when nothing yet. */
+	suspend fun trackMemory(key: String): String? = store.data.first()[stringPreferencesKey(key)]
+
+	suspend fun rememberTracks(key: String, memory: String) {
+		store.edit { prefs -> prefs[stringPreferencesKey(key)] = memory }
+	}
+
 	/** Seerr's address and switches; see [SeerrPrefs]. */
 	val seerr: Flow<SeerrPrefs> = store.data.map { it.seerrPrefs() }.distinctUntilChanged()
 

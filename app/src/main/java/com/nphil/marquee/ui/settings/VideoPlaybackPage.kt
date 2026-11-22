@@ -1,14 +1,11 @@
 package com.nphil.marquee.ui.settings
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
@@ -17,9 +14,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberSliderState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -33,6 +28,7 @@ import com.nphil.marquee.core.DirectPlayMode
 import com.nphil.marquee.core.QualityPreset
 import com.nphil.marquee.data.PlaybackPrefs
 import com.nphil.marquee.playback.rememberPlaybackPrefs
+import com.nphil.marquee.ui.components.ChoiceRow
 import com.nphil.marquee.ui.components.GroupGap
 import com.nphil.marquee.ui.components.GroupRow
 import com.nphil.marquee.ui.theme.Space
@@ -124,29 +120,6 @@ private fun SwitchRow(label: String, checked: Boolean, index: Int = 0, count: In
 	GroupRow(index, count, onClick = { onChange(!checked) }) {
 		Text(label, style = MaterialTheme.typography.titleMedium, color = lucent.ink, modifier = Modifier.weight(1f))
 		Switch(checked = checked, onCheckedChange = null)
-	}
-}
-
-/** A row that shows its choice and opens a menu of the [options]. */
-@Composable
-private fun <T> ChoiceRow(label: String, value: T, options: List<T>, title: (T) -> String, index: Int, count: Int, onChange: (T) -> Unit) {
-	var open by remember { mutableStateOf(false) }
-	GroupRow(index, count, onClick = { open = true }) {
-		Text(label, style = MaterialTheme.typography.titleMedium, color = lucent.ink, modifier = Modifier.weight(1f))
-		Box {
-			Text(title(value), style = MaterialTheme.typography.bodyLarge, color = lucent.ink2)
-			DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-				options.forEach { option ->
-					DropdownMenuItem(
-						text = { Text(title(option)) },
-						onClick = {
-							open = false
-							onChange(option)
-						},
-					)
-				}
-			}
-		}
 	}
 }
 

@@ -22,12 +22,18 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -142,6 +148,29 @@ fun GroupRow(
 
 /** The gap between the rows of a group. */
 val GroupGap = 2.dp
+
+/** A row that shows its choice and opens a menu of the [options]. */
+@Composable
+fun <T> ChoiceRow(label: String, value: T, options: List<T>, title: (T) -> String, index: Int, count: Int, onChange: (T) -> Unit) {
+	var open by remember { mutableStateOf(false) }
+	GroupRow(index, count, onClick = { open = true }) {
+		Text(label, style = MaterialTheme.typography.titleMedium, color = lucent.ink, modifier = Modifier.weight(1f))
+		Box {
+			Text(title(value), style = MaterialTheme.typography.bodyLarge, color = lucent.ink2)
+			DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+				options.forEach { option ->
+					DropdownMenuItem(
+						text = { Text(title(option)) },
+						onClick = {
+							open = false
+							onChange(option)
+						},
+					)
+				}
+			}
+		}
+	}
+}
 
 /** A failure said in a line: the danger glyph, then the words in ink so they read on any theme. */
 @Composable

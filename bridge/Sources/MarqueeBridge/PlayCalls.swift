@@ -7,7 +7,7 @@ import Synchronization
 /// timeline reporter, Auto's estimate and the server's conversion.
 enum PlayCalls {
     private static let names: Set<String> = [
-        "play.start", "play.queue", "play.report", "play.stop", "play.look", "play.link",
+        "play.start", "play.queue", "play.report", "play.stop", "play.look", "play.link", "play.remember",
     ]
 
     static func handles(_ method: String) -> Bool {
@@ -47,6 +47,14 @@ enum PlayCalls {
                 services.links.record(call.kbps, to: address, at: call.now, network: call.network)
             }
             return try Reply.ok(Empty())
+        case "play.remember":
+            let call = try decode(RememberCall.self, payload)
+            let tracks = try await services.session(call.session).currentTracks()
+            var memory = call.memory ?? TrackMemory()
+            if let id = call.audio, let track = tracks.audioTrack(id: id) { memory.audio = RememberedAudio(track) }
+            // On forgets the subtitle: the rules pick again next time.
+            if let choice = call.subtitle?.choice { memory.subtitle = RememberedSubtitle(choice, in: tracks) }
+            return try Reply.ok(memory)
         default:
             throw BridgeError.unknownMethod(method)
         }
@@ -105,7 +113,11 @@ enum PlayCalls {
                 linkKbps: adaptive == nil ? linkKbps : nil
             )
         }
-        let route = decide(media: media, part: part, tracks: tracks, picked: picked, call: call, limits: limits)
+        let route = decide(media: media, part: part, tracks: tracks, audio: picked.audio, subtitle: picked.subtitle, call: call, limits: limits)
+        let lists = trackLists(
+            media: media, part: part, tracks: tracks, picked: picked, call: call, limits: limits,
+            base: connection?.uri, headers: library.authorizationHeaders()
+        )
 
         let startAt = startSeconds(call, item: item, duration: duration)
         func plan(_ stream: StreamSpec?, probe: ProbeSpec? = nil) -> PlanWire {
@@ -113,7 +125,7 @@ enum PlayCalls {
                 session: session.id, item: ItemWire(item), mediaIndex: mediaIndex, startAt: startAt, duration: duration,
                 route: RouteWire(route), stream: stream, probe: probe,
                 intro: item.markers(.intro).map(MarkerWire.init), credits: item.markers(.credits).map(MarkerWire.init),
-                chapters: item.chapters.map(ChapterWire.init), isAnime: picked.isAnime,
+                chapters: item.chapters.map(ChapterWire.init), tracks: lists, isAnime: picked.isAnime,
                 quality: quality.rawValue, adapts: adaptive != nil
             )
         }
@@ -134,14 +146,14 @@ enum PlayCalls {
         case .directPlay, .remux:
             let base = try await library.connection.connection().uri
             guard let url = PlexURL.make(base: base, path: part.key) else { throw PlexError.decoding("bad path") }
-            await session.begin(item, adaptive: adaptive, address: base, conversion: nil)
+            await session.begin(item, tracks: tracks, adaptive: adaptive, address: base, conversion: nil)
             return plan(StreamSpec(kind: "file", url: url.absoluteString, headers: library.authorizationHeaders(), session: nil, offset: 0))
         case .serverTranscode:
             try await selectForServer(route, part: part, tracks: tracks, library: library)
             let conversion = UUID().uuidString
             let request = TranscodeRequest(item: item, mediaIndex: mediaIndex, route: route, offset: startAt, session: conversion)
             let url = try await library.transcodeURL(request)
-            await session.begin(item, adaptive: adaptive, address: connection?.uri, conversion: conversion)
+            await session.begin(item, tracks: tracks, adaptive: adaptive, address: connection?.uri, conversion: conversion)
             return plan(StreamSpec(kind: "hls", url: url.absoluteString, headers: library.authorizationHeaders(), session: conversion, offset: startAt))
         }
     }
@@ -173,18 +185,44 @@ enum PlayCalls {
     /// The route for the tracks picked. This player never asks the server to burn a subtitle in, so a picture
     /// subtitle only a re-encode could show is chosen but not shown, as when the rules pick it.
     private static func decide(
-        media: PlexMedia, part: PlexPart, tracks: MediaTracks, picked: TrackRules.Pick, call: StartCall, limits: RouteLimits
+        media: PlexMedia, part: PlexPart, tracks: MediaTracks, audio: AudioTrack?, subtitle: SubtitleDecision, call: StartCall,
+        limits: RouteLimits
     ) -> PlaybackRoute {
         func route(_ subtitle: SubtitleDecision) -> PlaybackRoute {
             // ExoPlayer opens HEVC in MP4 whichever sample entry tag the file carries.
             PlaybackRouteDecider.decide(
-                media: media, part: part, tracks: tracks, audio: picked.audio, subtitle: subtitle,
+                media: media, part: part, tracks: tracks, audio: audio, subtitle: subtitle,
                 capabilities: call.capabilities.capabilities, limits: limits, hevcSampleEntry: "hvc1"
             )
         }
-        let decided = route(picked.subtitle)
+        let decided = route(subtitle)
         guard case .burnedIn(let track) = decided.subtitle else { return decided }
         return route(SubtitleDecision(track: track, source: .rules))
+    }
+
+    /// The tracks as the menu lists them. A subtitle's delivery is how it would show on this route if it were picked,
+    /// so the menu can say which ones this tablet cannot draw.
+    private static func trackLists(
+        media: PlexMedia, part: PlexPart, tracks: MediaTracks, picked: TrackRules.Pick, call: StartCall, limits: RouteLimits,
+        base: URL?, headers: [String: String]
+    ) -> PlayTracksWire {
+        let audio = tracks.audio.map {
+            PlayAudioWire(id: $0.id, label: $0.label, language: $0.language.code, isDefault: $0.isDefault)
+        }
+        let subtitles = tracks.subtitles.map { track in
+            let alone = SubtitleDecision(track: track, source: .handPick)
+            let route = decide(media: media, part: part, tracks: tracks, audio: picked.audio, subtitle: alone, call: call, limits: limits)
+            let query = [URLQueryItem(name: "encoding", value: "utf-8"), URLQueryItem(name: "format", value: "srt")]
+            let download = track.isExternal && !track.isImageBased
+                ? base.flatMap { PlexURL.make(base: $0, path: "/library/streams/\(track.id)", query: query) } : nil
+            return PlaySubtitleWire(
+                id: track.id, label: track.label, language: track.language.code, isDefault: track.isDefault,
+                isExternal: track.isExternal, isHidden: track.isHidden,
+                delivery: DeliveryWire(route.subtitle).kind, url: download?.absoluteString
+            )
+        }
+        let automatic = TrackRules.automaticSubtitle(in: tracks, audio: picked.audio, isAnime: picked.isAnime)?.id
+        return PlayTracksWire(audio: audio, subtitles: subtitles, automatic: automatic, headers: headers)
     }
 
     /// The server streams the part's selected audio; it is told only when the route plays another.
@@ -278,6 +316,7 @@ actor PlaySession {
     /// The server address the stream comes from, for readings of the link.
     private(set) var address: URL?
     private var item: PlexMetadata?
+    private var tracks: MediaTracks?
     private var reporter: TimelineReporter?
     private var conversion: String?
     private var queue: PlexPlayQueue?
@@ -309,12 +348,19 @@ actor PlaySession {
         return nil
     }
 
-    func begin(_ item: PlexMetadata, adaptive: AdaptiveQuality?, address: URL?, conversion: String?) {
+    func begin(_ item: PlexMetadata, tracks: MediaTracks, adaptive: AdaptiveQuality?, address: URL?, conversion: String?) {
         self.item = item
+        self.tracks = tracks
         self.adaptive = adaptive
         self.address = address
         self.conversion = conversion
         reporter = TimelineReporter(library: library, item: item, sessionIdentifier: conversion)
+    }
+
+    /// The tracks of the file playing, for a pick to be remembered against.
+    func currentTracks() throws -> MediaTracks {
+        guard let tracks else { throw PlayError.noSession }
+        return tracks
     }
 
     /// The items either side of the one playing, once the play queue has come.

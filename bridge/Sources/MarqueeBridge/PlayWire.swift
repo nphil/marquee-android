@@ -93,6 +93,15 @@ struct SessionCall: Decodable {
     let session: String
 }
 
+/// A hand pick to keep for the item: the item's memory with the pick folded in comes back.
+struct RememberCall: Decodable {
+    let session: String
+    let audio: Int?
+    let subtitle: SubtitleChoiceWire?
+    /// What the profile remembers so far; nil when nothing is yet.
+    let memory: TrackMemory?
+}
+
 struct ReportCall: Decodable {
     let session: String
     /// `playing`, `paused`, `buffering` or `stopped`.
@@ -142,6 +151,7 @@ struct PlanWire: Encodable {
     let intro: [MarkerWire]
     let credits: [MarkerWire]
     let chapters: [ChapterWire]
+    let tracks: PlayTracksWire
     let isAnime: Bool
     /// The quality the route was decided at: kbit/s, 0 for Original.
     let quality: Int
@@ -242,6 +252,38 @@ struct ChapterWire: Encodable {
         start = chapter.start
         end = chapter.end
     }
+}
+
+/// The playing file's tracks as the Tracks menu lists them.
+struct PlayTracksWire: Encodable {
+    let audio: [PlayAudioWire]
+    /// Every subtitle in file order with the separate files last, so the embedded ones line up with the player's own
+    /// text tracks. A menu leaves out the `isHidden` ones: a separate file that replaces an embedded copy hides it.
+    let subtitles: [PlaySubtitleWire]
+    /// The track On puts on screen, which the rules pick with the audio that plays; nil when the file has no English text.
+    let automatic: Int?
+    /// Sent with a subtitle download.
+    let headers: [String: String]
+}
+
+struct PlayAudioWire: Encodable {
+    let id: Int
+    let label: String
+    let language: String?
+    let isDefault: Bool
+}
+
+struct PlaySubtitleWire: Encodable {
+    let id: Int
+    let label: String
+    let language: String?
+    let isDefault: Bool
+    let isExternal: Bool
+    let isHidden: Bool
+    /// How the track shows on this route if it is picked: `sidecar`, `inStream` or `notShown`.
+    let delivery: String
+    /// Where a separate text file downloads as SRT; nil for a track inside the file and for pictures.
+    let url: String?
 }
 
 /// The items on either side of the one playing in the play queue.
