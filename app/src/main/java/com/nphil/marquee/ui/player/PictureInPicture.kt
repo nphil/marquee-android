@@ -29,6 +29,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.util.Consumer
 import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
+import com.nphil.marquee.MainActivity
 import com.nphil.marquee.R
 import com.nphil.marquee.playback.Offer
 import com.nphil.marquee.playback.PlayerModel
@@ -90,7 +91,8 @@ private enum class WindowAction {
 fun rememberPictureInPicture(model: PlayerModel): PictureInPicture {
 	val activity = LocalActivity.current as ComponentActivity
 	val pip = remember(activity) {
-		val supported = activity.packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)
+		// Only MainActivity opts into PiP in the manifest; device support alone is not enough.
+		val supported = activity is MainActivity && activity.packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)
 		PictureInPicture(supported, supported && activity.isInPictureInPictureMode)
 	}
 	if (!pip.supported) return pip
