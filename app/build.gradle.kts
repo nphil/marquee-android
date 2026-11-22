@@ -51,6 +51,7 @@ android {
 		testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 		ndk { abiFilters += bridgeAbis }
 		androidResources { localeFilters += listOf("en") }
+		manifestPlaceholders["marqueeApplication"] = "com.nphil.marquee.MarqueeApplication"
 	}
 
 	// CI passes the release keystore through these variables. Without them the release build is signed
@@ -241,6 +242,13 @@ androidComponents {
 		variant.sources.jniLibs?.addGeneratedSourceDirectory(buildBridge, BuildBridge::outputDir)
 		variant.sources.assets?.addGeneratedSourceDirectory(coreAssets, CoreAssets::outputDir)
 	}
+	// The baseline profile is recorded against the nonMinifiedRelease build, which answers from the iPhone app's fake
+	// Plex fixtures (src/nonMinifiedRelease). No other variant gets the fixtures or the server that serves them.
+	onVariants(selector().withBuildType("nonMinifiedRelease")) { variant ->
+		variant.manifestPlaceholders.put("marqueeApplication", "com.nphil.marquee.profile.ProfilingApplication")
+		variant.sources.assets?.addStaticSourceDirectory(rootProject.file("core/UITests/FakePlex").path)
+		variant.sources.kotlin?.addStaticSourceDirectory("src/androidTest/java/com/nphil/marquee/fakeplex")
+	}
 }
 
 dependencies {
@@ -290,4 +298,9 @@ dependencies {
 	androidTestImplementation(libs.okhttp.mockwebserver)
 	androidTestImplementation(platform(libs.androidx.compose.bom))
 	androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+}
+
+// The build type comes from the baseline profile plugin, so its configuration may not exist yet when this runs.
+configurations.matching { it.name == "nonMinifiedReleaseImplementation" }.configureEach {
+	dependencies.addLater(libs.okhttp.mockwebserver)
 }

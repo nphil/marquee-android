@@ -17,7 +17,7 @@
     </queries>
 
     <application
-        android:name=".MarqueeApplication"
+        android:name="${marqueeApplication}"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:enableOnBackInvokedCallback="true"

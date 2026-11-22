@@ -38,10 +38,15 @@ import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import okio.Path.Companion.toOkioPath
 
-/** The app's single instances, wired by hand: there is one of each and nothing to swap. */
-class AppContainer(context: Context) {
+/**
+ * The app's single instances, wired by hand: there is one of each. Only the HTTP client can be handed in, which the
+ * build the baseline profile is recorded against uses to answer from fixtures.
+ */
+class AppContainer(
+	context: Context,
+	val http: OkHttpClient = OkHttpClient.Builder().addInterceptor(DiagRequestLog()).build(),
+) {
 	val scope: CoroutineScope = MainScope()
-	val http = OkHttpClient.Builder().addInterceptor(DiagRequestLog()).build()
 	val settings = AppSettings(context)
 	private val identityOnce = scope.async(start = CoroutineStart.LAZY) { identity(context) }
 	val core = MarqueeCore { identityOnce.await() }
@@ -88,15 +93,18 @@ class AppContainer(context: Context) {
 	)
 }
 
-class MarqueeApplication : Application(), SingletonImageLoader.Factory {
+open class MarqueeApplication : Application(), SingletonImageLoader.Factory {
 	lateinit var container: AppContainer
 		private set
 
 	override fun onCreate() {
 		super.onCreate()
 		Diag.install(this)
-		container = AppContainer(this)
+		container = createContainer()
 	}
+
+	/** The one place a build other than the shipped one changes how the app is wired; see src/nonMinifiedRelease. */
+	protected open fun createContainer() = AppContainer(this)
 
 	/**
 	 * Profile pictures and Plex artwork come over the app's own client. Artwork is resized by the server to the

@@ -84,11 +84,16 @@ Each phase ends with a release installed on the tablet.
      related shelves, watched marks and watchlist changes. `DetailModel` loads the item first and the rest
      in parallel. Pages are Navigation 3 routes (`ui/AppNavigation.kt`); the poster-to-hero shared element
      runs only from the poster that was tapped. The tracks sheet is read-only and there is no Play or
-     Resume until the player. Episode rows have no swipe actions; their menu has the same ones.
+     Resume until the player. An episode row swipes from the start edge to mark it watched or unwatched, as
+     on the iPhone; the check and the More menu do the same.
    - The instrumented tests run `DetailBridgeTest` (the calls) and `DetailScreenTest` (the pages, with
-     the app's own session restored onto the fake server) against the iPhone's FakePlex fixtures. The
-     baseline profile still records the start only: the detail screens need a signed-in session, and the
-     profile generator runs in another process with no way to give the app one.
+     the app's own session restored onto the fake server) against the iPhone's FakePlex fixtures.
+   - The baseline profile is recorded against the `nonMinifiedRelease` build, the one build with
+     `src/nonMinifiedRelease`. Its manifest names `ProfilingApplication` through the `marqueeApplication`
+     placeholder; that application serves the fixtures from a fake server and writes the fixture account
+     into the secret store on every start, so the build is always signed in and the generators need no
+     sign-in step. `DetailProfileGenerator` opens a movie and a show from Home, swipes an episode and
+     opens it; the debug and release builds contain none of it.
 3. **Player.** Routes from Core, Auto quality with the link probe and Save Data, track and subtitle
    rules, Bazarr and SpeechDock, subtitle style, Skip Intro, credits and Up Next, background play,
    playback info, format badge, stats for nerds. Three small-player modes:
