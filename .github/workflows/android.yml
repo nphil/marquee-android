@@ -238,13 +238,16 @@ jobs:
             baselineprofile/build/outputs/
           retention-days: 7
 
-      # The emulator's own crash reports. None means it was killed rather than crashed.
+      # The emulator's own crash reports (none means it was killed rather than crashed) and, when it was lost, the
+      # guest's log up to that moment.
       - name: Upload emulator crash data
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: emulator-crash
-          path: /tmp/android-runner/**/*.dmp
+          path: |
+            /tmp/android-runner/**/*.dmp
+            ${{ runner.temp }}/emulator-logs
           if-no-files-found: ignore
           retention-days: 7
 

@@ -13,6 +13,7 @@ app=com.nphil.marquee
 summary="${GITHUB_STEP_SUMMARY:-/dev/stdout}"
 attempts=3
 rerun_limit=4
+logs="${RUNNER_TEMP:-/tmp}/emulator-logs"
 
 # The tests that failed in the last Gradle run, one per line: `Class#method`, a tab, and the first line of why.
 failed_tests() {
@@ -49,7 +50,7 @@ run_tests() {
 	# that ends the Gradle run. It is emptied first so a pull holds only this run's.
 	local review=/sdcard/Download/marquee-review
 	local shots=app/build/review-screenshots
-	adb shell rm -rf "$review"
+	adb shell rm -rf "$review" || true
 	rm -rf "$shots"
 	local tests=0
 	"${gradle[@]}" :app:connectedDebugAndroidTest || tests=$?
@@ -102,17 +103,27 @@ emulator_answers() {
 	timeout 20 adb shell true > /dev/null 2>&1
 }
 
-# What the host looked like when the emulator went, for whoever reads the log.
+# What the host looked like when the emulator went, for whoever reads the log. The logs are kept for the artifact.
 host_state() {
+	touch "$logs/lost"
 	echo "::group::Host after the emulator was lost"
+	uptime
 	free -m
+	df -h / | tail -n 1
 	pgrep -fa 'qemu-system|emulator' | cut -c1-160 || true
-	sudo dmesg 2> /dev/null | grep -iE 'out of memory|killed process|segfault|qemu' | tail -n 8 || true
+	sudo dmesg -T 2> /dev/null | tail -n 15 || true
 	ls /tmp/android-runner 2> /dev/null || true
 	echo "::endgroup::"
 }
 
-# Starts the AVD again with the flags the runner gave it, and waits until it has booted.
+# The guest's own log, from now on. The emulator leaves no message of its own when it goes.
+capture_logcat() {
+	mkdir -p "$logs"
+	nohup adb logcat -b all -v threadtime > "$logs/logcat-$1.txt" 2>&1 &
+}
+
+# Starts the AVD again with the flags the runner gave it, and waits until it has booted. Its data is wiped: after the
+# emulator was killed, rm answered "Bad address" for the screenshots the first run had left on the card.
 revive_emulator() {
 	local sdk
 	sdk=$(dirname "$(dirname "$(command -v adb)")")
@@ -120,9 +131,9 @@ revive_emulator() {
 	pkill -f 'qemu-system|emulator/emulator' || true
 	sleep 2
 	# shellcheck disable=SC2086
-	nohup "$sdk/emulator/emulator" -port 5554 -avd test $EMULATOR_OPTIONS > "${RUNNER_TEMP:-/tmp}/emulator-again.log" 2>&1 &
+	nohup "$sdk/emulator/emulator" -port 5554 -avd test -wipe-data -no-snapshot $EMULATOR_OPTIONS > "${RUNNER_TEMP:-/tmp}/emulator-again.log" 2>&1 &
 	timeout 120 adb wait-for-device
-	timeout 240 bash -c 'until [ "$(adb shell getprop sys.boot_completed 2> /dev/null | tr -d "\r")" = 1 ]; do sleep 2; done'
+	timeout 300 bash -c 'until [ "$(adb shell getprop sys.boot_completed 2> /dev/null | tr -d "\r")" = 1 ]; do sleep 2; done'
 	adb shell input keyevent 82
 	for scale in window_animation_scale transition_animation_scale animator_duration_scale; do
 		adb shell settings put global "$scale" 0.0
@@ -141,6 +152,7 @@ phase() {
 		host_state
 		[ "$attempt" -lt "$attempts" ] || return "$status"
 		revive_emulator
+		capture_logcat "again-$attempt"
 	done
 }
 
@@ -148,7 +160,10 @@ case "${1:-}" in
 	--run) "run_$2" ;;
 	*)
 		echo "Host: $(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2 | xargs), $(nproc) cores"
+		capture_logcat first
 		phase tests
 		phase profile
+		# Kept only when the emulator was lost: the artifact is for finding out why.
+		[ -e "$logs/lost" ] || rm -rf "$logs"
 		;;
 esac
