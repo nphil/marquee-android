@@ -1,6 +1,7 @@
 package com.nphil.marquee.core
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -50,6 +51,68 @@ class MediaModelsTest {
 		assertNull(episode.copy(viewOffset = 0).progress)
 		assertNull(episode.copy(viewOffset = 2_400_000).progress)
 		assertNull(episode.copy(viewOffset = 0).minutesLeft)
+	}
+
+	/**
+	 * An On Deck or Continue Watching item as the bridge sends it. `isWatched` is Core's, where a view count alone makes
+	 * an episode watched.
+	 */
+	private fun hubItem(json: String): PlexItem = CoreJson.decodeFromString(json)
+
+	@Test
+	fun anEpisodeWatchedAgainAndPartWayThroughHasNoCheck() {
+		val rewatch = hubItem(
+			"""{"ratingKey": "301", "type": "episode", "grandparentTitle": "The Office", "duration": 1320000,
+				"viewOffset": 420000, "viewCount": 2, "isWatched": true}""",
+		)
+		assertFalse(rewatch.showsWatched)
+		assertFalse(rewatch.spokenSummary, rewatch.spokenSummary.contains("watched"))
+		assertEquals(15, rewatch.minutesLeft)
+	}
+
+	@Test
+	fun aFinishedMovieOrEpisodeHasTheCheck() {
+		assertTrue(hubItem("""{"ratingKey": "1", "type": "movie", "duration": 7200000, "viewCount": 1, "isWatched": true}""").showsWatched)
+		assertTrue(episode.copy(viewOffset = 0, viewCount = 1, isWatched = true).showsWatched)
+		assertTrue(episode.copy(viewOffset = 2_400_000, viewCount = 1, isWatched = true).showsWatched)
+	}
+
+	@Test
+	fun anEpisodeNotWatchedHasNoCheck() {
+		assertFalse(hubItem("""{"ratingKey": "2", "type": "episode", "duration": 1320000, "viewOffset": 420000}""").showsWatched)
+		assertFalse(hubItem("""{"ratingKey": "3", "type": "episode", "duration": 1320000}""").showsWatched)
+	}
+
+	@Test
+	fun aShowInProgressHasItsCountAndNoCheck() {
+		val show = hubItem(
+			"""{"ratingKey": "10", "type": "show", "leafCount": 224, "viewedLeafCount": 100, "unwatchedLeafCount": 124}""",
+		)
+		assertFalse(show.showsWatched)
+		assertEquals(124, show.unwatchedBadge)
+	}
+
+	@Test
+	fun aShowWithEveryEpisodeViewedHasTheCheckAndNoCount() {
+		val show = hubItem(
+			"""{"ratingKey": "10", "type": "show", "leafCount": 224, "viewedLeafCount": 224, "unwatchedLeafCount": 0, "isWatched": true}""",
+		)
+		assertTrue(show.showsWatched)
+		assertNull(show.unwatchedBadge)
+		assertTrue(show.copy(type = MediaType.Season).showsWatched)
+	}
+
+	@Test
+	fun aShowListedWithoutItsEpisodeCountsIsNotCalledWatched() {
+		val show = hubItem("""{"ratingKey": "10", "type": "show", "viewCount": 12, "isWatched": true}""")
+		assertFalse(show.showsWatched)
+		assertFalse(show.copy(type = MediaType.Season).showsWatched)
+	}
+
+	@Test
+	fun aCollectionOrClipNeverHasTheCheck() {
+		assertFalse(PlexItem(ratingKey = "20", type = MediaType.Collection, isWatched = true, leafCount = 3).showsWatched)
+		assertFalse(PlexItem(ratingKey = "21", type = MediaType.Clip, isWatched = true, viewCount = 1).showsWatched)
 	}
 
 	@Test

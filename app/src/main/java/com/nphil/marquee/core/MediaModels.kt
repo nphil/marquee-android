@@ -359,6 +359,18 @@ val PlexItem.posterTitle: String
 val PlexItem.unwatchedBadge: Int?
 	get() = if (type == MediaType.Show || type == MediaType.Season) unwatchedLeafCount?.takeIf { it > 0 } else null
 
+/**
+ * Whether a poster says "watched". Plex keeps a title's view count while it is watched again, so a part-watched movie or
+ * episode that has one is in progress, not watched; the Continue Watching and On Deck hubs list exactly those. A show or
+ * season is watched when Plex's episode counts say so, and a hub that lists one without them says nothing about it.
+ */
+val PlexItem.showsWatched: Boolean
+	get() = isWatched && when (type) {
+		MediaType.Collection, MediaType.Clip -> false
+		MediaType.Show, MediaType.Season -> (leafCount ?: 0) > 0
+		else -> progress == null
+	}
+
 /** What TalkBack reads for a poster or row (DESIGN §10): "Title, movie, 2019, 42 minutes left". */
 val PlexItem.spokenSummary: String
 	get() {
@@ -386,7 +398,7 @@ val PlexItem.spokenSummary: String
 		when {
 			left != null -> parts += ItemText.spokenLeft(left)
 			unwatched != null -> parts += if (unwatched == 1) "1 unwatched episode" else "$unwatched unwatched episodes"
-			isWatched && type != MediaType.Collection -> parts += "watched"
+			showsWatched -> parts += "watched"
 		}
 		return parts.filter { it.isNotEmpty() }.joinToString(", ")
 	}

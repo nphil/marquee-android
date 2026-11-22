@@ -3,11 +3,11 @@ package com.nphil.marquee.ui.browse
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
-import com.nphil.marquee.core.MediaType
 import com.nphil.marquee.core.PlexItem
 import com.nphil.marquee.core.posterPath
 import com.nphil.marquee.core.posterTitle
 import com.nphil.marquee.core.progress
+import com.nphil.marquee.core.showsWatched
 import com.nphil.marquee.core.spokenSummary
 import com.nphil.marquee.core.unwatchedBadge
 import com.nphil.marquee.ui.components.PosterCard
@@ -38,7 +38,7 @@ fun ItemPoster(
 		reserveLine = reserveLine,
 		quietLine = quietLine,
 		progress = item.progress,
-		watched = item.showsWatchedCheck,
+		watched = item.showsWatched,
 		unwatchedCount = item.unwatchedBadge,
 		description = if (line == null) item.spokenSummary else "${item.spokenSummary}, $line",
 		onClick = onClick,
@@ -47,7 +47,3 @@ fun ItemPoster(
 		artModifier = Modifier.posterSharedElement(item.ratingKey),
 	)
 }
-
-/** A watched title has a check on its poster; a collection or a clip has none. */
-private val PlexItem.showsWatchedCheck: Boolean
-	get() = isWatched && type != MediaType.Collection && type != MediaType.Clip

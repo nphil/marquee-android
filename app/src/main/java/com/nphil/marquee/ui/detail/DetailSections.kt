@@ -58,6 +58,7 @@ import com.nphil.marquee.core.SubtitleChoice
 import com.nphil.marquee.core.posterPath
 import com.nphil.marquee.core.posterTitle
 import com.nphil.marquee.core.progress
+import com.nphil.marquee.core.showsWatched
 import com.nphil.marquee.core.unwatchedBadge
 import com.nphil.marquee.core.versionLabel
 import com.nphil.marquee.ui.Navigator
@@ -386,7 +387,7 @@ fun LazyListScope.relatedSection(state: DetailState, navigator: Navigator) {
 						modifier = Modifier,
 						line = related.year?.toString(),
 						progress = related.progress,
-						watched = related.isWatched,
+						watched = related.showsWatched,
 						unwatchedCount = related.unwatchedBadge,
 						onClick = { if (external) navigator.openWatchlistTitle(related) else navigator.openItem(related.ratingKey) },
 					)

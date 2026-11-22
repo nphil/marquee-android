@@ -29,6 +29,7 @@ import com.nphil.marquee.core.PlexItem
 import com.nphil.marquee.core.posterPath
 import com.nphil.marquee.core.posterTitle
 import com.nphil.marquee.core.progress
+import com.nphil.marquee.core.showsWatched
 import com.nphil.marquee.core.titlesOf
 import com.nphil.marquee.core.unwatchedBadge
 import com.nphil.marquee.diagnostics.Diag
@@ -102,7 +103,7 @@ fun PersonScreen(container: AppContainer, route: Person, navigator: Navigator) {
 							width = width,
 							line = title.year?.toString(),
 							progress = title.progress,
-							watched = title.isWatched,
+							watched = title.showsWatched,
 							unwatchedCount = title.unwatchedBadge,
 							onClick = { navigator.openItem(title.ratingKey) },
 						)
