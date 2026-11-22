@@ -116,8 +116,9 @@ host_state() {
 	df -h / | tail -n 1
 	pgrep -fa 'qemu-system|emulator' | cut -c1-160 || true
 	sudo dmesg -T 2> /dev/null | tail -n 15 || true
-	# A kill that is not the kernel's (systemd-oomd, a script) is noted in the journal, not in dmesg.
-	sudo journalctl --since '-15 min' --no-pager 2> /dev/null | grep -i -E 'oom|killed|qemu|emulator' | tail -n 15 | cut -c1-200 || true
+	# The emulator crashed rather than being killed: systemd-coredump keeps the signal and the stack of the dead process.
+	sudo coredumpctl --no-pager -1 info qemu-system-x86 2> /dev/null | head -n 45 | cut -c1-220 || true
+	sudo journalctl --since '-15 min' --no-pager 2> /dev/null | grep -i -E 'oom|killed' | tail -n 5 | cut -c1-200 || true
 	ls /tmp/android-runner 2> /dev/null || true
 	echo "::endgroup::"
 }
@@ -168,8 +169,8 @@ phase() {
 		echo "::warning title=Emulator lost::the emulator stopped answering in the $name phase (attempt $attempt of $attempts)"
 		host_state
 		[ "$attempt" -lt "$attempts" ] || return "$gone"
-		revive_emulator "$attempt"
-		capture_logcat "again-$attempt"
+		revive_emulator "$name-$attempt"
+		capture_logcat "again-$name-$attempt"
 	done
 }
 
