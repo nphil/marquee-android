@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentSize
@@ -142,7 +143,7 @@ internal fun AlphabetRail(entries: List<AlphabetEntry>, onSelect: (AlphabetEntry
 	)
 	val calloutStyle = MaterialTheme.typography.displayMedium.copy(fontWeight = FontWeight.Bold)
 	val glyph = with(type) { rest.fontSize.toDp() }.value
-	val calloutSide = with(type) { (calloutStyle.fontSize.toDp().value * 1.8f).roundToInt().dp }
+	val calloutSide = with(type) { maxOf(calloutStyle.lineHeight.toDp(), calloutStyle.fontSize.toDp()) } + Space.s3 * 2
 	val lensHeight = RailLens.panelHeight(RowHeight.value, glyph, LensWidth.value).dp
 	val lensShape = RoundedCornerShape(Radius.tile)
 	val calloutShape = RoundedCornerShape(Radius.card)
@@ -231,9 +232,10 @@ internal fun AlphabetRail(entries: List<AlphabetEntry>, onSelect: (AlphabetEntry
 					Modifier
 						.align(Alignment.TopStart)
 						.offset(x = RailWidth - LensWidth)
+						.wrapContentSize(Alignment.TopStart, unbounded = true)
 						.size(LensWidth, lensHeight)
 						.graphicsLayer {
-							translationY = fingerY.value - lensPx / 2f
+							translationY = (fingerY.value - lensPx / 2f).coerceIn(0f, max(heightPx - lensPx, 0f))
 							alpha = strength.value.coerceIn(0f, 1f)
 						}
 						.background(panel, lensShape)
@@ -284,6 +286,7 @@ internal fun AlphabetRail(entries: List<AlphabetEntry>, onSelect: (AlphabetEntry
 						Modifier
 							.align(Alignment.TopStart)
 							.offset(x = RailWidth - LensWidth - Space.s3 - calloutSide)
+							.wrapContentSize(Alignment.TopStart, unbounded = true)
 							.size(calloutSide)
 							.graphicsLayer {
 								translationY = (fingerY.value - calloutPx / 2f).coerceIn(0f, max(heightPx - calloutPx, 0f))
@@ -291,6 +294,7 @@ internal fun AlphabetRail(entries: List<AlphabetEntry>, onSelect: (AlphabetEntry
 							}
 							.background(panel, calloutShape)
 							.border(1.dp, lucent.edge, calloutShape)
+							.padding(Space.s3)
 							.clearAndSetSemantics {},
 						contentAlignment = Alignment.Center,
 					) {
