@@ -45,6 +45,9 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     timeout-minutes: 120
+    env:
+      # What the emulator runs with; the checks script starts it again with the same when it exits mid-run.
+      EMULATOR_OPTIONS: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
 
     steps:
       - uses: actions/checkout@v4
@@ -211,7 +214,7 @@ jobs:
           profile: pixel_6
           ram-size: 4096M
           disk-size: 6000M
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          emulator-options: ${{ env.EMULATOR_OPTIONS }}
           disable-animations: true
           script: bash .github/emulator-checks.sh
 
@@ -233,6 +236,16 @@ jobs:
             app/build/reports/
             app/build/outputs/androidTest-results/
             baselineprofile/build/outputs/
+          retention-days: 7
+
+      # The emulator's own crash reports. None means it was killed rather than crashed.
+      - name: Upload emulator crash data
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: emulator-crash
+          path: /tmp/android-runner/**/*.dmp
+          if-no-files-found: ignore
           retention-days: 7
 
       - name: Decode signing keystore
