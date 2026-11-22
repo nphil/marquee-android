@@ -45,6 +45,15 @@ core/       git submodule: nphil/marquee-ios, pinned; MarqueeCore and the shared
   and a regression fails the build.
 - **Icon.** The iPhone app's mark as an adaptive icon with a monochrome layer, so Android's themed icons
   tint it.
+- **Icons.** In-app icons are Material Symbols, Rounded style, converted from the SVGs to 24 dp vector
+  drawables in `res/drawable/ic_*.xml` (viewport 960, white fill). They take their colour from the theme
+  where they are drawn, never from the file; a filled variant for a selected or on state is a second
+  file (`ic_home_filled`). `material-icons-extended` is not used, which would add thousands of unused
+  icons to the APK. Where the iPhone uses an SF Symbol, the nearest Material Symbol stands in.
+- **The M.** The launcher icon's M is redrawn as four flat slabs in `ui/shell/MarqueeMark.kt` for the
+  tablet sidebar's header: the slabs pull apart and settle each time the sidebar opens or closes, and
+  take their face colours from the theme's accent and warning colours. The launcher icon keeps the
+  iPhone's colours.
 
 ## 2. Working with the iPhone app
 
