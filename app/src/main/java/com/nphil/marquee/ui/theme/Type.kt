@@ -14,6 +14,10 @@ import androidx.compose.ui.unit.sp
  * The type scale from DESIGN §4.3: Manrope for display and titles, the system font for the rest. Material's
  * slots carry Lucent's roles: displaySmall is display, headlineSmall is title, titleMedium is headline,
  * bodyLarge is body, bodyMedium and labelLarge are label, bodySmall is caption.
+ *
+ * Body and caption are cut at Medium, not Normal: the system font's regular cut is thin on Xiaomi's MiSans
+ * (Settings footnotes were hard to read on the Pad 8 Pro), where the medium cut reads as a regular one. On
+ * Roboto, which CI renders with, the difference is slight.
  */
 fun lucentTypography(assets: AssetManager): Typography {
 	val manrope = FontFamily(
@@ -39,9 +43,9 @@ fun lucentTypography(assets: AssetManager): Typography {
 		titleLarge = style(manrope, FontWeight.SemiBold, 22, 1.25f, -0.01f),
 		titleMedium = style(sans, FontWeight.SemiBold, 17, 1.3f),
 		titleSmall = style(sans, FontWeight.Medium, 15, 1.3f),
-		bodyLarge = style(sans, FontWeight.Normal, 17, 1.45f),
+		bodyLarge = style(sans, FontWeight.Medium, 17, 1.45f),
 		bodyMedium = style(sans, FontWeight.Medium, 15, 1.3f),
-		bodySmall = style(sans, FontWeight.Normal, 12, 1.3f),
+		bodySmall = style(sans, FontWeight.Medium, 12, 1.3f),
 		labelLarge = style(sans, FontWeight.Medium, 15, 1.3f),
 		labelMedium = style(sans, FontWeight.Medium, 13, 1.3f),
 		labelSmall = style(sans, FontWeight.Medium, 12, 1.3f),

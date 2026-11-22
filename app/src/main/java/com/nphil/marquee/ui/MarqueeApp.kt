@@ -32,6 +32,7 @@ import com.nphil.marquee.AppContainer
 import com.nphil.marquee.R
 import com.nphil.marquee.diagnostics.DiagScreen
 import com.nphil.marquee.session.AppSession
+import com.nphil.marquee.ui.components.ProvidePlexImages
 import com.nphil.marquee.ui.library.LibraryScreen
 import com.nphil.marquee.ui.library.LibraryViewModel
 import com.nphil.marquee.ui.servers.ServerChoiceScreen
@@ -63,16 +64,18 @@ fun MarqueeApp(container: AppContainer, choice: ThemeChoice, onTheme: ((ThemeCho
 		}
 	}
 	val effects = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
-	AnimatedContent(
-		targetState = root,
-		modifier = Modifier.fillMaxSize().background(lucent.canvas),
-		transitionSpec = { fadeIn(effects) togetherWith fadeOut(effects) },
-		label = "root",
-	) { screen ->
-		when (screen) {
-			RootScreen.SignIn -> SignInScreen(container.session)
-			RootScreen.Servers -> ServerChoiceScreen(container.session)
-			RootScreen.Shell -> Shell(container, choice, onTheme)
+	ProvidePlexImages(container) {
+		AnimatedContent(
+			targetState = root,
+			modifier = Modifier.fillMaxSize().background(lucent.canvas),
+			transitionSpec = { fadeIn(effects) togetherWith fadeOut(effects) },
+			label = "root",
+		) { screen ->
+			when (screen) {
+				RootScreen.SignIn -> SignInScreen(container.session)
+				RootScreen.Servers -> ServerChoiceScreen(container.session)
+				RootScreen.Shell -> Shell(container, choice, onTheme)
+			}
 		}
 	}
 }
