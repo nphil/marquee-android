@@ -29,15 +29,23 @@ class SubtitlePlaybackTest {
 		val expected = SubtitleSource("playback", "7", 18)
 		val file = PlayStream(PlayStream.StreamKind.File, "https://plex.example.test/film.mkv")
 		val hls = PlayStream(PlayStream.StreamKind.Hls, "http://plex.example.test/film.m3u8")
-		assertEquals(expected, plan.copy(stream = file).subtitleSource())
-		assertEquals(expected, plan.copy(stream = hls).subtitleSource())
+		assertEquals(expected, plan.copy(stream = file).subtitleSource(isOffline = false))
+		assertEquals(expected, plan.copy(stream = hls).subtitleSource(isOffline = false))
+	}
+
+	@Test
+	fun downloadedPlaybackNeverUsesOnlineSubtitleServicesEvenOnWiFi() {
+		val sameNetworkStream = PlayStream(PlayStream.StreamKind.File, "https://plex.example.test/film.mkv")
+		assertNull(plan.copy(stream = sameNetworkStream).subtitleSource(isOffline = true))
+		val download = PlayStream(PlayStream.StreamKind.File, "file:///downloads/film.mkv")
+		assertNull(plan.copy(stream = download).subtitleSource(isOffline = true))
 	}
 
 	@Test
 	fun localFilesAndUnopenedTitlesHaveNoOnlineSubtitleSource() {
-		assertNull(plan.subtitleSource())
+		assertNull(plan.subtitleSource(isOffline = false))
 		val local = PlayStream(PlayStream.StreamKind.File, "file:///downloads/film.mkv")
-		assertNull(plan.copy(stream = local).subtitleSource())
+		assertNull(plan.copy(stream = local).subtitleSource(isOffline = false))
 	}
 
 	@Test

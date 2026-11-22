@@ -10,7 +10,6 @@ import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStoreFile
 import com.nphil.marquee.core.CoreJson
 import com.nphil.marquee.core.HomeLayout
-import com.nphil.marquee.core.PlexHomeUser
 import com.nphil.marquee.core.TabBarBehavior
 import com.nphil.marquee.core.TabLayout
 import com.nphil.marquee.ui.theme.ThemeChoice
@@ -25,7 +24,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import java.util.UUID
 
-/** What the app keeps that is not secret: themes, the chosen server and profile, server addresses and how browsing is set up. */
+/** What the app keeps that is not secret: themes, the chosen server, server addresses and how browsing is set up. */
 class AppSettings(context: Context) : BrowsePreferences {
 	private val store = PreferenceDataStoreFactory.create { context.preferencesDataStoreFile("settings") }
 
@@ -89,23 +88,12 @@ class AppSettings(context: Context) : BrowsePreferences {
 		val prefs = store.data.first()
 		return StoredAccount(
 			serverId = prefs[SERVER_ID],
-			profile = prefs[PROFILE]?.let { runCatching { CoreJson.decodeFromString(PlexHomeUser.serializer(), it) }.getOrNull() },
 			addresses = prefs.addresses(),
 		)
 	}
 
 	suspend fun setServerId(id: String) {
 		store.edit { it[SERVER_ID] = id }
-	}
-
-	suspend fun setProfile(profile: PlexHomeUser?) {
-		store.edit { prefs ->
-			if (profile == null) {
-				prefs.remove(PROFILE)
-			} else {
-				prefs[PROFILE] = CoreJson.encodeToString(PlexHomeUser.serializer(), profile)
-			}
-		}
 	}
 
 	/** Keeps the address that answered for a server, tried first next time. */
@@ -120,7 +108,7 @@ class AppSettings(context: Context) : BrowsePreferences {
 	suspend fun clearAccount() {
 		store.edit { prefs ->
 			prefs.remove(SERVER_ID)
-			prefs.remove(PROFILE)
+			prefs.remove(LEGACY_PROFILE)
 			prefs.remove(ADDRESSES)
 		}
 	}
@@ -216,7 +204,7 @@ class AppSettings(context: Context) : BrowsePreferences {
 		val THEME_FIXED = stringPreferencesKey("theme.fixedMode")
 		val CLIENT_ID = stringPreferencesKey("plex.clientIdentifier")
 		val SERVER_ID = stringPreferencesKey("plex.serverId")
-		val PROFILE = stringPreferencesKey("plex.profile")
+		val LEGACY_PROFILE = stringPreferencesKey("plex.profile")
 		val ADDRESSES = stringPreferencesKey("plex.addresses")
 		val SPEECH_DOCK = stringPreferencesKey("subtitles.speechDock")
 		val addressSerializer = MapSerializer(String.serializer(), String.serializer())
@@ -235,4 +223,4 @@ class AppSettings(context: Context) : BrowsePreferences {
 }
 
 /** The kept choices of a sign-in. */
-class StoredAccount(val serverId: String?, val profile: PlexHomeUser?, val addresses: Map<String, String>)
+class StoredAccount(val serverId: String?, val addresses: Map<String, String>)

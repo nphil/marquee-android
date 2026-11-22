@@ -2,13 +2,11 @@ package com.nphil.marquee.profile
 
 import com.nphil.marquee.AppContainer
 import com.nphil.marquee.MarqueeApplication
-import com.nphil.marquee.core.CoreJson
-import com.nphil.marquee.core.PlexServer
 import com.nphil.marquee.data.SecretStore
 import com.nphil.marquee.diagnostics.DiagRequestLog
 import com.nphil.marquee.fakeplex.FakePlexServer
+import com.nphil.marquee.session.SavedPlexSignIn
 import kotlin.concurrent.thread
-import kotlinx.serialization.builtins.ListSerializer
 
 /**
  * The app as the baseline profile generators run it: every request, Core's and the artwork's, is answered from the
@@ -25,10 +23,7 @@ class ProfilingApplication : MarqueeApplication() {
 	}
 
 	override fun createContainer(): AppContainer {
-		SecretStore(this).apply {
-			write("plex.token", fake.token)
-			write("plex.servers", CoreJson.encodeToString(ListSerializer(PlexServer.serializer()), listOf(fake.server)))
-		}
+		SavedPlexSignIn(fake.token, listOf(fake.server), fake.profile).save(SecretStore(this))
 		return AppContainer(this, fake.client.newBuilder().addInterceptor(DiagRequestLog()).build())
 	}
 }

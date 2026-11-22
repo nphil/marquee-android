@@ -69,7 +69,7 @@ internal fun MorePage(
 	onClose: () -> Unit,
 ) {
 	val settings = buildList {
-		add(NavEntry(R.drawable.ic_tune, "Quality", QualityPreset.title(model.quality), TracksPage.Quality))
+		if (!model.isOffline) add(NavEntry(R.drawable.ic_tune, "Quality", QualityPreset.title(model.quality), TracksPage.Quality))
 		add(NavEntry(R.drawable.ic_aspect_ratio, "Aspect Ratio", aspect.label, TracksPage.Aspect))
 		add(NavEntry(R.drawable.ic_speed, "Playback Speed", speedTitle(model.speed), TracksPage.Speed))
 		if (model.plan?.chapters?.isNotEmpty() == true) add(NavEntry(R.drawable.ic_chapters, "Chapters", null, TracksPage.Chapters))

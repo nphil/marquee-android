@@ -101,7 +101,7 @@ fun SignInScreen(session: AppSession) {
 				Content.Waiting -> Waiting(onCancel = session::cancelSignIn)
 				Content.Page -> PagePanel(session)
 				is Content.Code -> CodePanel(shown.code, onCancel = session::cancelSignIn)
-				is Content.Failure -> Failure(shown.error, canRetry = state.canRetry, session = session, onSignIn = start)
+				is Content.Failure -> Failure(shown.error, state.canRetry, state.needsProfileVerification, session, onSignIn = start)
 			}
 		}
 	}
@@ -180,7 +180,7 @@ private fun CodePanel(code: String, onCancel: () -> Unit) {
 }
 
 @Composable
-private fun Failure(error: CoreException.Kind, canRetry: Boolean, session: AppSession, onSignIn: () -> Unit) {
+private fun Failure(error: CoreException.Kind, canRetry: Boolean, verifyProfile: Boolean, session: AppSession, onSignIn: () -> Unit) {
 	var confirmingSignOut by remember { mutableStateOf(false) }
 	Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Space.s4)) {
 		Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
@@ -189,7 +189,9 @@ private fun Failure(error: CoreException.Kind, canRetry: Boolean, session: AppSe
 				contentDescription = null,
 				tint = lucent.ink,
 			)
-			Text(message(error), style = MaterialTheme.typography.bodyLarge, color = lucent.ink, textAlign = TextAlign.Center)
+			val note = if (verifyProfile && canRetry) "Reconnect to Plex once to verify the saved profile. Downloads stay on this device."
+				else message(error)
+			Text(note, style = MaterialTheme.typography.bodyLarge, color = lucent.ink, textAlign = TextAlign.Center)
 		}
 		when {
 			error == CoreException.Kind.PinExpired || error == CoreException.Kind.Unauthorized ->

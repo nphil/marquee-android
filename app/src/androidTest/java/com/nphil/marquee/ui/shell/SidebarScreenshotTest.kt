@@ -35,6 +35,7 @@ import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.Dp
@@ -43,6 +44,7 @@ import androidx.compose.ui.unit.width
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.nphil.marquee.R
+import com.nphil.marquee.core.PlexHomeUser
 import com.nphil.marquee.testing.Device
 import com.nphil.marquee.testing.DeviceWindow
 import com.nphil.marquee.testing.saveScreenshot
@@ -75,6 +77,9 @@ class SidebarScreenshotTest {
 
 	private val expanded = mutableStateOf(false)
 	private val selected = mutableStateOf("library")
+	private val profile = mutableStateOf(
+		PlexHomeUser(1, "jordan", "Jordan", isAdmin = true, isProtected = false, isRestricted = false, isGuest = false),
+	)
 
 	@Test
 	fun closedThenOpen() {
@@ -140,7 +145,7 @@ class SidebarScreenshotTest {
 	@Test
 	fun destinationsAreNamedInTheRailAndReportSelection() {
 		show()
-		for (destination in destinations + footer) {
+		for (destination in destinations) {
 			item(destination.key)
 				.assertHasClickAction()
 				.assertContentDescriptionEquals(destination.label)
@@ -153,8 +158,36 @@ class SidebarScreenshotTest {
 		item("watchlist").assertIsSelected()
 		item("library").assertIsNotSelected()
 
-		item("settings").performClick()
-		assertEquals("settings", selected.value)
+		item(SETTINGS_KEY).assertSettingsTarget(Role.Tab).performClick()
+		assertEquals(SETTINGS_KEY, selected.value)
+	}
+
+	@Test
+	fun settingsKeepsItsNameAndTargetAfterTheProfileChanges() {
+		show()
+		val settings = item(SETTINGS_KEY).assertSettingsTarget(Role.Tab)
+		val beforeSwitch = settings.pixels()
+
+		rule.runOnIdle { profile.value = profile.value.copy(id = 2, uuid = "maya", title = "Maya") }
+		assertFalse("Settings still shows the previous profile initial", beforeSwitch.contentEquals(settings.pixels()))
+
+		brand().performClick()
+		settings.assertSettingsTarget(Role.Tab).performClick()
+		settings.assertIsSelected()
+	}
+
+	@Test
+	fun compactSettingsStillOpensSettings() {
+		val (resolved, typography) = resolveTheme(LucentTheme.DEFAULT_DARK, ThemeMode.Dark)
+		var clicked = false
+		rule.setContent {
+			MarqueeTheme(resolved, typography) {
+				CompactSettingsButton(profile.value) { clicked = true }
+			}
+		}
+
+		rule.onNodeWithContentDescription("Settings").assertSettingsTarget(Role.Button).performClick()
+		rule.runOnIdle { assertTrue(clicked) }
 	}
 
 	@Test
@@ -205,7 +238,7 @@ class SidebarScreenshotTest {
 							onSelect = { selected.value = it },
 							expanded = expanded.value,
 							onToggle = { expanded.value = !expanded.value },
-							footer = footer,
+							settingsProfile = profile.value,
 						)
 						PlaceholderContent()
 					}
@@ -219,6 +252,12 @@ class SidebarScreenshotTest {
 	private fun item(key: String) = rule.onNodeWithTag(SidebarTags.item(key))
 
 	private fun mark() = rule.onNodeWithTag(Mark)
+
+	private fun SemanticsNodeInteraction.assertSettingsTarget(role: Role) = assertHasClickAction()
+		.assertContentDescriptionEquals("Settings")
+		.assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, role))
+		.assertWidthIsAtLeast(Size.target)
+		.assertHeightIsAtLeast(Size.target)
 
 	private fun sidebarWidth(): Dp = rule.onNodeWithTag(SidebarTags.Root).getUnclippedBoundsInRoot().width
 
@@ -255,9 +294,6 @@ class SidebarScreenshotTest {
 			SidebarDestination("watchlist", "Watchlist", R.drawable.ic_bookmark, R.drawable.ic_bookmark_filled),
 			SidebarDestination("live", "Live TV", R.drawable.ic_tv, R.drawable.ic_tv),
 			SidebarDestination("profiles", "Profiles", R.drawable.ic_account_circle, R.drawable.ic_account_circle),
-		)
-		val footer = listOf(
-			SidebarDestination("settings", "Settings", R.drawable.ic_settings, R.drawable.ic_settings_filled),
 		)
 	}
 }

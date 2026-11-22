@@ -31,6 +31,7 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -46,6 +47,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -59,8 +61,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.constrainWidth
 import androidx.compose.ui.unit.dp
+import com.nphil.marquee.core.PlexHomeUser
 import com.nphil.marquee.diagnostics.Diag
 import com.nphil.marquee.diagnostics.DiagCategory
+import com.nphil.marquee.ui.components.Avatar
 import com.nphil.marquee.ui.theme.Size
 import com.nphil.marquee.ui.theme.Space
 import com.nphil.marquee.ui.theme.lucent
@@ -82,8 +86,8 @@ class SidebarDestination(
  * applies the start, top and bottom bar and cutout insets itself, so give it none and keep those insets off the
  * content's start edge. Its width is 72 dp rail or 236 dp open, plus the start inset.
  *
- * [destinations] scroll and [footer] stays pinned to the bottom. [selected] is a [SidebarDestination.key] from
- * either list.
+ * [destinations] scroll and Settings stays pinned to the bottom. [selected] is a [SidebarDestination.key]
+ * or [SETTINGS_KEY].
  */
 @Composable
 fun MarqueeSidebar(
@@ -92,8 +96,8 @@ fun MarqueeSidebar(
 	onSelect: (String) -> Unit,
 	expanded: Boolean,
 	onToggle: () -> Unit,
+	settingsProfile: PlexHomeUser?,
 	modifier: Modifier = Modifier,
-	footer: List<SidebarDestination> = emptyList(),
 ) {
 	val theme = lucent
 	// Both animations are read only in layout and draw below, so a toggle never recomposes the items. The
@@ -142,15 +146,21 @@ fun MarqueeSidebar(
 			verticalArrangement = Arrangement.spacedBy(Space.s1),
 		) {
 			for (destination in destinations) {
-				SidebarItem(destination, destination.key == selected, labelAlpha, onSelect)
+				val active = destination.key == selected
+				SidebarItem(destination.key, destination.label, active, labelAlpha, onSelect) { tint ->
+					Icon(
+						painterResource(if (active) destination.selectedIcon else destination.icon),
+						contentDescription = null,
+						modifier = Modifier.size(IconSize),
+						tint = tint,
+					)
+				}
 			}
 		}
-		if (footer.isNotEmpty()) {
-			Spacer(Modifier.height(Space.s2))
-			Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(Space.s1)) {
-				for (destination in footer) {
-					SidebarItem(destination, destination.key == selected, labelAlpha, onSelect)
-				}
+		Spacer(Modifier.height(Space.s2))
+		Column(Modifier.selectableGroup()) {
+			SidebarItem(SETTINGS_KEY, SettingsLabel, selected == SETTINGS_KEY, labelAlpha, onSelect) {
+				SettingsAvatar(settingsProfile)
 			}
 		}
 	}
@@ -179,6 +189,19 @@ private val IconSize = 24.dp
 private val LabelSlide = 8.dp
 
 private const val BrandName = "Marquee"
+private const val SettingsLabel = "Settings"
+
+@Composable
+internal fun CompactSettingsButton(profile: PlexHomeUser?, onClick: () -> Unit) {
+	IconButton(onClick = onClick, modifier = Modifier.semantics { contentDescription = SettingsLabel }) {
+		SettingsAvatar(profile)
+	}
+}
+
+@Composable
+private fun SettingsAvatar(profile: PlexHomeUser?) {
+	Avatar(profile, size = Space.s7, modifier = Modifier.clearAndSetSemantics { })
+}
 
 @Composable
 private fun SidebarBrand(expanded: Boolean, onToggle: () -> Unit, labelAlpha: () -> Float) {
@@ -229,10 +252,12 @@ private fun SidebarBrand(expanded: Boolean, onToggle: () -> Unit, labelAlpha: ()
 
 @Composable
 private fun SidebarItem(
-	destination: SidebarDestination,
+	key: String,
+	label: String,
 	selected: Boolean,
 	labelAlpha: () -> Float,
 	onSelect: (String) -> Unit,
+	icon: @Composable (tint: Color) -> Unit,
 ) {
 	val theme = lucent
 	val container = MaterialTheme.colorScheme.secondaryContainer
@@ -246,26 +271,21 @@ private fun SidebarItem(
 
 	Row(
 		Modifier
-			.testTag(SidebarTags.item(destination.key))
+			.testTag(SidebarTags.item(key))
 			.fillMaxWidth()
 			.height(Size.target)
 			.clip(MaterialTheme.shapes.large)
 			.drawBehind { drawRect(pill.value) }
-			.selectable(selected = selected, role = Role.Tab) { onSelect(destination.key) }
+			.selectable(selected = selected, role = Role.Tab) { onSelect(key) }
 			// The label is mostly invisible in the rail, so the row carries the name itself.
-			.semantics { contentDescription = destination.label },
+			.semantics { contentDescription = label },
 		verticalAlignment = Alignment.CenterVertically,
 	) {
 		Box(Modifier.size(Size.target), contentAlignment = Alignment.Center) {
-			Icon(
-				painterResource(if (selected) destination.selectedIcon else destination.icon),
-				contentDescription = null,
-				modifier = Modifier.size(IconSize),
-				tint = tint,
-			)
+			icon(tint)
 		}
 		Text(
-			destination.label,
+			label,
 			style = MaterialTheme.typography.labelLarge,
 			color = tint,
 			maxLines = 1,

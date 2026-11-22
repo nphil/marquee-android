@@ -95,6 +95,8 @@ import com.nphil.marquee.ui.components.EmptyState
 import com.nphil.marquee.ui.components.PlexArt
 import com.nphil.marquee.ui.components.RetryButton
 import com.nphil.marquee.ui.components.cardHeight
+import com.nphil.marquee.ui.downloads.DownloadAction
+import com.nphil.marquee.ui.downloads.downloadAction
 import com.nphil.marquee.ui.heroSharedElement
 import com.nphil.marquee.ui.theme.Radius
 import com.nphil.marquee.ui.theme.Size
@@ -209,6 +211,7 @@ private fun DetailPage(
 		val heroPx = with(LocalDensity.current) { (maxWidth * 9 / 16).toPx() }
 		val heroOnScreen by remember { derivedStateOf { listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset < heroPx / 2 } }
 		val context = LocalContext.current
+		val download = downloadAction(item, versionIndex, container.downloads, navigator, state.onServer)
 		val actions = item?.let { page ->
 			val target = if (state.onServer) playTarget(page, state) else null
 			ItemActions(
@@ -222,6 +225,7 @@ private fun DetailPage(
 				onTrailer = trailer?.let { extra -> { navigator.openExtra(extra) } },
 				onTracks = { tracksOpen = true },
 				onShare = { share(context, page) },
+				download = download,
 				onDeleteVersion = { deleting = DeleteTarget.Version(page, versionIndex) },
 				onDelete = { deleting = DeleteTarget.Title(page) },
 			)
@@ -295,6 +299,7 @@ private class ItemActions(
 	val onTrailer: (() -> Unit)?,
 	val onTracks: () -> Unit,
 	val onShare: () -> Unit,
+	val download: DownloadAction?,
 	val onDeleteVersion: () -> Unit,
 	val onDelete: () -> Unit,
 )
@@ -514,6 +519,7 @@ private fun ActionRow(actions: ItemActions, modifier: Modifier) {
 					onClick = actions.onWatchlist,
 				)
 			}
+			actions.download?.let { RoundAction(it.icon, it.label, selected = it.selected, onClick = it.open) }
 			MoreMenu(actions)
 		}
 	}
@@ -559,6 +565,7 @@ private fun MoreMenu(actions: ItemActions) {
 				},
 			)
 			actions.onPlayFromStart?.let { entry("Play from Beginning", R.drawable.ic_replay, it) }
+			actions.download?.let { entry(it.label, it.icon, it.open) }
 			actions.onTrailer?.let { entry("Play Trailer", R.drawable.ic_play_arrow, it) }
 			if (hasTracks && state.onServer) entry("Audio & Subtitles", R.drawable.ic_closed_caption, actions.onTracks)
 			if (shareable) entry("Share", R.drawable.ic_share, actions.onShare)

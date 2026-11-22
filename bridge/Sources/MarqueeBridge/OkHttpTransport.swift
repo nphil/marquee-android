@@ -63,6 +63,7 @@ private struct WireRequest: Encodable {
     let url: String
     let headers: [String: String]
     let timeoutMillis: Int
+    let isIdempotent: Bool
     let restrictToOrigin: Bool
 
     init(_ request: PlexRequest) {
@@ -70,6 +71,7 @@ private struct WireRequest: Encodable {
         url = request.url.absoluteString
         headers = request.headers
         timeoutMillis = Int((request.timeout * 1000).rounded())
+        isIdempotent = request.isIdempotent
         restrictToOrigin = request.restrictToOrigin
     }
 }

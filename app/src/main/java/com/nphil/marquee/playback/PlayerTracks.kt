@@ -41,7 +41,9 @@ import okhttp3.Callback
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
+import java.io.File
 import java.io.IOException
+import java.net.URI
 import kotlin.coroutines.resume
 
 /**
@@ -220,7 +222,8 @@ internal class PlayerTracks(
 		val headers = lists.headers
 		sidecar = scope.launch {
 			try {
-				val bytes = download(url, headers) ?: return@launch
+				val bytes = if (url.startsWith("file:")) readSavedSubtitle(url) else download(url, headers)
+				if (bytes == null) return@launch
 				val file = withContext(Dispatchers.Default) {
 					try {
 						Captions.parse(bytes)
@@ -248,6 +251,16 @@ internal class PlayerTracks(
 			} finally {
 				result.complete(false)
 			}
+		}
+	}
+
+	private suspend fun readSavedSubtitle(url: String): ByteArray? = withContext(Dispatchers.IO) {
+		try {
+			File(URI.create(url)).readBytes()
+		} catch (_: IOException) {
+			null
+		} catch (_: IllegalArgumentException) {
+			null
 		}
 	}
 

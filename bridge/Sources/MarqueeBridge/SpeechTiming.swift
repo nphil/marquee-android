@@ -53,7 +53,7 @@ struct SpeechTimingReply: Encodable, Sendable {
 extension PlaySession {
     func prepareSpeech(_ call: PrepareSpeechCall) throws -> SpeechTimingReply {
         try Task.checkCancellation()
-        guard hasStream, let file = subtitleFile, file.key == .init(ratingKey: call.ratingKey, partId: call.partId),
+        guard hasStream, let library, let file = subtitleFile, file.key == .init(ratingKey: call.ratingKey, partId: call.partId),
               let audio = file.audio, let origin = try? SpeechDock.origin(call.address).get(),
               let identity = SpeechDock.identity(
                   server: library.server.id, ratingKey: call.ratingKey, media: file.media, audio: audio, subtitle: call.subtitle

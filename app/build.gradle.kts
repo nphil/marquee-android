@@ -282,6 +282,7 @@ dependencies {
 	implementation(libs.androidx.compose.material3.adaptive.navigation)
 
 	implementation(libs.androidx.datastore.preferences)
+	implementation(libs.androidx.work.runtime)
 
 	implementation(libs.okhttp)
 	implementation(libs.kotlinx.serialization.json)

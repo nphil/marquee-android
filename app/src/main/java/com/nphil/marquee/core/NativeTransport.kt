@@ -11,8 +11,10 @@ import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
+import okio.BufferedSink
 import java.io.EOFException
 import java.io.IOException
 import java.net.ConnectException
@@ -23,6 +25,12 @@ import java.net.UnknownHostException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import javax.net.ssl.SSLException
+
+private const val PlexToken = "X-Plex-Token"
+
+internal fun hasPlexCredential(headers: Map<String, String>, url: HttpUrl): Boolean =
+	headers.keys.any { it.equals(PlexToken, ignoreCase = true) } ||
+		(0 until url.querySize).any { url.queryParameterName(it).equals(PlexToken, ignoreCase = true) }
 
 /**
  * MarqueeCore's `PlexTransport` on OkHttp: the bridge hands over a request as JSON plus its body, and
@@ -47,11 +55,16 @@ class NativeTransport(private val client: OkHttpClient, private val sink: Sink =
 			return
 		}
 		val timeout = wire.timeoutMillis.coerceAtLeast(1)
-		val restricted = wire.restrictToOrigin
+		val method = wire.method.uppercase()
+		val read = method == "GET" || method == "HEAD"
+		val repeatable = wire.isIdempotent ?: read
+		// OkHttp strips Authorization across origins, but not Plex's custom token header.
+		val restricted = wire.restrictToOrigin || hasPlexCredential(wire.headers, url)
 		val requestClient = client.newBuilder()
 			.connectTimeout(timeout, TimeUnit.MILLISECONDS)
 			.readTimeout(timeout, TimeUnit.MILLISECONDS)
 			.writeTimeout(timeout, TimeUnit.MILLISECONDS)
+			.retryOnConnectionFailure(repeatable)
 			.followRedirects(!restricted)
 			.followSslRedirects(!restricted)
 			.build()
@@ -59,15 +72,18 @@ class NativeTransport(private val client: OkHttpClient, private val sink: Sink =
 			// Device names such as "Nitin’s Pad" go out as they are, as URLSession sends them.
 			wire.headers.forEach { (name, value) -> addUnsafeNonAscii(name, value) }
 		}.build()
-		val method = wire.method.uppercase()
 		val requestBody = when {
-			method == "GET" || method == "HEAD" -> null
+			read -> null
 			body != null -> body.toRequestBody()
 			// OkHttp needs a body for these; URLSession sends them empty.
 			method == "POST" || method == "PUT" || method == "PATCH" -> ByteArray(0).toRequestBody()
 			else -> null
 		}
-		val first = Request.Builder().url(url).headers(headers).method(method, requestBody).build()
+		// Even an empty POST can have been accepted before an error. OkHttp must not replay it.
+		val singleSend = if (!repeatable && !read) {
+			SingleSendBody(requestBody ?: ByteArray(0).toRequestBody())
+		} else requestBody
+		val first = Request.Builder().url(url).headers(headers).method(method, singleSend).build()
 		execute(id, requestClient, first, if (restricted) url else null, redirects = 0)
 	}
 
@@ -121,6 +137,7 @@ class NativeTransport(private val client: OkHttpClient, private val sink: Sink =
 		}
 		val request = response.request
 		val toGet = code == 303 || ((code == 301 || code == 302) && request.method == "POST")
+		if (!toGet && request.body?.isOneShot() == true) return null
 		return request.newBuilder().url(target).apply {
 			if (toGet) {
 				method("GET", null)
@@ -134,12 +151,20 @@ class NativeTransport(private val client: OkHttpClient, private val sink: Sink =
 		for (name in headers.names()) put(name, headers.values(name).joinToString(", "))
 	}.toString().encodeToByteArray()
 
+	private class SingleSendBody(private val body: RequestBody) : RequestBody() {
+		override fun contentType() = body.contentType()
+		override fun contentLength() = body.contentLength()
+		override fun isOneShot() = true
+		override fun writeTo(sink: BufferedSink) = body.writeTo(sink)
+	}
+
 	@Serializable
 	private class WireRequest(
 		val method: String,
 		val url: String,
 		val headers: Map<String, String> = emptyMap(),
 		val timeoutMillis: Long,
+		val isIdempotent: Boolean? = null,
 		val restrictToOrigin: Boolean = false,
 	)
 

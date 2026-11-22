@@ -58,6 +58,10 @@ import com.nphil.marquee.core.startPlay
 import com.nphil.marquee.data.PlaybackPrefs
 import com.nphil.marquee.diagnostics.Diag
 import com.nphil.marquee.diagnostics.DiagCategory
+import com.nphil.marquee.downloads.DownloadEntry
+import com.nphil.marquee.downloads.DownloadFailure
+import com.nphil.marquee.downloads.closeDownloadPlayback
+import com.nphil.marquee.downloads.startDownload
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -103,15 +107,24 @@ class PlayerModel(
 	/** What the profile's remembered tracks are filed under: the show for an episode, else the title itself. */
 	private var titleKey: String,
 	private var fromStart: Boolean,
+	downloadId: String? = null,
 ) : ViewModel() {
 	private val app = context.applicationContext
 	private val factory = PlaybackFactory(app, http)
+
+	/** A saved file is the source, even with Wi-Fi on or before the player has opened. */
+	val isOffline = downloadId != null
+	private var localId = downloadId
+	private var localEntry: DownloadEntry? = null
+	private var localNext: DownloadEntry? = null
+	private var localCheckpointAt = 0L
+	private var localCheckpoint: Int? = null
 
 	/** The audio and subtitle tracks the menus list, and the subtitle on screen. */
 	internal val tracks = PlayerTracks(viewModelScope, http, ::movieMs, container.core, container.subtitleServices.speechDock)
 	internal val subtitleFinder = PlayerSubtitleFinder(viewModelScope, container.core, container.subtitleServices)
 
-	private val onlineSubtitleSource get() = plan?.subtitleSource()
+	private val onlineSubtitleSource get() = plan?.subtitleSource(isOffline)
 	internal val canFindSubtitles: Boolean get() = player != null && onlineSubtitleSource != null
 
 	/** Skip Intro and Up Next over the picture. */
@@ -343,7 +356,7 @@ class PlayerModel(
 	/** Plays the title at the quality [preset] from where it is: the stream opens again. */
 	@JvmName("pickQuality")
 	fun setQuality(preset: Int) {
-		if (preset == quality) return
+		if (isOffline || preset == quality) return
 		qualityPick = preset
 		quality = preset
 		Diag.info(DiagCategory.Player, "quality.pick", "to" to preset)
@@ -473,7 +486,7 @@ class PlayerModel(
 	fun retry() = reopen()
 
 	private fun reopen() {
-		viewModelScope.launch { open(startAt = movieMs() / 1000.0) }
+		viewModelScope.launch { open(startAt = if (isOffline && plan == null) null else movieMs() / 1000.0) }
 	}
 
 	private suspend fun open(startAt: Double?) {
@@ -537,13 +550,27 @@ class PlayerModel(
 			val kind = (e as? CoreException)?.kind
 			Diag.warning(DiagCategory.Player, "play.start.failed", "error" to (kind?.name ?: e.javaClass.simpleName))
 			if (gen == generation) {
-				fail(if (kind == CoreException.Kind.Unreachable) "The server could not be reached." else "This video could not be opened.")
+				fail(when {
+					e is DownloadFailure -> e.message ?: "This download is unavailable."
+					isOffline -> "This download could not be opened."
+					kind == CoreException.Kind.Unreachable -> "The server could not be reached."
+					else -> "This video could not be opened."
+				})
 			}
 		}
 	}
 
-	private suspend fun start(request: StartRequest): PlayPlan = container.session.onServer { server, remembered ->
-		container.core.startPlay(server, remembered, request.copy(memory = kept(server)))
+	private suspend fun start(request: StartRequest): PlayPlan {
+		if (isOffline) {
+			val id = localId ?: throw DownloadFailure("This download is no longer available.")
+			val local = container.downloads.acquire(id) ?: throw DownloadFailure("This download is no longer available.")
+			localEntry = local.entry
+			val server = container.session.state.value.server
+			return container.core.startDownload(local, request.copy(memory = server?.let { kept(it) }))
+		}
+		return container.session.onServer { server, remembered ->
+			container.core.startPlay(server, remembered, request.copy(memory = kept(server)))
+		}
 	}
 
 	/** What the profile has kept of this title's track picks, in the form Core reads; null when nothing yet. */
@@ -636,7 +663,7 @@ class PlayerModel(
 		engineStats.reset()
 		engine.addAnalyticsListener(engineStats)
 		engine.setPlaybackSpeed(speed)
-		engine.setWakeMode(C.WAKE_MODE_NETWORK)
+		engine.setWakeMode(if (isOffline) C.WAKE_MODE_LOCAL else C.WAKE_MODE_NETWORK)
 		val source = factory.source(opens.headers, opens.url, hls, mediaMetadata(chosen))
 		if (hls) engine.setMediaSource(source) else engine.setMediaSource(source, (chosen.startAt * 1000).toLong())
 		engine.playWhenReady = true
@@ -732,6 +759,7 @@ class PlayerModel(
 
 	/** Plays [target] in this player's place: the title stops where it is, and the session and its queue carry on. */
 	private fun go(target: PlexItem) {
+		if (isOffline && localNext == null) return
 		val chosen = plan
 		val time = movieMs().toInt()
 		Diag.notice(DiagCategory.Player, "go", "item" to target.ratingKey, "from" to ratingKey, "at" to time / 1000.0)
@@ -739,7 +767,15 @@ class PlayerModel(
 		Diag.beginPlayback()
 		generation++
 		stopEngine(keepService = true)
-		if (chosen != null) {
+		if (isOffline) {
+			leaveDownload(time)
+			localId = localNext?.id
+			localNext = null
+			localEntry = null
+			localCheckpointAt = 0L
+			localCheckpoint = null
+			session = null
+		} else if (chosen != null) {
 			val keys = keysOf(chosen)
 			container.scope.launch {
 				attempt("stop") { server, remembered ->
@@ -774,6 +810,21 @@ class PlayerModel(
 		next = null
 		offers.follow(null)
 		if (chosen.item.type != MediaType.Episode) return
+		if (isOffline) {
+			val upcoming = localEntry?.let(container.downloads::next)
+			localNext = upcoming
+			next = upcoming?.let { entry ->
+				val title = entry.title
+				PlexItem(
+					title.ratingKey, type = MediaType.Episode, title = title.title,
+					grandparentTitle = title.show, grandparentRatingKey = title.showKey,
+					parentRatingKey = title.seasonKey, parentIndex = title.season, index = title.episode,
+					duration = title.duration, viewOffset = entry.watch.offset, isWatched = entry.watch.watched,
+				)
+			}
+			offers.follow(next.takeUnless { sleepsAtEnd })
+			return
+		}
 		viewModelScope.launch {
 			val found = attempt("queue") { server, remembered -> container.core.playNeighbors(server, remembered, chosen.session) }
 			if (neighborsOf != chosen.item.ratingKey) return@launch
@@ -823,7 +874,7 @@ class PlayerModel(
 	private fun failed(error: PlaybackException) {
 		val chosen = plan
 		Diag.warning(DiagCategory.Player, "play.failed", "code" to error.errorCodeName, "route" to chosen?.route?.kind?.name)
-		if (chosen?.route?.kind == RouteKind.DirectPlay && !onDeviceFailed) {
+		if (!isOffline && chosen?.route?.kind == RouteKind.DirectPlay && !onDeviceFailed) {
 			// The tablet could not play the file itself: the server converts it, from where it stopped.
 			onDeviceFailed = true
 			fallback = "The tablet could not play the file (${error.errorCodeName}); the server converts it from where it stopped."
@@ -886,6 +937,18 @@ class PlayerModel(
 	private fun report() {
 		val chosen = plan ?: return
 		val engine = player ?: return
+		val id = localId
+		if (id != null) {
+			if (!everReady || watched) return
+			val now = SystemClock.elapsedRealtime()
+			if (engine.isPlaying && now - localCheckpointAt < LOCAL_CHECKPOINT_MS) return
+			val time = movieMs().toInt()
+			if (time == localCheckpoint) return
+			localCheckpoint = time
+			localCheckpointAt = now
+			container.downloads.watched(id, offset = time, finished = false)
+			return
+		}
 		if (reporting) return
 		val state = when {
 			engine.playbackState == Player.STATE_BUFFERING -> "buffering"
@@ -986,6 +1049,10 @@ class PlayerModel(
 		if (watched) return
 		watched = true
 		Diag.info(DiagCategory.Player, "watched", "item" to chosen.item.ratingKey, "at" to movieMs() / 1000.0)
+		localId?.let {
+			container.downloads.watched(it, offset = 0, finished = true)
+			return
+		}
 		// On the app's scope: the screen closes the moment a title ends, and its own scope goes with it.
 		container.scope.launch {
 			attempt("watched") { server, remembered -> container.core.setWatched(server, remembered, chosen.item.ratingKey, true) }
@@ -1000,12 +1067,25 @@ class PlayerModel(
 		return Frame(maxOf(metrics.widthPixels, metrics.heightPixels), minOf(metrics.widthPixels, metrics.heightPixels))
 	}
 
+	private fun leaveDownload(time: Int) {
+		localId?.let { container.downloads.watched(it, offset = time.takeIf { everReady && !watched }, finished = false, left = true) }
+		session?.let { active ->
+			container.scope.launch {
+				remembering.withLock { quietly("offline.close") { container.core.closeDownloadPlayback(active) } }
+			}
+		}
+	}
+
 	override fun onCleared() {
 		val chosen = plan
 		val time = movieMs().toInt()
 		generation++
 		stopEngine()
 		Diag.endPlayback()
+		if (isOffline) {
+			leaveDownload(time)
+			return
+		}
 		if (chosen == null) return
 		val keys = keysOf(chosen)
 		// The page is gone, so its scope is too: the app's own scope tells the server the title stopped.
@@ -1020,6 +1100,7 @@ class PlayerModel(
 	private companion object {
 		const val NANOS = 1_000_000_000.0
 		const val REPORT_INTERVAL_MS = 1000L
+		const val LOCAL_CHECKPOINT_MS = 10_000L
 		const val START_DEADLINE_MS = 30_000L
 		const val SKIP_SETTLE_MS = 400L
 		const val SKIP_FEEDBACK_MS = 700L

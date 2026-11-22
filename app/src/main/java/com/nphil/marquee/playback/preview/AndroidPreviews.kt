@@ -7,6 +7,7 @@ import android.media.MediaDataSource
 import android.media.MediaMetadataRetriever
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.net.Uri
 import android.os.PowerManager
 import android.os.Process
 import androidx.compose.ui.graphics.ImageBitmap
@@ -177,10 +178,11 @@ internal class RetrieverFrameSource(
 	}
 
 	private fun open(): MediaMetadataRetriever? {
-		val file = RangeReader(client, url, headers, counter)
+		val file = if (url.startsWith("file:")) null else RangeReader(client, url, headers, counter)
 		val candidate = MediaMetadataRetriever()
 		return try {
-			candidate.setDataSource(RangeMedia(file))
+			if (file == null) candidate.setDataSource(requireNotNull(Uri.parse(url).path))
+			else candidate.setDataSource(RangeMedia(file))
 			// A file with no picture has no previews.
 			if (candidate.extractMetadata(MediaMetadataRetriever.METADATA_KEY_HAS_VIDEO) == "yes") {
 				height = heightOf(candidate)
@@ -197,8 +199,8 @@ internal class RetrieverFrameSource(
 		}
 	}
 
-	private fun discard(candidate: MediaMetadataRetriever, file: RangeReader) {
-		file.abort()
+	private fun discard(candidate: MediaMetadataRetriever, file: RangeReader?) {
+		file?.abort()
 		candidate.release()
 	}
 

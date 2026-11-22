@@ -4,20 +4,18 @@ import android.content.Context
 import androidx.test.platform.app.InstrumentationRegistry
 import com.nphil.marquee.AppContainer
 import com.nphil.marquee.container
-import com.nphil.marquee.core.CoreJson
 import com.nphil.marquee.core.NativeCore
 import com.nphil.marquee.core.NativeTransport
-import com.nphil.marquee.core.PlexServer
 import com.nphil.marquee.data.BrowsePreferences
 import com.nphil.marquee.data.SecretStore
 import com.nphil.marquee.fakeplex.FakePlexServer
 import com.nphil.marquee.fakeplex.router.Fixtures
 import com.nphil.marquee.session.AppSession
+import com.nphil.marquee.session.SavedPlexSignIn
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
-import kotlinx.serialization.builtins.ListSerializer
 import org.junit.rules.ExternalResource
 import java.io.IOException
 
@@ -52,11 +50,7 @@ class SignedInToFake(private val trailer: String? = null, private val film: Byte
 		fake = if (trailer == null && film == null) FakePlexServer.start(instrumentation.context) else FakePlexServer.start(fixturesWith())
 		fake.install()
 		runBlocking { container.core.reset() }
-		// What a returning person has kept: AppSession's own TOKEN and SERVERS entries.
-		SecretStore(context).run {
-			write("plex.token", fake.token)
-			write("plex.servers", CoreJson.encodeToString(ListSerializer(PlexServer.serializer()), listOf(fake.server)))
-		}
+		SavedPlexSignIn(fake.token, listOf(fake.server), fake.profile).save(SecretStore(context))
 		runBlocking { container.session.restore() }
 		val phase = container.session.state.value.phase
 		check(phase == AppSession.Phase.Ready) { "the fake server did not sign in: $phase" }

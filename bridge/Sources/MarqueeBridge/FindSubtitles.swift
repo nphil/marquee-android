@@ -112,7 +112,7 @@ extension PlaySession {
         _ call: FindSubtitlesCall, transport: any PlexTransport,
         waits: [Duration] = [.seconds(1), .seconds(2), .seconds(3), .seconds(5), .seconds(8)]
     ) async throws -> FindSubtitlesReply {
-        guard hasStream, let file = subtitleFile, file.key == .init(ratingKey: call.ratingKey, partId: call.partId),
+        guard hasStream, let library, let file = subtitleFile, file.key == .init(ratingKey: call.ratingKey, partId: call.partId),
               subtitleSearch.progress == nil else {
             throw PlayError.noSession
         }
@@ -132,7 +132,6 @@ extension PlaySession {
 
         let tracks = subtitleFile?.tracks ?? file.tracks
         let before = Set(tracks.subtitles.map(\.id))
-        let library = library
         let search = SubtitleSearch(
             bazarr: config.map { BazarrClient(config: $0, transport: transport) },
             library: library, ratingKey: call.ratingKey, language: .english
@@ -181,6 +180,7 @@ extension PlaySession {
     private func listSubtitle(
         _ pending: SubtitleSearchState.Pending, in file: PlayingSubtitleFile, request: String, waits: [Duration]
     ) async throws -> FindSubtitlesReply? {
+        guard let library else { throw PlayError.noSession }
         var pending = pending
         do {
             if case .bazarr = pending.added, !pending.refreshed {

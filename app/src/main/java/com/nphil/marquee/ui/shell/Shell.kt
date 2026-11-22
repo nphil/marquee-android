@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.union
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -42,13 +41,14 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.painterResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nphil.marquee.AppContainer
-import com.nphil.marquee.R
 import com.nphil.marquee.browse.BrowseEnvironment
 import com.nphil.marquee.browse.BrowsePlace
 import com.nphil.marquee.core.Destination
+import com.nphil.marquee.core.PlexHomeUser
 import com.nphil.marquee.core.TabBarBehavior
 import com.nphil.marquee.core.TabLayout
 import com.nphil.marquee.diagnostics.DiagScreen
+import com.nphil.marquee.ui.downloads.DownloadsScreen
 import com.nphil.marquee.ui.home.HomeScreen
 import com.nphil.marquee.ui.library.LibraryScreen
 import com.nphil.marquee.ui.requests.RequestsDestination
@@ -63,8 +63,6 @@ import kotlin.math.roundToInt
 
 /** Windows at least this wide (dp) get the sidebar; narrower ones keep the bottom bar. */
 private const val WIDE_WIDTH_DP = 600
-
-private val SettingsEntry = SidebarDestination(SETTINGS_KEY, "Settings", R.drawable.ic_settings, R.drawable.ic_settings_filled)
 
 private fun Destination.sidebarEntry() = SidebarDestination(name, title, tabIcon(false), tabIcon(true))
 
@@ -114,6 +112,8 @@ private fun ShellPages(
 	onTheme: ((ThemeChoice) -> ThemeChoice) -> Unit,
 ) {
 	val wide = LocalConfiguration.current.screenWidthDp >= WIDE_WIDTH_DP
+	val session by container.session.state.collectAsStateWithLifecycle()
+	val settingsProfile = session.user
 	val available = remember(seerr) { TabLayout.available(seerr) }
 	val tabs = remember(layout, available) { layout.tabs(available) }
 	val others = remember(layout, tabs, available) { placesOutsideTabs(layout, tabs, available) }
@@ -145,7 +145,7 @@ private fun ShellPages(
 	LaunchedEffect(showing) { DiagScreen.tab(opened?.title ?: if (page == SETTINGS_KEY) "Settings" else Destination.valueOf(page).title) }
 
 	val pages: @Composable (Modifier) -> Unit = { modifier ->
-		Pages(showing, tabs, wide, container, env, place, places, choice, onTheme, onSettings = { select(SETTINGS_KEY) }, onBack = { savedPlace = null }, modifier)
+		Pages(showing, tabs, wide, container, env, place, places, choice, onTheme, settingsProfile, onSettings = { select(SETTINGS_KEY) }, onBack = { savedPlace = null }, modifier)
 	}
 
 	if (!wide) {
@@ -199,7 +199,7 @@ private fun ShellPages(
 					expanded = !expanded
 					scope.launch { env.preferences.setSidebarExpanded(expanded) }
 				},
-				footer = listOf(SettingsEntry),
+				settingsProfile = settingsProfile,
 			)
 			pages(Modifier.weight(1f).fillMaxHeight().clipToBounds().layout { child, available ->
 				val full = shellWidth - startInsets.getLeft(this, layoutDirection) - startInsets.getRight(this, layoutDirection)
@@ -225,6 +225,7 @@ private fun Pages(
 	places: Places,
 	choice: ThemeChoice,
 	onTheme: ((ThemeChoice) -> ThemeChoice) -> Unit,
+	settingsProfile: PlexHomeUser?,
 	onSettings: () -> Unit,
 	onBack: () -> Unit,
 	modifier: Modifier,
@@ -235,7 +236,7 @@ private fun Pages(
 	Crossfade(targetState = showing, modifier = modifier, animationSpec = effects, label = "page") { shown ->
 		saveable.SaveableStateProvider(shown.key) {
 			if (shown.place == null && shown.page == SETTINGS_KEY) {
-				SettingsScreen(container.session, container.themes, choice, onTheme)
+				SettingsScreen(container.session, container.themes, choice, onTheme, onDownloads = { places.open(Destination.Downloads) })
 				return@SaveableStateProvider
 			}
 			val destination = shown.place ?: Destination.valueOf(shown.page)
@@ -250,9 +251,7 @@ private fun Pages(
 					places = places,
 					trailing = {
 						if (!wide) {
-							IconButton(onClick = onSettings) {
-								Icon(painterResource(R.drawable.ic_settings), contentDescription = "Settings")
-							}
+							CompactSettingsButton(settingsProfile, onClick = onSettings)
 						}
 					},
 				)
@@ -260,8 +259,8 @@ private fun Pages(
 				Destination.Watchlist -> WatchlistScreen(env, place, onSignIn = container.session::signOut, onBack = back)
 				Destination.Requests -> RequestsDestination(container, onBack = back)
 				Destination.Search -> SearchScreen(env, place, onBack = back)
-				// Not built yet: TabLayout.available leaves them out, so neither is ever a tab or a place.
-				Destination.LiveTv, Destination.Downloads -> Unit
+				Destination.Downloads -> DownloadsScreen(container.downloads, onBack = back)
+				Destination.LiveTv -> Unit
 			}
 		}
 	}

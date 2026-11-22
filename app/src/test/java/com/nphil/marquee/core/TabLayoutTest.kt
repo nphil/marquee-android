@@ -1,5 +1,6 @@
 package com.nphil.marquee.core
 
+import com.nphil.marquee.core.Destination.Downloads
 import com.nphil.marquee.core.Destination.Home
 import com.nphil.marquee.core.Destination.Library
 import com.nphil.marquee.core.Destination.LiveTv
@@ -65,7 +66,7 @@ class TabLayoutTest {
 
 		assertEquals(listOf(Watchlist, Home, Library), moved.order.take(3))
 		assertEquals(Search, moved.order.last())
-		assertEquals(setOf(Home, Library, Watchlist, Search), TabLayout.available(seerrEnabled = false))
+		assertEquals(setOf(Home, Library, Watchlist, Search, Downloads), TabLayout.available(seerrEnabled = false))
 		assertEquals(Requests in TabLayout.available(seerrEnabled = true), true)
 	}
 

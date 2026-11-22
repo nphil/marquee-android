@@ -44,6 +44,7 @@ import com.nphil.marquee.ui.components.GroupRow
 import com.nphil.marquee.ui.components.IconBadge
 import com.nphil.marquee.ui.components.plusInset
 import com.nphil.marquee.ui.diagnostics.DiagnosticLogsPage
+import com.nphil.marquee.ui.downloads.DownloadSettingsPage
 import com.nphil.marquee.ui.profiles.ProfilesPage
 import com.nphil.marquee.ui.servers.ServerList
 import com.nphil.marquee.ui.theme.ThemeChoice
@@ -60,6 +61,7 @@ enum class SettingsPage(val title: String) {
 	TabBar("Tab Bar"),
 	FavoriteLibraries("Favorite Libraries"),
 	VideoPlayback("Video & Playback"),
+	Downloads("Downloads"),
 	Seerr("Seerr"),
 	Bazarr("Bazarr"),
 	SpeechDock("SpeechDock"),
@@ -77,6 +79,7 @@ fun SettingsScreen(
 	themes: Themes,
 	choice: ThemeChoice,
 	onTheme: ((ThemeChoice) -> ThemeChoice) -> Unit,
+	onDownloads: () -> Unit,
 ) {
 	val navigator = rememberListDetailPaneScaffoldNavigator<SettingsPage>()
 	val scope = rememberCoroutineScope()
@@ -109,6 +112,7 @@ fun SettingsScreen(
 					themes = themes,
 					choice = choice,
 					onTheme = onTheme,
+					onDownloads = onDownloads,
 					onBack = if (twoPane) null else ({ scope.launch { navigator.navigateBack() } }),
 				)
 			}
@@ -183,9 +187,15 @@ private fun SettingsList(
 			}
 			item(key = "playback") { Heading("Playback") }
 			item(key = "videoPlayback") {
-				PageRow(0, 1, SettingsPage.VideoPlayback, selected, onOpen) {
+				PageRow(0, 2, SettingsPage.VideoPlayback, selected, onOpen) {
 					IconBadge(R.drawable.ic_movie)
 					Labels("Video & Playback", playbackSummary)
+				}
+			}
+			item(key = "downloads") {
+				PageRow(1, 2, SettingsPage.Downloads, selected, onOpen) {
+					IconBadge(R.drawable.ic_download)
+					Labels("Downloads", "Quality, storage and offline playback")
 				}
 			}
 			item(key = "integrations") { Heading("Integrations") }
@@ -275,6 +285,7 @@ private fun SettingsDetail(
 	themes: Themes,
 	choice: ThemeChoice,
 	onTheme: ((ThemeChoice) -> ThemeChoice) -> Unit,
+	onDownloads: () -> Unit,
 	onBack: (() -> Unit)?,
 ) {
 	Scaffold(
@@ -300,6 +311,7 @@ private fun SettingsDetail(
 			SettingsPage.FavoriteLibraries -> FavoriteLibrariesPage(session, padding.plusInset())
 			SettingsPage.DiagnosticLogs -> DiagnosticLogsPage(padding.plusInset())
 			SettingsPage.VideoPlayback -> VideoPlaybackPage(padding.plusInset())
+			SettingsPage.Downloads -> DownloadSettingsPage(LocalContext.current.container.downloads, padding.plusInset(), onDownloads)
 			SettingsPage.Seerr -> SeerrPage(padding.plusInset())
 			SettingsPage.Bazarr -> SubtitleServicePage(SubtitleService.Bazarr, padding.plusInset())
 			SettingsPage.SpeechDock -> SubtitleServicePage(SubtitleService.SpeechDock, padding.plusInset())

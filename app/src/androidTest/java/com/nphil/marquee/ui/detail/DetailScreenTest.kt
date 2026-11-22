@@ -30,11 +30,10 @@ import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.nphil.marquee.container
-import com.nphil.marquee.core.CoreJson
-import com.nphil.marquee.core.PlexServer
 import com.nphil.marquee.data.SecretStore
 import com.nphil.marquee.fakeplex.FakePlexServer
 import com.nphil.marquee.session.AppSession
+import com.nphil.marquee.session.SavedPlexSignIn
 import com.nphil.marquee.ui.AppNavigation
 import com.nphil.marquee.ui.Navigator
 import com.nphil.marquee.ui.theme.LucentTheme
@@ -42,7 +41,6 @@ import com.nphil.marquee.ui.theme.MarqueeTheme
 import com.nphil.marquee.ui.theme.ThemeMode
 import com.nphil.marquee.ui.theme.lucent
 import kotlinx.coroutines.runBlocking
-import kotlinx.serialization.builtins.ListSerializer
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -71,11 +69,7 @@ class DetailScreenTest {
 		fake.install()
 		val container = context.container
 		runBlocking { container.core.reset() }
-		// What a returning person has kept: AppSession's own TOKEN and SERVERS entries.
-		SecretStore(context).run {
-			write("plex.token", fake.token)
-			write("plex.servers", CoreJson.encodeToString(ListSerializer(PlexServer.serializer()), listOf(fake.server)))
-		}
+		SavedPlexSignIn(fake.token, listOf(fake.server), fake.profile).save(SecretStore(context))
 		runBlocking { container.session.restore() }
 		assertEquals(AppSession.Phase.Ready, container.session.state.value.phase)
 	}

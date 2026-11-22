@@ -141,6 +141,13 @@ Each phase ends with a release installed on the tablet.
 - Kotlin unit tests and MarqueeCore's tests run in CI; Core's tests also run on an Android emulator.
 - Screenshot tests at phone and tablet sizes, in light and dark, against FakePlex fixtures from `core`.
 - Frame-timing benchmark as above.
+- **Downloads fixtures.** `PlexOriginPolicyTest` covers the same-origin rule for Plex credentials.
+  `AppSessionIdentityTest` covers an interrupted profile switch, a blank owner, the first legacy
+  launch offline and recovery on reconnect, and a verified offline relaunch. Unverified records
+  stay on disk and never join another profile. `DownloadIdentityPersistenceTest` checks that a
+  deleted file leaves its title identity and pending progress behind; `DownloadWatchSyncTests`
+  covers key reuse, a resume retry after a watched acknowledgment, and newer viewing on another
+  device. These checks use synthetic Plex replies and are separate from device acceptance.
 - Acceptance on the Xiaomi Pad 8 Pro only, with its receipt recorded; phone hardware is listed as
   untested.
 

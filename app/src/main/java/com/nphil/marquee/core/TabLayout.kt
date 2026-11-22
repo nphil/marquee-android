@@ -68,7 +68,7 @@ class TabLayout(order: List<Destination>, shown: Set<Destination>) {
 
 		/**
 		 * What the app opens with: the iPhone's tabs, with Requests too, since a sidebar has the room. The destinations
-		 * not built yet (Live TV, Downloads) are left out by availability.
+		 * not built yet (Live TV) are left out by availability.
 		 */
 		val standard = TabLayout(
 			order = Destination.entries,
@@ -81,12 +81,13 @@ class TabLayout(order: List<Destination>, shown: Set<Destination>) {
 			return TabLayout(named(order), named(shown).toSet())
 		}
 
-		/** The destinations that can be tabs now: Requests only once Seerr is on; Live TV and Downloads are not built yet. */
+		/** Requests can be a tab once Seerr is on; Live TV is not built yet. */
 		fun available(seerrEnabled: Boolean): Set<Destination> = buildSet {
 			add(Destination.Home)
 			add(Destination.Library)
 			add(Destination.Watchlist)
 			add(Destination.Search)
+			add(Destination.Downloads)
 			if (seerrEnabled) add(Destination.Requests)
 		}
 	}

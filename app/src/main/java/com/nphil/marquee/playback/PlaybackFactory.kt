@@ -8,6 +8,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
@@ -65,7 +66,7 @@ class PlaybackFactory(private val context: Context, private val http: OkHttpClie
 	/** What [url] opens: the server's HLS conversion when [hls], else the file itself, fetched with [headers]. [about] is what the system's controls show for it. */
 	fun source(headers: Map<String, String>, url: String, hls: Boolean, about: MediaMetadata = MediaMetadata.EMPTY): MediaSource {
 		val item = MediaItem.Builder().setUri(url).setMediaMetadata(about).build()
-		val factory = data(headers)
+		val factory = if (item.localConfiguration?.uri?.scheme == "file") DefaultDataSource.Factory(context) else data(headers)
 		return if (hls) HlsMediaSource.Factory(factory).createMediaSource(item) else ProgressiveMediaSource.Factory(factory).createMediaSource(item)
 	}
 

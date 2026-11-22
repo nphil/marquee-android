@@ -4,6 +4,7 @@ import android.content.Context
 import com.nphil.marquee.core.NativeCore
 import com.nphil.marquee.core.NativeTransport
 import com.nphil.marquee.core.PlexConnection
+import com.nphil.marquee.core.PlexHomeUser
 import com.nphil.marquee.core.PlexServer
 import com.nphil.marquee.fakeplex.router.FakePlexRouter
 import com.nphil.marquee.fakeplex.router.FakeReply
@@ -107,6 +108,9 @@ class FakePlexServer private constructor(fixtures: Fixtures) {
 
 	/** An account (plex.tv) token; the fixtures take any. */
 	val token: String = ACCOUNT_TOKEN
+
+	/** The verified owner of the fixture credentials, as returned by the fixture's /api/v2/user. */
+	val profile = PlexHomeUser(1, "fake-owner", "Jordan", isAdmin = true, isProtected = false, isRestricted = false, isGuest = false)
 
 	/** Makes Core's transport this fake's [client]. */
 	fun install() = NativeCore.install(NativeTransport(client))

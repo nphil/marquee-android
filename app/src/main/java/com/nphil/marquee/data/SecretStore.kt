@@ -38,7 +38,9 @@ class SecretStore(context: Context, name: String = "secrets") {
 		}
 	}
 
-	fun write(name: String, value: String?) {
+	fun write(name: String, value: String?) = write(name, value, emptyList())
+
+	internal fun write(name: String, value: String?, replaces: List<String>) {
 		if (value == null) {
 			prefs.edit { remove(name) }
 			return
@@ -46,7 +48,10 @@ class SecretStore(context: Context, name: String = "secrets") {
 		val cipher = Cipher.getInstance(TRANSFORMATION)
 		cipher.init(Cipher.ENCRYPT_MODE, key())
 		val sealed = cipher.iv + cipher.doFinal(value.encodeToByteArray())
-		prefs.edit { putString(name, Base64.encodeToString(sealed, Base64.NO_WRAP)) }
+		prefs.edit {
+			for (old in replaces) remove(old)
+			putString(name, Base64.encodeToString(sealed, Base64.NO_WRAP))
+		}
 	}
 
 	fun clear() {

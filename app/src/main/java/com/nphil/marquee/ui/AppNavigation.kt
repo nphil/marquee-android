@@ -48,6 +48,7 @@ import com.nphil.marquee.core.PlexRole
 import com.nphil.marquee.core.copiesOf
 import com.nphil.marquee.diagnostics.Diag
 import com.nphil.marquee.diagnostics.DiagCategory
+import com.nphil.marquee.downloads.DownloadEntry
 import com.nphil.marquee.ui.components.ArtSpec
 import com.nphil.marquee.ui.components.ToastHost
 import com.nphil.marquee.ui.detail.DetailScreen
@@ -90,7 +91,7 @@ data class Extra(val item: PlexItem) : Route
  * subtitle choices: the show's key for an episode, and the title's own when null.
  */
 @Serializable
-data class Play(val ratingKey: String, val fromStart: Boolean = false, val titleKey: String? = null) : Route
+data class Play(val ratingKey: String, val fromStart: Boolean = false, val titleKey: String? = null, val downloadId: String? = null) : Route
 
 /** The back stack, for the screens that open pages. */
 @Stable
@@ -151,6 +152,10 @@ class Navigator internal constructor(
 	/** Plays [item] full screen: where the server says it was left, or from the start. */
 	fun openPlayer(item: PlexItem, fromStart: Boolean = false) =
 		push(Play(item.ratingKey, fromStart, item.grandparentRatingKey ?: item.ratingKey))
+
+	internal fun openDownload(entry: DownloadEntry) = push(Play(
+		entry.title.ratingKey, titleKey = entry.title.showKey ?: entry.title.ratingKey, downloadId = entry.id,
+	))
 
 	fun back() {
 		if (stack.size > 1) stack.removeAt(stack.lastIndex)
@@ -291,7 +296,7 @@ fun AppNavigation(container: AppContainer, shell: @Composable (Navigator) -> Uni
 						entry<Person> { route -> Visible { PersonScreen(container, route, navigator) } }
 						entry<Extra> { route -> Visible { ExtraScreen(route.item, navigator) } }
 						entry<Play> { route ->
-							Visible { PlayerScreen(route.ratingKey, route.titleKey ?: route.ratingKey, route.fromStart, navigator::back) }
+							Visible { PlayerScreen(route.ratingKey, route.titleKey ?: route.ratingKey, route.fromStart, route.downloadId, navigator::back) }
 						}
 					},
 				)

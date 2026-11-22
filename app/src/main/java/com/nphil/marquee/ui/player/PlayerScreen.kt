@@ -173,11 +173,11 @@ internal fun markRanges(spans: List<Marker>): List<LongRange> = spans.map { it.s
  */
 @OptIn(UnstableApi::class)
 @Composable
-fun PlayerScreen(ratingKey: String, titleKey: String, fromStart: Boolean, onClose: () -> Unit) {
+fun PlayerScreen(ratingKey: String, titleKey: String, fromStart: Boolean, downloadId: String?, onClose: () -> Unit) {
 	val context = LocalContext.current
 	val container = context.container
 	val http = LocalPlaybackHttp.current ?: container.http
-	val model = viewModel { PlayerModel(container, http, context, ratingKey, titleKey, fromStart) }
+	val model = viewModel { PlayerModel(container, http, context, ratingKey, titleKey, fromStart, downloadId) }
 	val playing = model.isPlaying
 	val engine = model.player
 	val pip = rememberPictureInPicture(model)
@@ -483,6 +483,7 @@ fun PlayerScreen(ratingKey: String, titleKey: String, fromStart: Boolean, onClos
 					subtitlesOn = tracks.subtitleId != null,
 					hasAudioChoices = tracks.lists.audio.size > 1,
 					qualityLabel = QualityPreset.title(model.quality).takeIf { model.quality != QualityPreset.AUTO },
+					canChangeQuality = !model.isOffline,
 					canPip = pip.supported,
 					hasChapters = plan?.chapters?.isNotEmpty() == true,
 					hasNext = model.next != null,

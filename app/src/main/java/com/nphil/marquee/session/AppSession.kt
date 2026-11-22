@@ -3,7 +3,6 @@ package com.nphil.marquee.session
 import androidx.compose.runtime.Immutable
 import com.nphil.marquee.core.CoreError
 import com.nphil.marquee.core.CoreException
-import com.nphil.marquee.core.CoreJson
 import com.nphil.marquee.core.LibrarySection
 import com.nphil.marquee.core.MarqueeCore
 import com.nphil.marquee.core.PlexHomeUser
@@ -17,6 +16,7 @@ import com.nphil.marquee.diagnostics.DiagCategory
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -26,7 +26,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * The Plex sign-in, the server in use and the active Home profile, kept as the iPhone app's AppSession keeps
@@ -65,11 +66,13 @@ class AppSession(
 		val addresses: Map<String, String> = emptyMap(),
 	) {
 		val canRetry: Boolean get() = hasSignIn && phase != Phase.Failed(CoreException.Kind.Unauthorized)
+		internal val needsProfileVerification: Boolean get() = hasSignIn && user?.uuid.isNullOrBlank()
 	}
 
 	private val mutableState = MutableStateFlow(State())
 	val state: StateFlow<State> = mutableState.asStateFlow()
 
+	private val signInWrites = Mutex()
 	private var token: String? = null
 	private var signInJob: Job? = null
 	private var refreshJob: Job? = null
@@ -77,25 +80,25 @@ class AppSession(
 
 	/** Opens on the kept server, or the server list, and brings the account up to date behind it. */
 	suspend fun restore() {
-		val (kept, servers) = withContext(Dispatchers.IO) {
-			secrets.read(TOKEN) to secrets.read(SERVERS)?.let { runCatching { CoreJson.decodeFromString(serverList, it) }.getOrNull() }
-		}
+		refreshJob?.cancel()
+		val saved = withContext(Dispatchers.IO) { SavedPlexSignIn.load(secrets) }
 		val account = settings.account()
-		if (kept == null) {
+		if (saved == null) {
 			mutableState.value = State(phase = Phase.SignedOut)
 			Diag.info(DiagCategory.Plex, "session.restore", "signedIn" to false)
 			return
 		}
+		val kept = saved.token
 		token = kept
-		val list = servers.orEmpty()
+		val list = saved.servers
 		mutableState.value = State(
 			phase = if (list.isEmpty()) Phase.SigningIn else Phase.ChoosingServer,
 			hasSignIn = true,
 			servers = list,
-			user = account.profile,
+			user = saved.profile,
 			addresses = account.addresses,
 		)
-		Diag.info(DiagCategory.Plex, "session.restore", "signedIn" to true, "servers" to list.size, "profile" to (account.profile != null))
+		Diag.info(DiagCategory.Plex, "session.restore", "signedIn" to true, "servers" to list.size, "profile" to (saved.profile != null))
 		rememberedServer(list, account.serverId)?.let(::connect)
 		refreshJob = scope.launch { refreshAccount(kept) }
 	}
@@ -151,7 +154,11 @@ class AppSession(
 		Diag.info(DiagCategory.Plex, "signin.cancel")
 		signInJob?.cancel()
 		signInJob = null
-		mutableState.update { it.copy(phase = Phase.SignedOut, linkCode = null, signInPage = null) }
+		refreshJob?.cancel()
+		mutableState.update {
+			val phase = if (it.hasSignIn) Phase.Failed(CoreException.Kind.Unreachable) else Phase.SignedOut
+			it.copy(phase = phase, linkCode = null, signInPage = null)
+		}
 	}
 
 	/** Checks the kept sign-in again after plex.tv could not be reached. */
@@ -178,11 +185,10 @@ class AppSession(
 		val kept = token ?: return
 		try {
 			val found = core.servers(kept)
-			keepServers(found)
-			mutableState.update { it.copy(servers = found) }
+			keepSignIn(kept, kept, found, profile = null)
 		} catch (e: CoreException) {
 			// Offline, the list keeps the servers it has.
-			if (e.kind == CoreException.Kind.Unauthorized) signedOutByPlex()
+			if (token == kept && e.kind == CoreException.Kind.Unauthorized) signedOutByPlex()
 		}
 	}
 
@@ -191,9 +197,9 @@ class AppSession(
 		val kept = token ?: return
 		try {
 			val profiles = core.homeUsers(kept)
-			mutableState.update { it.copy(homeUsers = profiles) }
+			if (token == kept) mutableState.update { it.copy(homeUsers = profiles) }
 		} catch (e: CoreException) {
-			if (e.kind == CoreException.Kind.Unauthorized) signedOutByPlex()
+			if (token == kept && e.kind == CoreException.Kind.Unauthorized) signedOutByPlex()
 		}
 	}
 
@@ -242,18 +248,22 @@ class AppSession(
 	/** Switches to a Home profile; a wrong [pin] throws `ProfilePinRejected` and changes nothing. */
 	suspend fun switchUser(profile: PlexHomeUser, pin: String?) {
 		val kept = token ?: return
+		if (profile.uuid.isBlank()) throw CoreException(CoreError(kind = "decoding", message = "Plex did not identify this profile."))
 		val profileToken = try {
 			core.switchUser(kept, profile, pin)
 		} catch (e: CoreException) {
 			Diag.warning(DiagCategory.Plex, "profile.switch.failed", "kind" to e.kind.name, "status" to e.status)
 			throw e
 		}
+		if (token != kept) return
+		if (profileToken.isBlank() || (profileToken == kept && profile.uuid != state.value.user?.uuid)) {
+			throw CoreException(CoreError(kind = "decoding", message = "Plex did not verify the new profile."))
+		}
 		val found = core.servers(profileToken)
-		keepSignIn(profileToken, found)
-		settings.setProfile(profile)
 		// The previous profile's connections carry its token.
 		core.reset()
-		mutableState.update { it.copy(servers = found, user = profile) }
+		if (!keepSignIn(kept, profileToken, found, profile)) return
+		refreshJob?.cancel()
 		Diag.info(DiagCategory.Plex, "profile.switch", "pin" to (pin != null), "servers" to found.size)
 		val same = found.firstOrNull { it.id == state.value.server?.id }
 		when {
@@ -272,22 +282,22 @@ class AppSession(
 		token = null
 		mutableState.value = State(phase = Phase.SignedOut)
 		scope.launch {
-			withContext(Dispatchers.IO) { secrets.clear() }
-			settings.clearAccount()
+			signInWrites.withLock {
+				if (token == null) {
+					withContext(Dispatchers.IO) { secrets.clear() }
+					settings.clearAccount()
+				}
+			}
 			orNull { core.reset() }
 		}
 	}
 
 	private suspend fun completeSignIn(newToken: String) {
+		val previous = token
 		val found = core.servers(newToken)
 		val account = orNull { core.account(newToken) }
 		val profiles = orNull { core.homeUsers(newToken) }.orEmpty()
-		keepSignIn(newToken, found)
-		val user = account ?: profiles.firstOrNull { it.isAdmin }
-		settings.setProfile(user)
-		mutableState.update {
-			it.copy(hasSignIn = true, servers = found, homeUsers = profiles, user = user, linkCode = null)
-		}
+		if (!keepSignIn(previous, newToken, found, account, profiles)) return
 		Diag.info(DiagCategory.Plex, "signin.done", "servers" to found.size, "profiles" to profiles.size)
 		show(found)
 	}
@@ -298,11 +308,7 @@ class AppSession(
 			val found = core.servers(kept)
 			val account = orNull { core.account(kept) }
 			val profiles = orNull { core.homeUsers(kept) }
-			keepServers(found)
-			if (account != null) settings.setProfile(account)
-			mutableState.update {
-				it.copy(servers = found, user = account ?: it.user, homeUsers = profiles ?: it.homeUsers)
-			}
+			if (!keepSignIn(kept, kept, found, account, profiles)) return
 			val current = state.value
 			when (current.phase) {
 				Phase.Ready -> {
@@ -314,6 +320,7 @@ class AppSession(
 				else -> Unit
 			}
 		} catch (e: CoreException) {
+			if (token != kept) return
 			Diag.notice(DiagCategory.Plex, "session.refresh.failed", "kind" to e.kind.name, "status" to e.status)
 			when {
 				e.kind == CoreException.Kind.Unauthorized -> signedOutByPlex()
@@ -364,16 +371,21 @@ class AppSession(
 		mutableState.update { it.copy(phase = Phase.Failed(CoreException.Kind.Unauthorized)) }
 	}
 
-	private suspend fun keepSignIn(newToken: String, servers: List<PlexServer>) {
-		token = newToken
-		withContext(Dispatchers.IO) {
-			secrets.write(TOKEN, newToken)
-			secrets.write(SERVERS, CoreJson.encodeToString(serverList, servers))
+	private suspend fun keepSignIn(
+		expected: String?, newToken: String, servers: List<PlexServer>, profile: PlexHomeUser?,
+		profiles: List<PlexHomeUser>? = null,
+	): Boolean = signInWrites.withLock {
+		if (token != expected || newToken.isBlank()) return false
+		val user = profile ?: state.value.user.takeIf { expected == newToken }
+		withContext(NonCancellable) {
+			withContext(Dispatchers.IO) { SavedPlexSignIn(newToken, servers, user).save(secrets) }
+			if (token != expected) return@withContext false
+			token = newToken
+			mutableState.update {
+				it.copy(hasSignIn = true, servers = servers, user = user, homeUsers = profiles ?: it.homeUsers)
+			}
+			true
 		}
-	}
-
-	private suspend fun keepServers(servers: List<PlexServer>) {
-		withContext(Dispatchers.IO) { secrets.write(SERVERS, CoreJson.encodeToString(serverList, servers)) }
 	}
 
 	/** [block]'s value, or null when Core reports a failure. Cancellation still propagates. */
@@ -383,9 +395,4 @@ class AppSession(
 		null
 	}
 
-	private companion object {
-		const val TOKEN = "plex.token"
-		const val SERVERS = "plex.servers"
-		val serverList = ListSerializer(PlexServer.serializer())
-	}
 }

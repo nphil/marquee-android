@@ -22,6 +22,7 @@ import com.nphil.marquee.data.SecretStore
 import com.nphil.marquee.data.SubtitleServices
 import com.nphil.marquee.diagnostics.Diag
 import com.nphil.marquee.diagnostics.DiagRequestLog
+import com.nphil.marquee.downloads.Downloads
 import com.nphil.marquee.playback.PlaybackCoordinator
 import com.nphil.marquee.seerr.Seerr
 import com.nphil.marquee.session.AppSession
@@ -60,6 +61,7 @@ class AppContainer(
 	/** What this app changed on the server, so every screen showing a changed title refreshes it. */
 	val changes = LibraryChanges()
 	val toasts = ToastCenter(scope)
+	internal val downloads = Downloads(context, core, session, changes, toasts, scope, http)
 
 	/** What Home, Library, Search and the Watchlist share: the server and profile browsed, their preferences and saved answers. */
 	val browse = BrowseEnvironment(

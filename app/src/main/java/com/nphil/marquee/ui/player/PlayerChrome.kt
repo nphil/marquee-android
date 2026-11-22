@@ -84,6 +84,7 @@ internal class ChromeState(
 	val hasAudioChoices: Boolean = false,
 	/** The quality chosen by hand, or null while it is automatic. */
 	val qualityLabel: String? = null,
+	val canChangeQuality: Boolean = true,
 	val canPip: Boolean = false,
 	val hasChapters: Boolean = false,
 	val hasNext: Boolean = false,
@@ -172,7 +173,7 @@ private fun TopBar(state: ChromeState, actions: ChromeActions, accent: Color, wi
 		if (state.hasSubtitles) GlassButton(R.drawable.ic_closed_caption, "Subtitles", actions.subtitles, tint = if (state.subtitlesOn) accent else PlayerInk.ink)
 		if (state.hasAudioChoices) GlassButton(R.drawable.ic_volume_up, "Audio", actions.audio)
 		if (wide) {
-			GlassButton(R.drawable.ic_tune, "Quality", actions.quality, tint = if (state.qualityLabel != null) accent else PlayerInk.ink)
+			if (state.canChangeQuality) GlassButton(R.drawable.ic_tune, "Quality", actions.quality, tint = if (state.qualityLabel != null) accent else PlayerInk.ink)
 			if (state.speed != 1f) {
 				GlassPill(speedLabel(state.speed), actions.speed, content = accent)
 			} else {

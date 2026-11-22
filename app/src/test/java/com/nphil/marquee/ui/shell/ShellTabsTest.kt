@@ -27,11 +27,11 @@ class ShellTabsTest {
 		val tabs = layout.tabs(withSeerr)
 		assertEquals(listOf(Destination.Home, Destination.Library), tabs)
 		assertEquals(
-			listOf(Destination.Watchlist, Destination.Requests, Destination.Search),
+			listOf(Destination.Watchlist, Destination.Requests, Destination.Downloads, Destination.Search),
 			placesOutsideTabs(layout, tabs, withSeerr),
 		)
-		// Requests is not a place while Seerr is off; Live TV and Downloads are not built.
-		assertEquals(listOf(Destination.Watchlist, Destination.Search), placesOutsideTabs(layout, layout.tabs(withoutSeerr), withoutSeerr))
+		// Downloads remains a place even when the Requests integration is off.
+		assertEquals(listOf(Destination.Watchlist, Destination.Downloads, Destination.Search), placesOutsideTabs(layout, layout.tabs(withoutSeerr), withoutSeerr))
 	}
 
 	@Test

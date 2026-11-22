@@ -54,7 +54,8 @@ internal data class SubtitleSource(val session: String, val ratingKey: String, v
 	}
 }
 
-internal fun PlayPlan.subtitleSource(): SubtitleSource? {
+internal fun PlayPlan.subtitleSource(isOffline: Boolean): SubtitleSource? {
+	if (isOffline) return null
 	val url = stream?.url ?: return null
 	if (!url.startsWith("https://", ignoreCase = true) && !url.startsWith("http://", ignoreCase = true)) return null
 	val part = item.media.getOrNull(mediaIndex)?.parts?.firstOrNull() ?: return null
