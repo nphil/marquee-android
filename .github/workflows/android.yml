@@ -47,7 +47,10 @@ jobs:
     timeout-minutes: 120
     env:
       # What the emulator runs with; the checks script starts it again with the same when it exits mid-run.
-      EMULATOR_OPTIONS: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+      # Under swiftshader_indirect qemu segfaulted in a render thread, at the same page offset, 6 to 18 minutes in (core
+      # dumps in two runs). swangle_indirect did not crash in 25 runs of the same runner and image in another project
+      # (GlassworksHQ/glassworks, docs/research/ci-emulator-api34.md).
+      EMULATOR_OPTIONS: -no-window -gpu swangle_indirect -noaudio -no-boot-anim -camera-back none
 
     steps:
       - uses: actions/checkout@v4

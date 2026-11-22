@@ -2,8 +2,9 @@
 # Runs inside the CI emulator (x86_64): the instrumented tests (the Swift bridge test, and the review screenshots), then
 # the baseline profile the release build ships and cold starts of the release build. Results go to the job summary.
 #
-# The emulator process has exited mid-run in CI (adb offline, no output of its own). A phase that ends with the emulator
-# gone is run again on a restarted emulator, up to three times. With the emulator still answering, a few failed tests
+# The emulator process has crashed mid-run in CI (qemu segfaults in a render thread and adb goes offline). A phase that
+# ends with the emulator gone is run again on a restarted emulator, up to three times. With the emulator still
+# answering, a few failed tests
 # run once more on their own, as its video decoding and UI timing have been flaky: one that passes then is a warning in
 # the summary, and anything else is the code's, and final.
 # The baseline profile is an optimisation, so when the emulator is lost on every try of its phase the build goes on
