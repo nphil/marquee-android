@@ -35,6 +35,13 @@ class AppSettings(context: Context) {
 		}
 	}
 
+	/** The trailer and theme music choices of a Home profile; defaults for one that never chose, or no profile. */
+	fun playback(profile: String?): Flow<PlaybackPrefs> = store.data.map { it.playbackPrefs(profile) }.distinctUntilChanged()
+
+	suspend fun updatePlayback(profile: String, change: (PlaybackPrefs) -> PlaybackPrefs) {
+		store.edit { prefs -> prefs.setPlaybackPrefs(profile, change(prefs.playbackPrefs(profile))) }
+	}
+
 	/** This install's X-Plex-Client-Identifier, made on first use and kept across sign-ins. */
 	suspend fun clientIdentifier(): String {
 		store.data.first()[CLIENT_ID]?.let { return it }

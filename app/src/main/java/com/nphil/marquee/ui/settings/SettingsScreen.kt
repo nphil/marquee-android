@@ -33,6 +33,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nphil.marquee.R
 import com.nphil.marquee.diagnostics.Diag
 import com.nphil.marquee.diagnostics.DiagScreen
+import com.nphil.marquee.playback.rememberPlaybackPrefs
 import com.nphil.marquee.session.AppSession
 import com.nphil.marquee.ui.components.Avatar
 import com.nphil.marquee.ui.components.GroupGap
@@ -53,6 +54,7 @@ enum class SettingsPage(val title: String) {
 	Profile("Profiles"),
 	Server("Servers"),
 	Appearance("Theme"),
+	VideoPlayback("Video & Playback"),
 	DiagnosticLogs("Diagnostic Logs"),
 	Licences("Licences"),
 }
@@ -120,6 +122,7 @@ private fun SettingsList(
 	val diagnostics by Diag.settings.config.collectAsStateWithLifecycle()
 	val diagnosticsSummary = if (diagnostics?.let { it.configured && it.live } == true) "Sending live logs" else "Kept on this tablet"
 	val themeSummary = remember(choice) { summary(themes, choice) }
+	val playbackSummary = rememberPlaybackPrefs().value?.let { "Trailers ${onOff(it.playsTrailers)} · Theme music ${onOff(it.playsThemeMusic)}" } ?: ""
 	Scaffold(topBar = { TopAppBar(title = { Text("Settings") }) }, containerColor = lucent.canvas) { padding ->
 		LazyColumn(
 			modifier = Modifier.fillMaxSize(),
@@ -144,6 +147,13 @@ private fun SettingsList(
 				PageRow(0, 1, SettingsPage.Appearance, selected, onOpen) {
 					IconBadge(R.drawable.ic_palette)
 					Labels("Theme", themeSummary)
+				}
+			}
+			item(key = "playback") { Heading("Playback") }
+			item(key = "videoPlayback") {
+				PageRow(0, 1, SettingsPage.VideoPlayback, selected, onOpen) {
+					IconBadge(R.drawable.ic_movie)
+					Labels("Video & Playback", playbackSummary)
 				}
 			}
 			item(key = "about") { Heading("About") }
@@ -236,6 +246,7 @@ private fun SettingsDetail(
 			SettingsPage.Server -> ServerList(session, isRoot = false, onChosen = { onBack?.invoke() }, contentPadding = padding)
 			SettingsPage.Appearance -> AppearancePage(themes, choice, onTheme, padding.plusInset())
 			SettingsPage.DiagnosticLogs -> DiagnosticLogsPage(padding.plusInset())
+			SettingsPage.VideoPlayback -> VideoPlaybackPage(padding.plusInset())
 			SettingsPage.Licences -> LicencesPage(padding.plusInset())
 		}
 	}
@@ -246,3 +257,5 @@ private fun summary(themes: Themes, choice: ThemeChoice): String {
 	fun name(mode: ThemeMode) = themes.resolve(choice.id(mode), mode).lucent.name
 	return if (choice.matchSystem) "${name(ThemeMode.Light)} · ${name(ThemeMode.Dark)}" else name(choice.fixedMode)
 }
+
+private fun onOff(on: Boolean) = if (on) "on" else "off"

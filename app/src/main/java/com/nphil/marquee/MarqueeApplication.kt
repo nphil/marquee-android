@@ -18,6 +18,7 @@ import com.nphil.marquee.data.AppSettings
 import com.nphil.marquee.data.SecretStore
 import com.nphil.marquee.diagnostics.Diag
 import com.nphil.marquee.diagnostics.DiagRequestLog
+import com.nphil.marquee.playback.PlaybackCoordinator
 import com.nphil.marquee.session.AppSession
 import com.nphil.marquee.ui.components.ToastCenter
 import com.nphil.marquee.ui.theme.ThemeCatalog
@@ -45,6 +46,9 @@ class AppContainer(context: Context) {
 	/** What this app changed on the server, so every screen showing a changed title refreshes it. */
 	val changes = LibraryChanges()
 	val toasts = ToastCenter(scope)
+
+	/** What the trailer, the theme tune and the extras viewer tell each other (who is sounding, whether a player is open). */
+	val playback = PlaybackCoordinator()
 	val themes by lazy {
 		Themes(context, ThemeCatalog.parse(context.assets.open("themes.json").use { it.readBytes().decodeToString() }))
 	}

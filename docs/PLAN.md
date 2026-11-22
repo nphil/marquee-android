@@ -52,6 +52,8 @@ core/       git submodule: nphil/marquee-ios, pinned; MarqueeCore and the shared
   first, with its tests, and this repo then moves the `core` pin.
 - A feature is done when it works on both, or the difference is recorded here with its reason.
 - Video engine work stays in `nphil/videoengine`; this app does not depend on it.
+- The trailer and theme-music rules in `app/.../playback/` (`TrailerAutoplay`, `ThemeMusic`, `ThemeFade`)
+  mirror MarqueeCore's; they are small enough to port, so a change lands in Core first and is copied here.
 
 ## 3. Release
 
