@@ -99,6 +99,8 @@ final class Methods: Sendable {
             return try await SeerrCalls.handle(method, payload, on: self)
         case _ where BrowseCalls.handles(method):
             return try await BrowseCalls.handle(method, payload, using: browseServices)
+        case _ where PlayCalls.handles(method):
+            return try await PlayCalls.handle(method, payload, using: playServices)
         default:
             throw BridgeError.unknownMethod(method)
         }
