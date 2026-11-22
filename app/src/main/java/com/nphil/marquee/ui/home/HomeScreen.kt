@@ -84,6 +84,7 @@ fun HomeScreen(
 	val actions = remember(model, navigator) {
 		HomeActions(
 			open = { navigator?.openItem(it.ratingKey) },
+			play = { navigator?.openPlayer(it) },
 			openWatchlistTitle = { navigator?.openWatchlistTitle(it) },
 			seeAll = { row ->
 				row.hub.key?.let {

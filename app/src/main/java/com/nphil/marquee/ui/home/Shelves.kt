@@ -33,6 +33,8 @@ import com.nphil.marquee.ui.theme.Space
 @Stable
 class HomeActions(
 	val open: (PlexItem) -> Unit,
+	/** Plays the title, where it was left. */
+	val play: (PlexItem) -> Unit,
 	val openWatchlistTitle: (PlexItem) -> Unit,
 	val seeAll: (HomeRow) -> Unit,
 	val seeAllWatchlist: () -> Unit,
@@ -71,9 +73,9 @@ private fun ShelfTitle(title: String, onSeeAll: (() -> Unit)?, actions: HomeActi
 }
 
 /**
- * The Continue Watching row: snapping 16:9 cards. A tap opens the title's page; a long press offers Details, Mark Watched,
- * Mark Show Watched (on an episode) and Remove from Continue Watching. Removing a card made for a show watched again hides
- * it until the show is viewed again.
+ * The Continue Watching row: snapping 16:9 cards. A tap plays the title where it was left; a long press offers Details,
+ * Mark Watched, Mark Show Watched (on an episode) and Remove from Continue Watching. Removing a card made for a show
+ * watched again hides it until the show is viewed again.
  */
 @Composable
 internal fun ContinueShelf(row: HomeRow, cardWidth: Dp, actions: HomeActions, modifier: Modifier = Modifier) {
@@ -103,7 +105,7 @@ private fun ContinueCard(
 			line = item.continueLine,
 			progress = item.progress,
 			description = item.spokenSummary,
-			onClick = { actions.open(item) },
+			onClick = { actions.play(item) },
 			onLongClick = { menu = true },
 			onLongClickLabel = "More options",
 			opens = item.ratingKey,
