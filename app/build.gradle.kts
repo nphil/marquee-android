@@ -280,6 +280,7 @@ dependencies {
 	baselineProfile(project(":baselineprofile"))
 
 	debugImplementation(libs.androidx.compose.ui.tooling)
+	debugImplementation(libs.androidx.compose.ui.test.manifest)
 
 	testImplementation(libs.junit)
 	testImplementation(libs.okhttp.mockwebserver)
@@ -287,4 +288,6 @@ dependencies {
 	androidTestImplementation(libs.androidx.test.junit)
 	androidTestImplementation(libs.androidx.test.runner)
 	androidTestImplementation(libs.okhttp.mockwebserver)
+	androidTestImplementation(platform(libs.androidx.compose.bom))
+	androidTestImplementation(libs.androidx.compose.ui.test.junit4)
 }

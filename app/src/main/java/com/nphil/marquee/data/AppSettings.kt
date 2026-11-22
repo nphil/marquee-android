@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStoreFile
 import com.nphil.marquee.core.CoreJson
+import com.nphil.marquee.core.HomeLayout
 import com.nphil.marquee.core.PlexHomeUser
 import com.nphil.marquee.ui.theme.ThemeChoice
 import com.nphil.marquee.ui.theme.ThemeMode
@@ -17,10 +18,12 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
 import java.util.UUID
 
-/** What the app keeps that is not secret: themes, the chosen server and profile, and server addresses. */
-class AppSettings(context: Context) {
+/** What the app keeps that is not secret: themes, the chosen server and profile, server addresses and how browsing is set up. */
+class AppSettings(context: Context) : BrowsePreferences {
 	private val store = PreferenceDataStoreFactory.create { context.preferencesDataStoreFile("settings") }
 
 	val themeChoice: Flow<ThemeChoice> = store.data.map { it.themeChoice() }.distinctUntilChanged()
@@ -96,6 +99,37 @@ class AppSettings(context: Context) {
 		}
 	}
 
+	override fun homeLayout(profile: String): Flow<HomeLayout> =
+		store.data.map { HomeLayout.decode(it[homeLayoutKey(profile)]) }.distinctUntilChanged()
+
+	override suspend fun setHomeLayout(profile: String, layout: HomeLayout) {
+		store.edit { prefs ->
+			if (layout.isDefault) prefs.remove(homeLayoutKey(profile)) else prefs[homeLayoutKey(profile)] = layout.encode()
+		}
+	}
+
+	override suspend fun rewatchDismissals(profile: String): JsonObject? =
+		store.data.first()[dismissalsKey(profile)]?.let { runCatching { CoreJson.parseToJsonElement(it).jsonObject }.getOrNull() }
+
+	override suspend fun setRewatchDismissals(profile: String, dismissals: JsonObject) {
+		store.edit { it[dismissalsKey(profile)] = dismissals.toString() }
+	}
+
+	override fun recentSearches(profile: String): Flow<List<String>> =
+		store.data.map { prefs -> prefs[recentsKey(profile)]?.split('\n')?.filter { it.isNotEmpty() }.orEmpty() }.distinctUntilChanged()
+
+	override suspend fun setRecentSearches(profile: String, searches: List<String>) {
+		store.edit { prefs ->
+			if (searches.isEmpty()) prefs.remove(recentsKey(profile)) else prefs[recentsKey(profile)] = searches.joinToString("\n")
+		}
+	}
+
+	override val sidebarExpanded: Flow<Boolean?> = store.data.map { it[SIDEBAR_EXPANDED] }.distinctUntilChanged()
+
+	override suspend fun setSidebarExpanded(expanded: Boolean) {
+		store.edit { it[SIDEBAR_EXPANDED] = expanded }
+	}
+
 	private fun Preferences.themeChoice() = ThemeChoice(
 		matchSystem = this[THEME_MATCH] ?: true,
 		lightId = this[THEME_LIGHT] ?: ThemeChoice().lightId,
@@ -116,6 +150,11 @@ class AppSettings(context: Context) {
 		val PROFILE = stringPreferencesKey("plex.profile")
 		val ADDRESSES = stringPreferencesKey("plex.addresses")
 		val addressSerializer = MapSerializer(String.serializer(), String.serializer())
+		val SIDEBAR_EXPANDED = booleanPreferencesKey("shell.sidebarExpanded")
+
+		fun homeLayoutKey(profile: String) = stringPreferencesKey("home.layout.$profile")
+		fun dismissalsKey(profile: String) = stringPreferencesKey("home.rewatchDismissed.$profile")
+		fun recentsKey(profile: String) = stringPreferencesKey("search.recents.$profile")
 	}
 }
 

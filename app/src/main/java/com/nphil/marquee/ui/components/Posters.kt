@@ -143,7 +143,9 @@ fun Modifier.pressable(
  * A poster in a shelf or grid: 2:3 art with its badge, a progress track when part-watched (kept as empty
  * space otherwise, so titles line up), then a one-line caption title and a details or sort-value [line]
  * (DESIGN §8.1). [reserveLine] keeps room for the line on a title that has none, so a grid row lines up.
- * [description] replaces what a screen reader says, which is the title and its watched state.
+ * [description] replaces what a screen reader says, which is the title and its watched state. [artModifier]
+ * applies to the art alone, which is where a detail page's shared element starts; [onLongClickLabel] names
+ * what a long press does for screen readers.
  */
 @Composable
 fun PosterCard(
@@ -160,18 +162,20 @@ fun PosterCard(
 	description: String? = null,
 	onClick: () -> Unit,
 	onLongClick: (() -> Unit)? = null,
+	onLongClickLabel: String? = null,
+	artModifier: Modifier = Modifier,
 ) {
 	val shape = RoundedCornerShape(if (width >= 96.dp) Radius.tile else Radius.control)
 	val spoken = description ?: spokenTitle(title, watched, unwatchedCount, progress)
 	Column(
 		modifier = modifier
 			.width(width)
-			.pressable(onClick, onLongClick)
+			.pressable(onClick, onLongClick, onLongClickLabel)
 			.semantics(mergeDescendants = true) { contentDescription = spoken },
 		verticalArrangement = Arrangement.spacedBy(Space.s1),
 	) {
 		Box {
-			PlexArt(artPath, width, posterHeight(width), Modifier.clip(shape))
+			PlexArt(artPath, width, posterHeight(width), artModifier.clip(shape))
 			PosterBadge(unwatchedCount, watched)
 		}
 		if (progress != null) ProgressBar(progress) else Spacer(Modifier.height(3.dp))
@@ -213,16 +217,18 @@ fun EpisodeCard(
 	description: String? = null,
 	onClick: () -> Unit,
 	onLongClick: (() -> Unit)? = null,
+	onLongClickLabel: String? = null,
+	artModifier: Modifier = Modifier,
 ) {
 	val spoken = description ?: listOfNotNull(title, line).joinToString(", ")
 	Column(
 		modifier = modifier
 			.width(width)
-			.pressable(onClick, onLongClick)
+			.pressable(onClick, onLongClick, onLongClickLabel)
 			.semantics(mergeDescendants = true) { contentDescription = spoken },
 		verticalArrangement = Arrangement.spacedBy(Space.s2),
 	) {
-		PlexArt(artPath, width, cardHeight(width), Modifier.clip(RoundedCornerShape(Radius.card)))
+		PlexArt(artPath, width, cardHeight(width), artModifier.clip(RoundedCornerShape(Radius.card)))
 		if (progress != null) ProgressBar(progress) else Spacer(Modifier.height(3.dp))
 		Column(Modifier.clearAndSetSemantics { }, verticalArrangement = Arrangement.spacedBy(Space.s1 / 2)) {
 			Text(

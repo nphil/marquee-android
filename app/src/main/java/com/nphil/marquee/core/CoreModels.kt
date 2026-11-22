@@ -83,8 +83,23 @@ data class Reach(
 	val lines: List<String> = emptyList(),
 )
 
+/** A library of the server. Movies and shows are the kinds the app browses. */
 @Serializable
-data class LibrarySection(val key: String, val title: String, val type: String)
+data class LibrarySection(
+	val key: String,
+	val title: String,
+	val type: String,
+	/** The library's uuid, which outlives a renumbered section: a Home row names its library by it. Null reads as [key]. */
+	val id: String? = null,
+) {
+	val libraryId: String get() = id ?: key
+
+	/** The libraries with a poster grid. */
+	val isBrowsable: Boolean get() = type == "movie" || type == "show"
+
+	/** The item type its grid lists. */
+	val itemType: MediaType get() = if (type == "show") MediaType.Show else MediaType.Movie
+}
 
 @Serializable
 internal data class CoreError(

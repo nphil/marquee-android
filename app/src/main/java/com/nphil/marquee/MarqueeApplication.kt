@@ -9,6 +9,9 @@ import coil3.PlatformContext
 import coil3.disk.DiskCache
 import coil3.SingletonImageLoader
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
+import com.nphil.marquee.browse.BrowseEnvironment
+import com.nphil.marquee.browse.SessionBrowseSource
+import com.nphil.marquee.browse.Snapshots
 import com.nphil.marquee.core.ClientIdentity
 import com.nphil.marquee.core.LibraryChanges
 import com.nphil.marquee.core.MarqueeCore
@@ -51,6 +54,11 @@ class AppContainer(context: Context) {
 	val changes = LibraryChanges()
 	val toasts = ToastCenter(scope)
 
+	/** What Home, Library, Search and the Watchlist share: the server and profile browsed, their preferences and saved answers. */
+	val browse = BrowseEnvironment(
+		SessionBrowseSource(session, core, scope), settings, changes, toasts, Snapshots.directory(context.cacheDir), scope,
+	)
+
 	/** What the trailer, the theme tune and the extras viewer tell each other (who is sounding, whether a player is open). */
 	val playback = PlaybackCoordinator()
 	val themes by lazy {
@@ -62,6 +70,7 @@ class AppContainer(context: Context) {
 		NativeCore.install(NativeTransport(http))
 		scope.launch { session.restore() }
 		scope.launch { session.state.map { it.user?.title }.distinctUntilChanged().collect { Diag.profile(it) } }
+		scope.launch { Snapshots.forgetWhenLeft(session, core, browse.snapshots) }
 	}
 
 	/** What this tablet tells Plex about itself, made once. */
