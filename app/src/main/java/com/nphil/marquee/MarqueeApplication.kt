@@ -10,6 +10,7 @@ import coil3.disk.DiskCache
 import coil3.SingletonImageLoader
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import com.nphil.marquee.core.ClientIdentity
+import com.nphil.marquee.core.LibraryChanges
 import com.nphil.marquee.core.MarqueeCore
 import com.nphil.marquee.core.NativeCore
 import com.nphil.marquee.core.NativeTransport
@@ -18,6 +19,7 @@ import com.nphil.marquee.data.SecretStore
 import com.nphil.marquee.diagnostics.Diag
 import com.nphil.marquee.diagnostics.DiagRequestLog
 import com.nphil.marquee.session.AppSession
+import com.nphil.marquee.ui.components.ToastCenter
 import com.nphil.marquee.ui.theme.ThemeCatalog
 import com.nphil.marquee.ui.theme.Themes
 import com.nphil.marquee.ui.theme.lucentTypography
@@ -39,6 +41,10 @@ class AppContainer(context: Context) {
 	private val identityOnce = scope.async(start = CoroutineStart.LAZY) { identity(context) }
 	val core = MarqueeCore { identityOnce.await() }
 	val session = AppSession(core, SecretStore(context), settings, scope)
+
+	/** What this app changed on the server, so every screen showing a changed title refreshes it. */
+	val changes = LibraryChanges()
+	val toasts = ToastCenter(scope)
 	val themes by lazy {
 		Themes(context, ThemeCatalog.parse(context.assets.open("themes.json").use { it.readBytes().decodeToString() }))
 	}

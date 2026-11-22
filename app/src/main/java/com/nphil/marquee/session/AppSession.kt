@@ -1,6 +1,7 @@
 package com.nphil.marquee.session
 
 import androidx.compose.runtime.Immutable
+import com.nphil.marquee.core.CoreError
 import com.nphil.marquee.core.CoreException
 import com.nphil.marquee.core.CoreJson
 import com.nphil.marquee.core.LibrarySection
@@ -219,6 +220,24 @@ class AppSession(
 			throw e
 		}
 	}
+
+	/**
+	 * Runs [block] for the current server and the address that answered last. A rejected sign-in ends the session
+	 * here, as it does for the Library, so the screens that call through here need not.
+	 */
+	suspend fun <T> onServer(block: suspend (server: PlexServer, remembered: String?) -> T): T {
+		val current = state.value
+		val server = current.server ?: throw CoreException(CoreError(kind = "noConnections"))
+		try {
+			return block(server, current.addresses[server.id])
+		} catch (e: CoreException) {
+			if (e.kind == CoreException.Kind.Unauthorized) signedOutByPlex()
+			throw e
+		}
+	}
+
+	/** The signed-in profile's plex.tv token, for what belongs to the person rather than a server: the Watchlist. */
+	val accountToken: String? get() = token
 
 	/** Switches to a Home profile; a wrong [pin] throws `ProfilePinRejected` and changes nothing. */
 	suspend fun switchUser(profile: PlexHomeUser, pin: String?) {

@@ -8,6 +8,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonObject
@@ -60,11 +61,18 @@ class MarqueeCore(private val identity: suspend () -> ClientIdentity) {
 		call<JsonObject>("reset", JsonObject(emptyMap()))
 	}
 
-	private suspend inline fun <reified T> call(method: String, params: JsonElement): T =
-		withContext(Dispatchers.Default) {
-			configure()
-			CoreJson.decodeFromJsonElement<T>(send(method, params))
-		}
+	/**
+	 * One typed bridge call, decoded on [Dispatchers.Default]. The screens' own files (DetailCore.kt, ...) add their
+	 * calls as extensions of this class.
+	 */
+	internal suspend inline fun <reified T> call(method: String, params: JsonElement): T =
+		withContext(Dispatchers.Default) { CoreJson.decodeFromJsonElement<T>(request(method, params)) }
+
+	@PublishedApi
+	internal suspend fun request(method: String, params: JsonElement): JsonElement {
+		configure()
+		return send(method, params)
+	}
 
 	private suspend fun configure() {
 		if (configured) return
@@ -86,10 +94,14 @@ class MarqueeCore(private val identity: suspend () -> ClientIdentity) {
 
 	private fun tokenParams(token: String) = buildJsonObject { put("token", token) }
 
-	private fun serverParams(server: PlexServer, remembered: String?, refresh: Boolean) = buildJsonObject {
+	/** The envelope of a call to one server: the server, the address that worked last, and what the call adds. */
+	internal fun serverParams(
+		server: PlexServer, remembered: String?, refresh: Boolean = false, extra: JsonObjectBuilder.() -> Unit = {},
+	) = buildJsonObject {
 		put("server", CoreJson.encodeToJsonElement(PlexServer.serializer(), server))
 		if (remembered != null) put("remembered", remembered)
 		if (refresh) put("refresh", true)
+		extra()
 	}
 
 	@Serializable

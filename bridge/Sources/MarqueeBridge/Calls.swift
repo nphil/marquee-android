@@ -93,6 +93,8 @@ final class Methods: Sendable {
             return try Reply.ok(try await library.sections().map(Section.init))
         case _ where DiagCalls.handles(method):
             return try await DiagCalls.handle(method, payload)
+        case _ where DetailCalls.handles(method):
+            return try await DetailCalls.handle(method, payload, on: self)
         default:
             throw BridgeError.unknownMethod(method)
         }
@@ -107,7 +109,12 @@ final class Methods: Sendable {
         PlexTV(http: PlexHTTPClient(identity: try identity(), token: token, transport: OkHttpTransport.shared))
     }
 
-    private func library(for call: ServerCall) throws -> PlexLibrary {
+    /// The account's watchlist, which belongs to the person rather than a server.
+    func watchlist(token: String) throws -> PlexWatchlist {
+        PlexWatchlist(http: PlexHTTPClient(identity: try identity(), token: token, transport: OkHttpTransport.shared))
+    }
+
+    func library(for call: ServerCall) throws -> PlexLibrary {
         let identity = try identity()
         let key = call.server.clientIdentifier + " " + (call.server.accessToken ?? "")
         return state.withLock { state in
