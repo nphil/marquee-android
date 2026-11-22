@@ -27,10 +27,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nphil.marquee.R
+import com.nphil.marquee.container
 import com.nphil.marquee.diagnostics.Diag
 import com.nphil.marquee.diagnostics.DiagScreen
 import com.nphil.marquee.playback.rememberPlaybackPrefs
@@ -55,6 +57,7 @@ enum class SettingsPage(val title: String) {
 	Server("Servers"),
 	Appearance("Theme"),
 	VideoPlayback("Video & Playback"),
+	Seerr("Seerr"),
 	DiagnosticLogs("Diagnostic Logs"),
 	Licences("Licences"),
 }
@@ -123,6 +126,12 @@ private fun SettingsList(
 	val diagnosticsSummary = if (diagnostics?.let { it.configured && it.live } == true) "Sending live logs" else "Kept on this tablet"
 	val themeSummary = remember(choice) { summary(themes, choice) }
 	val playbackSummary = rememberPlaybackPrefs().value?.let { "Trailers ${onOff(it.playsTrailers)} · Theme music ${onOff(it.playsThemeMusic)}" } ?: ""
+	val seerr by LocalContext.current.container.seerr.config.collectAsStateWithLifecycle()
+	val seerrSummary = when {
+		seerr.enabled -> "On"
+		seerr.configured -> "Off"
+		else -> "Not set up"
+	}
 	Scaffold(topBar = { TopAppBar(title = { Text("Settings") }) }, containerColor = lucent.canvas) { padding ->
 		LazyColumn(
 			modifier = Modifier.fillMaxSize(),
@@ -154,6 +163,13 @@ private fun SettingsList(
 				PageRow(0, 1, SettingsPage.VideoPlayback, selected, onOpen) {
 					IconBadge(R.drawable.ic_movie)
 					Labels("Video & Playback", playbackSummary)
+				}
+			}
+			item(key = "integrations") { Heading("Integrations") }
+			item(key = "seerr") {
+				PageRow(0, 1, SettingsPage.Seerr, selected, onOpen) {
+					IconBadge(R.drawable.ic_playlist_add)
+					Labels("Seerr", seerrSummary)
 				}
 			}
 			item(key = "about") { Heading("About") }
@@ -247,6 +263,7 @@ private fun SettingsDetail(
 			SettingsPage.Appearance -> AppearancePage(themes, choice, onTheme, padding.plusInset())
 			SettingsPage.DiagnosticLogs -> DiagnosticLogsPage(padding.plusInset())
 			SettingsPage.VideoPlayback -> VideoPlaybackPage(padding.plusInset())
+			SettingsPage.Seerr -> SeerrPage(padding.plusInset())
 			SettingsPage.Licences -> LicencesPage(padding.plusInset())
 		}
 	}

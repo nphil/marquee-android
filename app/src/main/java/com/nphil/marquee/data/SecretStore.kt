@@ -15,9 +15,9 @@ import javax.crypto.spec.GCMParameterSpec
 /**
  * Secrets kept on the device: the Plex sign-in (the account token and the server list, whose entries carry
  * their own tokens) in the default store, and the diagnostic log's server, topic and token in a store named
- * "diagnostics", which signing out leaves alone. Each value is sealed with AES-GCM under one key that never
- * leaves the Android Keystore, in preferences that are kept out of backups (res/xml/backup_rules.xml), so a
- * copied data directory carries no usable secret.
+ * "diagnostics" and Seerr's API key and sign-in in one named "seerr", which signing out leaves alone. Each value is
+ * sealed with AES-GCM under one key that never leaves the Android Keystore, in preferences that are kept out of
+ * backups (res/xml/backup_rules.xml), so a copied data directory carries no usable secret.
  */
 class SecretStore(context: Context, name: String = "secrets") {
 	private val prefs = context.getSharedPreferences(name, Context.MODE_PRIVATE)

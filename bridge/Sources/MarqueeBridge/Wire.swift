@@ -125,6 +125,17 @@ struct Failure: Encodable {
         case let failure as NetworkFailure:
             kind = "unreachable"
             self.failure = String(describing: failure)
+        case let error as SeerrError:
+            kind = "seerr"
+            if case .failed(let detail) = error {
+                failure = "failed"
+                message = detail
+            } else {
+                failure = String(describing: error)
+            }
+        case let error as SeerrAddressInvalid:
+            kind = "badRequest"
+            message = "invalid Seerr address: \(error.problem)"
         case is CancellationError:
             kind = "cancelled"
         case is DecodingError:

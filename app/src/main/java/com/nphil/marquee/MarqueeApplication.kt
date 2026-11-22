@@ -19,6 +19,7 @@ import com.nphil.marquee.data.SecretStore
 import com.nphil.marquee.diagnostics.Diag
 import com.nphil.marquee.diagnostics.DiagRequestLog
 import com.nphil.marquee.playback.PlaybackCoordinator
+import com.nphil.marquee.seerr.Seerr
 import com.nphil.marquee.session.AppSession
 import com.nphil.marquee.ui.components.ToastCenter
 import com.nphil.marquee.ui.theme.ThemeCatalog
@@ -42,6 +43,9 @@ class AppContainer(context: Context) {
 	private val identityOnce = scope.async(start = CoroutineStart.LAZY) { identity(context) }
 	val core = MarqueeCore { identityOnce.await() }
 	val session = AppSession(core, SecretStore(context), settings, scope)
+
+	/** Requests: off until Settings › Integrations › Seerr turns it on. Its own secrets survive a Plex sign-out. */
+	val seerr = Seerr(core, settings, SecretStore(context, "seerr"), session, scope)
 
 	/** What this app changed on the server, so every screen showing a changed title refreshes it. */
 	val changes = LibraryChanges()

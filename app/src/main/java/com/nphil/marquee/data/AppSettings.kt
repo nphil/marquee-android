@@ -42,6 +42,13 @@ class AppSettings(context: Context) {
 		store.edit { prefs -> prefs.setPlaybackPrefs(profile, change(prefs.playbackPrefs(profile))) }
 	}
 
+	/** Seerr's address and switches; see [SeerrPrefs]. */
+	val seerr: Flow<SeerrPrefs> = store.data.map { it.seerrPrefs() }.distinctUntilChanged()
+
+	suspend fun updateSeerr(change: (SeerrPrefs) -> SeerrPrefs) {
+		store.edit { prefs -> prefs.setSeerrPrefs(change(prefs.seerrPrefs())) }
+	}
+
 	/** This install's X-Plex-Client-Identifier, made on first use and kept across sign-ins. */
 	suspend fun clientIdentifier(): String {
 		store.data.first()[CLIENT_ID]?.let { return it }

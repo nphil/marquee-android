@@ -95,6 +95,8 @@ final class Methods: Sendable {
             return try await DiagCalls.handle(method, payload)
         case _ where DetailCalls.handles(method):
             return try await DetailCalls.handle(method, payload, on: self)
+        case _ where SeerrCalls.handles(method):
+            return try await SeerrCalls.handle(method, payload, on: self)
         case _ where BrowseCalls.handles(method):
             return try await BrowseCalls.handle(method, payload, using: browseServices)
         default:
