@@ -36,9 +36,9 @@ private const val FilmPart = "pms/library/parts/1051/file.mp4.bin"
  *
  * The fixtures have no trailer file, and without one the server answers the player with filler it cannot play.
  * [trailer], an androidTest asset such as `trailers/scope.mp4`, is the file Elephants Dream's trailer plays, and [film]
- * the file the movie itself plays.
+ * the bytes the movie itself plays.
  */
-class SignedInToFake(private val trailer: String? = null, private val film: String? = null) : ExternalResource() {
+class SignedInToFake(private val trailer: String? = null, private val film: ByteArray? = null) : ExternalResource() {
 	private val instrumentation = InstrumentationRegistry.getInstrumentation()
 	val context: Context = instrumentation.targetContext
 	val container: AppContainer get() = context.container
@@ -84,16 +84,14 @@ class SignedInToFake(private val trailer: String? = null, private val film: Stri
 	private fun fixturesWith(): Fixtures {
 		val assets = instrumentation.context.assets
 		return Fixtures { path ->
-			try {
-				assets.open(
-					when (path) {
-						TrailerPart -> trailer ?: path
-						FilmPart -> film ?: path
-						else -> path
-					},
-				).use { it.readBytes() }
-			} catch (_: IOException) {
-				null
+			if (path == FilmPart && film != null) {
+				film
+			} else {
+				try {
+					assets.open(if (path == TrailerPart) trailer ?: path else path).use { it.readBytes() }
+				} catch (_: IOException) {
+					null
+				}
 			}
 		}
 	}

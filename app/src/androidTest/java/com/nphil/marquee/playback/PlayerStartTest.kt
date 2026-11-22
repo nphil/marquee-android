@@ -30,12 +30,16 @@ import com.nphil.marquee.ui.theme.lucent
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 
 /**
  * Play on a title's page, end to end on the emulator: the real [AppNavigation], Core's play start over the fake Plex of
- * core/UITests/FakePlex, Media3 reading a real clip from the fake over HTTP, and the player's reports. The fake serves
- * the 4 s [Clips.Flat] as Elephants Dream's file. The film plays when the server has been told it is playing; it ends
- * when the server has been told it is watched and the page is back; and the player's last word is a stop.
+ * core/UITests/FakePlex, Media3 reading a clip from the fake over HTTP, and the player's reports. The fake serves 4 s of
+ * silence as Elephants Dream's file: with a video clip here the CI emulator stopped answering within minutes in three of
+ * four runs, and Core's route, Media3's read and the reports are the same for audio. The film plays when the server has
+ * been told it is playing; it ends when the server has been told it is watched and the page is back; and the player's
+ * last word is a stop.
  *
  * The screen is not what is checked while it plays: the controls hide on their own timer, which the test clock runs
  * ahead of real time. The server's log is the witness.
@@ -43,7 +47,7 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class PlayerStartTest {
 	@get:Rule(order = 0)
-	val app = SignedInToFake(film = Clips.Flat.file)
+	val app = SignedInToFake(film = silentFilm())
 
 	@get:Rule(order = 1)
 	val animations = SystemAnimations()
@@ -102,8 +106,20 @@ class PlayerStartTest {
 	}
 
 	private companion object {
-		/** Long enough for the emulator's first frames, the fixtures' answers, the decoder's start and a 4 s film. */
+		/** Long enough for the emulator's first frames, the fixtures' answers, the audio's start and a 4 s film. */
 		const val LoadMillis = 40_000L
 		const val ElephantsDreamKey = "105"
+		const val FilmSeconds = 4
+
+		/** [FilmSeconds] of silence as an 8 kHz mono 16-bit PCM WAV, which Media3 plays without a video decoder. */
+		fun silentFilm(): ByteArray {
+			val rate = 8_000
+			val data = rate * 2 * FilmSeconds
+			return ByteBuffer.allocate(44 + data).order(ByteOrder.LITTLE_ENDIAN).apply {
+				put("RIFF".toByteArray()).putInt(36 + data).put("WAVE".toByteArray())
+				put("fmt ".toByteArray()).putInt(16).putShort(1).putShort(1).putInt(rate).putInt(rate * 2).putShort(2).putShort(16)
+				put("data".toByteArray()).putInt(data)
+			}.array()
+		}
 	}
 }
