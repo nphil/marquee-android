@@ -6,6 +6,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.DeviceConfigurationOverride
+import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.WindowSize
 import androidx.compose.ui.test.junit4.ComposeTestRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -39,8 +40,11 @@ fun DeviceWindow(device: Device, content: @Composable () -> Unit) {
 	}
 }
 
+/** The window [DeviceWindow] laid out, for a test that captures it frame by frame. */
+fun ComposeTestRule.deviceWindow(): SemanticsNodeInteraction = onNodeWithTag(WindowTag)
+
 /** Saves the window [DeviceWindow] laid out as `<name>.png` among the review screenshots, once the frame has settled. */
 fun ComposeTestRule.saveWindow(name: String) {
 	waitForIdle()
-	onNodeWithTag(WindowTag).saveScreenshot(name)
+	deviceWindow().saveScreenshot(name)
 }

@@ -52,11 +52,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -90,6 +90,7 @@ import com.nphil.marquee.playback.ThemeMusicEffect
 import com.nphil.marquee.playback.TrailerPreview
 import com.nphil.marquee.ui.Detail
 import com.nphil.marquee.ui.Navigator
+import com.nphil.marquee.ui.components.ArtSpec
 import com.nphil.marquee.ui.components.EmptyState
 import com.nphil.marquee.ui.components.PlexArt
 import com.nphil.marquee.ui.components.RetryButton
@@ -122,14 +123,16 @@ fun DetailScreen(container: AppContainer, route: Detail, navigator: Navigator) {
 	val scrolled by remember { derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 240 } }
 	// A show's page, and each of its seasons', plays the show's theme tune; another page or the app leaving covers it.
 	ThemeMusicEffect(item?.takeIf { it.type == MediaType.Show || it.type == MediaType.Season }, covered = !onTop)
+	// The art of the poster that was tapped, read once: the hero draws it from the first frame and keeps it until its own has loaded.
+	val carrier = remember { navigator.originArt(route.ratingKey) }
 	Box(Modifier.fillMaxSize().background(lucent.canvas)) {
 		val failure = state.failure
-		when {
-			item != null -> DetailPage(container, item, state, model, navigator, listState, onTop)
-			failure != null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+		if (item == null && failure != null) {
+			Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
 				LoadFailure(failure, container.session.state.value.server?.name ?: "the server", model::retry)
 			}
-			else -> DetailSkeleton()
+		} else {
+			DetailPage(container, route.ratingKey, item, carrier, state, model, navigator, listState, onTop)
 		}
 		TopBar(if (scrolled) item?.title else null, scrolled, navigator::back)
 	}
@@ -146,24 +149,12 @@ internal fun LoadFailure(kind: CoreException.Kind, server: String, retry: () -> 
 	)
 }
 
-/** Static fills where the page will be, swapped for it atomically (DESIGN §11). */
+/** Static fills where the title, actions and synopsis will be, swapped for them atomically (DESIGN §11). The hero is not one: it is on screen from the first frame. */
 @Composable
-private fun DetailSkeleton() {
-	BoxWithConstraints(Modifier.fillMaxSize()) {
-		val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-		val width = maxWidth
-		Column(Modifier.padding(top = top + BarHeight), verticalArrangement = Arrangement.spacedBy(Space.s3)) {
-			Box(Modifier.fillMaxWidth().height(cardHeight(width)).background(lucent.trackOff))
-			listOf(0.6f, 0.4f, 0.8f).forEach { fraction ->
-				Box(
-					Modifier
-						.padding(horizontal = Space.inset)
-						.fillMaxWidth(fraction)
-						.height(Space.s5)
-						.clip(RoundedCornerShape(Radius.control))
-						.background(lucent.trackOff),
-				)
-			}
+private fun HeaderSkeleton(modifier: Modifier) {
+	Column(modifier, verticalArrangement = Arrangement.spacedBy(Space.s3)) {
+		listOf(0.6f, 0.4f, 0.8f).forEach { fraction ->
+			Box(Modifier.fillMaxWidth(fraction).height(Space.s5).clip(RoundedCornerShape(Radius.control)).background(lucent.trackOff))
 		}
 	}
 }
@@ -197,7 +188,9 @@ internal fun TopBar(title: String?, scrolled: Boolean, onBack: () -> Unit) {
 @Composable
 private fun DetailPage(
 	container: AppContainer,
-	item: PlexItem,
+	ratingKey: String,
+	item: PlexItem?,
+	carrier: ArtSpec?,
 	state: DetailState,
 	model: DetailModel,
 	navigator: Navigator,
@@ -209,24 +202,26 @@ private fun DetailPage(
 		val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
 		val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 		var version by rememberSaveable { mutableIntStateOf(0) }
-		val versionIndex = version.coerceIn(0, maxOf(0, item.media.size - 1))
+		val versionIndex = version.coerceIn(0, maxOf(0, (item?.media?.size ?: 1) - 1))
 		var tracksOpen by rememberSaveable { mutableStateOf(false) }
 		var deleting by remember { mutableStateOf<DeleteTarget?>(null) }
-		val trailer = remember(state.extras, item.primaryExtraKey) { trailerOf(state.extras, item.primaryExtraKey) }
+		val trailer = remember(state.extras, item?.primaryExtraKey) { trailerOf(state.extras, item?.primaryExtraKey) }
 		val heroPx = with(LocalDensity.current) { (maxWidth * 9 / 16).toPx() }
 		val heroOnScreen by remember { derivedStateOf { listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset < heroPx / 2 } }
 		val context = LocalContext.current
-		val actions = ItemActions(
-			state = state,
-			item = item,
-			onWatched = { model.setWatched(item.ratingKey, !item.isWatched) },
-			onWatchlist = model::toggleWatchlist,
-			onTrailer = trailer?.let { extra -> { navigator.openExtra(extra) } },
-			onTracks = { tracksOpen = true },
-			onShare = { share(context, item) },
-			onDeleteVersion = { deleting = DeleteTarget.Version(item, versionIndex) },
-			onDelete = { deleting = DeleteTarget.Title(item) },
-		)
+		val actions = item?.let { page ->
+			ItemActions(
+				state = state,
+				item = page,
+				onWatched = { model.setWatched(page.ratingKey, !page.isWatched) },
+				onWatchlist = model::toggleWatchlist,
+				onTrailer = trailer?.let { extra -> { navigator.openExtra(extra) } },
+				onTracks = { tracksOpen = true },
+				onShare = { share(context, page) },
+				onDeleteVersion = { deleting = DeleteTarget.Version(page, versionIndex) },
+				onDelete = { deleting = DeleteTarget.Title(page) },
+			)
+		}
 		LazyColumn(
 			state = listState,
 			modifier = Modifier.fillMaxSize(),
@@ -234,23 +229,25 @@ private fun DetailPage(
 		) {
 			item(key = "header", contentType = "header") {
 				if (wide) {
-					WideHeader(item, state, navigator, actions, trailer, onTop && heroOnScreen, top, maxWidth, versionIndex, { version = it })
+					WideHeader(ratingKey, item, carrier, state, navigator, actions, trailer, onTop && heroOnScreen, top, maxWidth, versionIndex, { version = it })
 				} else {
-					CompactHeader(item, state, navigator, actions, trailer, onTop && heroOnScreen, top, maxWidth)
+					CompactHeader(ratingKey, item, carrier, navigator, actions, trailer, onTop && heroOnScreen, top, maxWidth)
 				}
 			}
-			if (!wide) {
-				item(key = "details", contentType = "details") {
-					DetailsBlock(item, state, versionIndex, { version = it }, { tracksOpen = true }, Modifier.padding(horizontal = Space.inset))
+			if (item != null) {
+				if (!wide) {
+					item(key = "details", contentType = "details") {
+						DetailsBlock(item, state, versionIndex, { version = it }, { tracksOpen = true }, Modifier.padding(horizontal = Space.inset))
+					}
 				}
+				seasonsSection(state, model, navigator, wide)
+				castSection(item, navigator)
+				extrasSection(state, navigator)
+				relatedSection(state, navigator)
 			}
-			seasonsSection(state, model, navigator, wide)
-			castSection(item, navigator)
-			extrasSection(state, navigator)
-			relatedSection(state, navigator)
 		}
 		if (tracksOpen) {
-			item.media.getOrNull(versionIndex)?.parts?.firstOrNull()?.let { part ->
+			item?.media?.getOrNull(versionIndex)?.parts?.firstOrNull()?.let { part ->
 				TracksSheet(part, onDismiss = { tracksOpen = false })
 			}
 		}
@@ -296,10 +293,11 @@ private class ItemActions(
 
 @Composable
 private fun CompactHeader(
-	item: PlexItem,
-	state: DetailState,
+	ratingKey: String,
+	item: PlexItem?,
+	carrier: ArtSpec?,
 	navigator: Navigator,
-	actions: ItemActions,
+	actions: ItemActions?,
 	trailer: PlexItem?,
 	trailerVisible: Boolean,
 	top: Dp,
@@ -308,22 +306,28 @@ private fun CompactHeader(
 	val height = cardHeight(width)
 	Box(Modifier.fillMaxWidth()) {
 		Column {
-			StatusStrip(item.backdropPath ?: item.posterPath, width, height)
-			Hero(item, trailer, trailerVisible, width, fade = true)
+			StatusStrip(item?.backdropPath ?: item?.posterPath, carrier, width, height)
+			Hero(ratingKey, item, carrier, trailer, trailerVisible, width, fade = true)
 		}
 		Column(Modifier.padding(top = top + height - Space.s7), verticalArrangement = Arrangement.spacedBy(Space.s4)) {
-			TitleBlock(item, navigator, Modifier.padding(horizontal = Space.inset))
-			ActionRow(actions, Modifier.padding(horizontal = Space.inset))
+			if (item != null && actions != null) {
+				TitleBlock(item, navigator, Modifier.padding(horizontal = Space.inset))
+				ActionRow(actions, Modifier.padding(horizontal = Space.inset))
+			} else {
+				HeaderSkeleton(Modifier.padding(horizontal = Space.inset))
+			}
 		}
 	}
 }
 
 @Composable
 private fun WideHeader(
-	item: PlexItem,
+	ratingKey: String,
+	item: PlexItem?,
+	carrier: ArtSpec?,
 	state: DetailState,
 	navigator: Navigator,
-	actions: ItemActions,
+	actions: ItemActions?,
 	trailer: PlexItem?,
 	trailerVisible: Boolean,
 	top: Dp,
@@ -337,27 +341,43 @@ private fun WideHeader(
 		Modifier.fillMaxWidth().padding(start = Space.inset, end = Space.inset, top = top + BarHeight, bottom = Space.s4),
 		horizontalArrangement = Arrangement.spacedBy(gap),
 	) {
-		Hero(item, trailer, trailerVisible, heroWidth, fade = false)
+		Hero(ratingKey, item, carrier, trailer, trailerVisible, heroWidth, fade = false)
 		Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Space.s4)) {
-			TitleBlock(item, navigator, Modifier)
-			ActionRow(actions, Modifier)
-			DetailsBlock(item, state, version, onVersion, actions.onTracks, Modifier)
+			if (item != null && actions != null) {
+				TitleBlock(item, navigator, Modifier)
+				ActionRow(actions, Modifier)
+				DetailsBlock(item, state, version, onVersion, actions.onTracks, Modifier)
+			} else {
+				HeaderSkeleton(Modifier)
+			}
 		}
 	}
 }
 
-/** The 16:9 backdrop; the trailer plays over it once it has dwelt long enough. */
+/** The hero, and the art in it: where each is on screen frame by frame is what the open-flight test reads. */
+const val HeroTag = "detail.hero"
+const val HeroArtTag = "detail.hero.art"
+
+/**
+ * The 16:9 backdrop; the trailer plays over it once it has dwelt long enough, under the same fade into the canvas, so
+ * the video blends into the page as the art does. It is on screen from the first frame, before the title has loaded,
+ * so it can take the place of the poster that was tapped at once: it draws that poster's art ([carrier]) until its
+ * own has loaded.
+ */
 @Composable
-private fun Hero(item: PlexItem, trailer: PlexItem?, trailerVisible: Boolean, width: Dp, fade: Boolean) {
+private fun Hero(ratingKey: String, item: PlexItem?, carrier: ArtSpec?, trailer: PlexItem?, trailerVisible: Boolean, width: Dp, fade: Boolean) {
 	val height = cardHeight(width)
 	val canvas = lucent.canvas
+	val corner = if (fade) 0.dp else Radius.card
 	Box(
 		Modifier
-			.heroSharedElement(item.ratingKey)
+			.testTag(HeroTag)
+			.heroSharedElement(ratingKey, carrier, width, corner)
 			.size(width, height)
-			.clip(if (fade) RectangleShape else RoundedCornerShape(Radius.card)),
+			.clip(RoundedCornerShape(corner)),
 	) {
-		PlexArt(item.backdropPath ?: item.posterPath, width, height)
+		PlexArt(item?.backdropPath ?: item?.posterPath, width, height, Modifier.testTag(HeroArtTag), placeholder = carrier)
+		if (trailer != null) TrailerPreview(trailer, trailerVisible, Modifier.matchParentSize())
 		if (fade) {
 			// The art melts into the canvas over its lower half, reaching 85% where the title starts.
 			Box(
@@ -373,15 +393,14 @@ private fun Hero(item: PlexItem, trailer: PlexItem?, trailerVisible: Boolean, wi
 				),
 			)
 		}
-		if (trailer != null) TrailerPreview(trailer, trailerVisible, Modifier.matchParentSize())
 	}
 }
 
 /** Above the hero the art runs on to the top edge as a blurred mirror of its top rows, so the page bleeds under the status bar. */
 @Composable
-private fun StatusStrip(art: String?, width: Dp, heroHeight: Dp) {
+private fun StatusStrip(art: String?, carrier: ArtSpec?, width: Dp, heroHeight: Dp) {
 	val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-	if (top <= 0.dp || art == null) return
+	if (top <= 0.dp || (art == null && carrier == null)) return
 	val topPx = with(LocalDensity.current) { top.toPx() }
 	Box(Modifier.fillMaxWidth().height(top).clipToBounds()) {
 		PlexArt(
@@ -395,6 +414,7 @@ private fun StatusStrip(art: String?, width: Dp, heroHeight: Dp) {
 					scaleY = -1f
 				}
 				.blur(20.dp),
+			placeholder = carrier,
 		)
 		Box(Modifier.matchParentSize().background(Brush.verticalGradient(listOf(lucent.canvas.copy(alpha = 0.5f), Color.Transparent))))
 	}

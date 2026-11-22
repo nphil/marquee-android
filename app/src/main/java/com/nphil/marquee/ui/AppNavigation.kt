@@ -1,19 +1,19 @@
 package com.nphil.marquee.ui
 
 import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.SharedTransitionScope
-import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -23,7 +23,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
@@ -41,6 +48,7 @@ import com.nphil.marquee.core.PlexRole
 import com.nphil.marquee.core.copiesOf
 import com.nphil.marquee.diagnostics.Diag
 import com.nphil.marquee.diagnostics.DiagCategory
+import com.nphil.marquee.ui.components.ArtSpec
 import com.nphil.marquee.ui.components.ToastHost
 import com.nphil.marquee.ui.detail.DetailScreen
 import com.nphil.marquee.ui.detail.ExtraScreen
@@ -86,6 +94,20 @@ class Navigator internal constructor(
 	/** The title whose poster was tapped last. Only that poster joins the zoom to its page, so a title that two shelves list never shares a key twice. */
 	var origin: String? by mutableStateOf(null)
 		private set
+
+	/** The art each poster or card on screen shows, by the title it opens: what that title's page draws until its own art has loaded. */
+	private val arts = HashMap<String, ArtSpec>()
+
+	internal fun registerArt(ratingKey: String, art: ArtSpec) {
+		arts[ratingKey] = art
+	}
+
+	internal fun unregisterArt(ratingKey: String, art: ArtSpec) {
+		if (arts[ratingKey] == art) arts.remove(ratingKey)
+	}
+
+	/** The art of the poster that opened [ratingKey]'s page, or null when the page was not opened from one. */
+	internal fun originArt(ratingKey: String): ArtSpec? = if (origin == ratingKey) arts[ratingKey] else null
 
 	fun openItem(ratingKey: String) {
 		origin = ratingKey
@@ -140,36 +162,76 @@ private data class PosterKey(val ratingKey: String)
 /**
  * The art of a poster or card that opens a title's page: it grows into that page's hero as the page arrives and
  * shrinks back into it on the way out, including while a back swipe is under the finger. Only the poster that was
- * tapped takes part, so it is safe on every poster of a screen.
+ * tapped takes part, so it is safe on every poster of a screen. [art] is what the poster shows: the page draws it as
+ * its hero until its own art has loaded, so the picture that was tapped is the one that flies.
  */
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
-fun Modifier.posterSharedElement(ratingKey: String): Modifier {
+fun Modifier.posterSharedElement(ratingKey: String, art: ArtSpec? = null): Modifier {
 	val navigator = LocalNavigator.current ?: return this
+	if (art != null) {
+		DisposableEffect(navigator, ratingKey, art) {
+			navigator.registerArt(ratingKey, art)
+			onDispose { navigator.unregisterArt(ratingKey, art) }
+		}
+	}
 	if (navigator.origin != ratingKey) return this
-	return zoom(ratingKey, Radius.tile)
+	// The poster stays whole under the hero as it fades in and goes once the hero covers it: both fading would dip to the canvas.
+	return zoom(ratingKey, Corners(art?.radius ?: Radius.tile), enter = fadeIn(NavMotion.linear()), exit = ExitTransition.None)
 }
 
-/** The hero of the page for [ratingKey], where the tapped poster's art lands. */
+/**
+ * The hero of the page for [ratingKey], where the tapped poster's art lands. [from] is that art, when the page was
+ * opened from a poster: the corners then run from the poster's to [radius] as the hero grows to [width].
+ */
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
-internal fun Modifier.heroSharedElement(ratingKey: String): Modifier = zoom(ratingKey, Radius.card)
+internal fun Modifier.heroSharedElement(ratingKey: String, from: ArtSpec?, width: Dp, radius: Dp): Modifier {
+	val corners = if (from == null) Corners(radius) else Corners(from.radius, radius, from.width, width)
+	return zoom(ratingKey, corners, enter = fadeIn(NavMotion.linear()), exit = fadeOut(NavMotion.linear()))
+}
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
-private fun Modifier.zoom(ratingKey: String, radius: androidx.compose.ui.unit.Dp): Modifier {
+private fun Modifier.zoom(ratingKey: String, corners: Corners, enter: EnterTransition, exit: ExitTransition): Modifier {
 	val scope = LocalSharedTransitionScope.current ?: return this
 	val visibility = LocalEntryVisibility.current ?: return this
 	return with(scope) {
 		this@zoom.sharedBounds(
 			sharedContentState = rememberSharedContentState(PosterKey(ratingKey)),
 			animatedVisibilityScope = visibility,
-			enter = fadeIn(NavMotion.linear()),
-			exit = fadeOut(NavMotion.linear()),
+			enter = enter,
+			exit = exit,
 			boundsTransform = NavMotion.bounds,
-			resizeMode = SharedTransitionScope.ResizeMode.scaleToBounds(ContentScale.Crop, Alignment.Center),
-			clipInOverlayDuringTransition = OverlayClip(RoundedCornerShape(radius)),
+			// The art is laid out afresh at each size, so a 2:3 poster becomes a 16:9 hero by cropping: scaled, the hero's
+			// centre would show in the poster's place at the first frame.
+			resizeMode = SharedTransitionScope.ResizeMode.RemeasureToBounds,
+			clipInOverlayDuringTransition = remember(corners) { CornerClip(corners) },
 		)
+	}
+}
+
+/** The corners of a shared container in flight: [fromRadius] at [fromWidth] wide, easing to [toRadius] at [toWidth]. One radius when no widths are given. */
+@Immutable
+private data class Corners(val fromRadius: Dp, val toRadius: Dp = fromRadius, val fromWidth: Dp = 0.dp, val toWidth: Dp = 0.dp)
+
+@OptIn(ExperimentalSharedTransitionApi::class)
+private class CornerClip(private val corners: Corners) : SharedTransitionScope.OverlayClip {
+	private val path = Path()
+
+	override fun getClipPath(
+		sharedContentState: SharedTransitionScope.SharedContentState,
+		bounds: Rect,
+		layoutDirection: LayoutDirection,
+		density: Density,
+	): Path = with(density) {
+		val from = corners.fromWidth.toPx()
+		val span = corners.toWidth.toPx() - from
+		val grown = if (span == 0f) 1f else ((bounds.width - from) / span).coerceIn(0f, 1f)
+		val start = corners.fromRadius.toPx()
+		path.reset()
+		path.addRoundRect(RoundRect(bounds, CornerRadius(start + (corners.toRadius.toPx() - start) * grown)))
+		path
 	}
 }
 
@@ -194,7 +256,6 @@ fun AppNavigation(container: AppContainer, shell: @Composable (Navigator) -> Uni
 	val stack = rememberNavBackStack(BackStack, Root)
 	val scope = rememberCoroutineScope()
 	val navigator = remember(stack, container, scope) { Navigator(stack, container, scope) }
-	val effects: FiniteAnimationSpec<Float> = MaterialTheme.motionScheme.defaultEffectsSpec()
 	// A message that offers Undo does its work when the app stops, as the iPhone's does.
 	LifecycleEventEffect(Lifecycle.Event.ON_STOP) { container.toasts.finish() }
 	Box(Modifier.fillMaxSize()) {
@@ -208,7 +269,7 @@ fun AppNavigation(container: AppContainer, shell: @Composable (Navigator) -> Uni
 						rememberViewModelStoreNavEntryDecorator<NavKey>(),
 					),
 					sharedTransitionScope = this,
-					transitionSpec = { fadeIn(effects) togetherWith fadeOut(effects) },
+					transitionSpec = { NavMotion.open },
 					popTransitionSpec = { NavMotion.close },
 					predictivePopTransitionSpec = { NavMotion.close },
 					entryProvider = entryProvider {

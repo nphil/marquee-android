@@ -50,16 +50,18 @@ class FakeArt(private val context: Context, private val client: OkHttpClient) {
 
 	/**
 	 * Waits until some picture has been asked for and every one asked for has arrived, then until another moment
-	 * has passed with nothing new asked for: a lazy grid asks for its rows' posters as they come into view.
+	 * has passed with nothing new asked for, or as long as a picture may take to load has gone by: a lazy grid asks
+	 * for its rows' posters as they come into view.
 	 */
 	fun awaitSettled(rule: ComposeTestRule) {
 		rule.waitUntil("a picture asked for and none still on its way", LoadMillis) { asked.get() > 0 && pending.get() == 0 }
+		val end = System.currentTimeMillis() + LoadMillis
 		do {
 			val before = asked.get()
 			Thread.sleep(SettleMillis)
 			rule.waitForIdle()
 			rule.waitUntil("no picture still on its way", LoadMillis) { pending.get() == 0 }
-		} while (asked.get() != before)
+		} while (asked.get() != before && System.currentTimeMillis() < end)
 	}
 
 	private inner class Counting : EventListener() {

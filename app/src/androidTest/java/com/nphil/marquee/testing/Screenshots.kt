@@ -33,6 +33,13 @@ fun Bitmap.saveScreenshot(name: String) {
 	publish(file)
 }
 
+/** Saves [text] as `<name>.txt` among the review screenshots: the numbers behind a picture. */
+fun saveNote(name: String, text: String) {
+	val file = File(screenshotFolder, "$name.txt")
+	file.writeText(text)
+	publish(file)
+}
+
 /**
  * Copies [file] into [ReviewFolder] through the shell: scoped storage keeps an app out of Download, and the shell is
  * not kept out. UiAutomation starts a command without a shell, so `&&` and quotes would be passed on as arguments:

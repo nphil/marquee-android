@@ -11,7 +11,6 @@ import com.nphil.marquee.core.showsWatched
 import com.nphil.marquee.core.spokenSummary
 import com.nphil.marquee.core.unwatchedBadge
 import com.nphil.marquee.ui.components.PosterCard
-import com.nphil.marquee.ui.posterSharedElement
 
 /**
  * A title's poster as a shelf or a grid draws it: its art, badge and progress, and the caption the screen picks. The art
@@ -44,6 +43,6 @@ fun ItemPoster(
 		onClick = onClick,
 		onLongClick = onLongClick,
 		onLongClickLabel = onLongClickLabel,
-		artModifier = Modifier.posterSharedElement(item.ratingKey),
+		opens = item.ratingKey,
 	)
 }

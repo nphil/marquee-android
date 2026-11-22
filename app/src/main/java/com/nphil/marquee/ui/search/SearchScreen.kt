@@ -76,7 +76,6 @@ import com.nphil.marquee.ui.components.PlexArt
 import com.nphil.marquee.ui.components.RetryButton
 import com.nphil.marquee.ui.components.SectionHeader
 import com.nphil.marquee.ui.components.TextAction
-import com.nphil.marquee.ui.posterSharedElement
 import com.nphil.marquee.ui.theme.Radius
 import com.nphil.marquee.ui.theme.Size
 import com.nphil.marquee.ui.theme.Space
@@ -321,7 +320,7 @@ private fun ResultGrids(groups: List<PlexHub>, width: Dp, onOpen: (PlexItem) -> 
 							progress = item.progress,
 							description = item.spokenSummary,
 							onClick = { onOpen(item) },
-							artModifier = Modifier.posterSharedElement(item.ratingKey),
+							opens = item.ratingKey,
 						)
 					}
 				}

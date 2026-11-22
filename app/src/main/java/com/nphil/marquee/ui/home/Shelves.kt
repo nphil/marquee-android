@@ -27,7 +27,6 @@ import com.nphil.marquee.ui.browse.MenuAction
 import com.nphil.marquee.ui.components.EpisodeCard
 import com.nphil.marquee.ui.components.SectionHeader
 import com.nphil.marquee.ui.components.ShelfRow
-import com.nphil.marquee.ui.posterSharedElement
 import com.nphil.marquee.ui.theme.Space
 
 /** What Home's shelves do. The screen builds it from its model and the navigator; a test builds one that records. */
@@ -107,7 +106,7 @@ private fun ContinueCard(
 			onClick = { actions.open(item) },
 			onLongClick = { menu = true },
 			onLongClickLabel = "More options",
-			artModifier = Modifier.posterSharedElement(item.ratingKey),
+			opens = item.ratingKey,
 		)
 		if (menu) {
 			ActionMenu(

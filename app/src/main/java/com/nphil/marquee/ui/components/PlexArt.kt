@@ -56,12 +56,11 @@ class PlexImages(
 	/** The server's identifier: part of every cache key, so two servers never share an entry. */
 	val scope: String,
 ) {
-	internal fun request(context: Context, path: String?, widthPx: Int, heightPx: Int): ImageRequest? {
+	internal fun request(context: Context, path: String?, widthPx: Int, heightPx: Int, placeholder: String? = null): ImageRequest? {
 		val address = base ?: return null
 		val source = path ?: return null
 		val url = PlexImageUrl.transcoded(source, address, widthPx, heightPx) ?: return null
-		// The key leaves out the address, so the same art is not fetched again over a different one.
-		val key = "$scope|$source|${widthPx}x$heightPx"
+		val key = key(source, widthPx, heightPx)
 		return ImageRequest.Builder(context)
 			.data(url)
 			.size(Size(widthPx, heightPx))
@@ -69,9 +68,13 @@ class PlexImages(
 			.httpHeaders(headers)
 			.memoryCacheKey(key)
 			.diskCacheKey(key)
+			.placeholderMemoryCacheKey(placeholder)
 			.crossfade(150)
 			.build()
 	}
+
+	/** The cache entry of [path] asked of the server at [widthPx] by [heightPx]. It leaves out the address, so the same art is not fetched again over a different one. */
+	internal fun key(path: String, widthPx: Int, heightPx: Int) = "$scope|$path|${widthPx}x$heightPx"
 
 	companion object {
 		fun of(server: PlexServer, identity: ClientIdentity, address: String?): PlexImages {
@@ -130,9 +133,20 @@ object PlexImageUrl {
 }
 
 /**
+ * Art to ask of the server: [path] drawn [width] by [height], its corners rounded by [radius]. A poster or card hands
+ * its own to the page it opens, which draws it from memory until its own art has loaded, so the page's art is never
+ * blank and the picture does not change as the page grows from the poster.
+ */
+@Immutable
+data class ArtSpec(val path: String, val width: Dp, val height: Dp, val radius: Dp)
+
+private fun Dp.pixels(density: Float) = ceil(value * density).toInt()
+
+/**
  * A Plex image at [widthDp] by [heightDp], asked of the server at exactly the pixels that size takes once the size
  * has held still ([rememberSettled]). Art that is missing, or not loaded yet, shows the quiet track colour with a
- * film glyph.
+ * film glyph. A [placeholder] is art that is already on screen elsewhere: it is drawn from memory until [path] has
+ * loaded, and in place of it while there is no [path] yet.
  */
 @Composable
 fun PlexArt(
@@ -141,13 +155,23 @@ fun PlexArt(
 	heightDp: Dp,
 	modifier: Modifier = Modifier,
 	contentScale: ContentScale = ContentScale.Crop,
+	placeholder: ArtSpec? = null,
 ) {
 	val images = LocalPlexImages.current
 	val context = LocalContext.current
 	val density = LocalDensity.current.density
-	val wanted = IntSize(ceil(widthDp.value * density).toInt(), ceil(heightDp.value * density).toInt())
+	val wanted = IntSize(widthDp.pixels(density), heightDp.pixels(density))
 	val size = rememberSettled(wanted, path)
-	val request = remember(images, path, size) { images?.request(context, path, size.width, size.height) }
+	val request = remember(images, path, size, placeholder, density) {
+		when {
+			path != null -> {
+				val shown = placeholder?.let { images?.key(it.path, it.width.pixels(density), it.height.pixels(density)) }
+				images?.request(context, path, size.width, size.height, shown)
+			}
+			placeholder != null -> images?.request(context, placeholder.path, placeholder.width.pixels(density), placeholder.height.pixels(density))
+			else -> null
+		}
+	}
 	Box(
 		modifier = modifier.size(widthDp, heightDp).background(lucent.trackOff),
 		contentAlignment = Alignment.Center,

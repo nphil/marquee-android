@@ -53,6 +53,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.nphil.marquee.R
+import com.nphil.marquee.ui.posterSharedElement
 import com.nphil.marquee.ui.theme.Radius
 import com.nphil.marquee.ui.theme.Size
 import com.nphil.marquee.ui.theme.Space
@@ -64,6 +65,14 @@ fun posterHeight(width: Dp): Dp = (width.value * 1.5f).roundToInt().dp
 
 /** A card's 16:9 art, in whole dp. */
 fun cardHeight(width: Dp): Dp = (width.value * 9f / 16f).roundToInt().dp
+
+/**
+ * The art of a poster or card that opens the page of [opens], if it does: it is that page's shared element, and hands
+ * the page the art it shows, so the page's hero starts as the very picture that was tapped.
+ */
+@Composable
+private fun Modifier.opensPage(opens: String?, path: String?, width: Dp, height: Dp, radius: Dp): Modifier =
+	if (opens == null) this else posterSharedElement(opens, path?.let { ArtSpec(it, width, height, radius) })
 
 /** A 3 dp progress track: accent on the off track (DESIGN §8.1). Decoration; the label carries the time left. */
 @Composable
@@ -143,8 +152,8 @@ fun Modifier.pressable(
  * A poster in a shelf or grid: 2:3 art with its badge, a progress track when part-watched (kept as empty
  * space otherwise, so titles line up), then a one-line caption title and a details or sort-value [line]
  * (DESIGN §8.1). [reserveLine] keeps room for the line on a title that has none, so a grid row lines up.
- * [description] replaces what a screen reader says, which is the title and its watched state. [artModifier]
- * applies to the art alone, which is where a detail page's shared element starts; [onLongClickLabel] names
+ * [description] replaces what a screen reader says, which is the title and its watched state. [opens] is the rating key
+ * of the title page the art opens: that page's hero grows from the art when it is tapped. [onLongClickLabel] names
  * what a long press does for screen readers.
  */
 @Composable
@@ -163,9 +172,10 @@ fun PosterCard(
 	onClick: () -> Unit,
 	onLongClick: (() -> Unit)? = null,
 	onLongClickLabel: String? = null,
-	artModifier: Modifier = Modifier,
+	opens: String? = null,
 ) {
-	val shape = RoundedCornerShape(if (width >= 96.dp) Radius.tile else Radius.control)
+	val radius = if (width >= 96.dp) Radius.tile else Radius.control
+	val shape = RoundedCornerShape(radius)
 	val spoken = description ?: spokenTitle(title, watched, unwatchedCount, progress)
 	Column(
 		modifier = modifier
@@ -175,7 +185,7 @@ fun PosterCard(
 		verticalArrangement = Arrangement.spacedBy(Space.s1),
 	) {
 		Box {
-			PlexArt(artPath, width, posterHeight(width), artModifier.clip(shape))
+			PlexArt(artPath, width, posterHeight(width), Modifier.opensPage(opens, artPath, width, posterHeight(width), radius).clip(shape))
 			PosterBadge(unwatchedCount, watched)
 		}
 		if (progress != null) ProgressBar(progress) else Spacer(Modifier.height(3.dp))
@@ -204,7 +214,7 @@ fun PosterCard(
 
 /**
  * A landscape card: 16:9 art, then under it, never over it, the progress, the [title] and a [line] such as
- * "S2 · E5 · 42 min left" (DESIGN §8.1).
+ * "S2 · E5 · 42 min left" (DESIGN §8.1). [opens] is as for [PosterCard].
  */
 @Composable
 fun EpisodeCard(
@@ -218,7 +228,7 @@ fun EpisodeCard(
 	onClick: () -> Unit,
 	onLongClick: (() -> Unit)? = null,
 	onLongClickLabel: String? = null,
-	artModifier: Modifier = Modifier,
+	opens: String? = null,
 ) {
 	val spoken = description ?: listOfNotNull(title, line).joinToString(", ")
 	Column(
@@ -228,7 +238,7 @@ fun EpisodeCard(
 			.semantics(mergeDescendants = true) { contentDescription = spoken },
 		verticalArrangement = Arrangement.spacedBy(Space.s2),
 	) {
-		PlexArt(artPath, width, cardHeight(width), artModifier.clip(RoundedCornerShape(Radius.card)))
+		PlexArt(artPath, width, cardHeight(width), Modifier.opensPage(opens, artPath, width, cardHeight(width), Radius.card).clip(RoundedCornerShape(Radius.card)))
 		if (progress != null) ProgressBar(progress) else Spacer(Modifier.height(3.dp))
 		Column(Modifier.clearAndSetSemantics { }, verticalArrangement = Arrangement.spacedBy(Space.s1 / 2)) {
 			Text(

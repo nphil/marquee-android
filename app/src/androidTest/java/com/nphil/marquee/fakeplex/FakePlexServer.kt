@@ -22,6 +22,11 @@ import okio.Buffer
 import java.io.IOException
 import java.net.ConnectException
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+
+/** The longest a [FakePlexServer.Hold] keeps a request, so a test that forgets to release one cannot hang the run. */
+private const val HOLD_SECONDS = 60L
 
 /**
  * The iPhone app's fake Plex (`core/UITests/FakePlex/`) on the emulator: a [MockWebServer] answering from the fixture
@@ -62,6 +67,26 @@ class FakePlexServer private constructor(fixtures: Fixtures) {
 
 	fun clearRequests() = log.clear()
 
+	private val holds = CopyOnWriteArrayList<Hold>()
+
+	/**
+	 * Keeps every request whose URL [matches] waiting, as a slow network does, until the returned [Hold] is released:
+	 * a test that films a page opening decides at which frame an answer arrives.
+	 */
+	fun hold(matches: (HttpUrl) -> Boolean): Hold = Hold(matches).also { holds += it }
+
+	/** What [hold] keeps back. */
+	class Hold internal constructor(internal val matches: (HttpUrl) -> Boolean) {
+		private val open = CountDownLatch(1)
+
+		/** Lets the requests waiting for it, and any that come later, through. */
+		fun release() = open.countDown()
+
+		internal fun await() {
+			open.await(HOLD_SECONDS, TimeUnit.SECONDS)
+		}
+	}
+
 	/** Routes every request to the fake; share it with `NativeTransport`, Coil or Media3 as the test needs. */
 	val client: OkHttpClient = OkHttpClient.Builder().addInterceptor(Rewrite()).build()
 
@@ -87,6 +112,7 @@ class FakePlexServer private constructor(fixtures: Fixtures) {
 	fun install() = NativeCore.install(NativeTransport(client))
 
 	fun stop() {
+		holds.forEach { it.release() }
 		mock.shutdown()
 	}
 
@@ -120,6 +146,7 @@ class FakePlexServer private constructor(fixtures: Fixtures) {
 		override fun intercept(chain: Interceptor.Chain): Response {
 			val request = chain.request()
 			if (!router.isReachable(request.url.host)) throw ConnectException("${request.url.host} is unreachable in the fixtures")
+			holds.firstOrNull { it.matches(request.url) }?.await()
 			val target: HttpUrl = request.url.newBuilder().scheme("http").host("127.0.0.1").port(mock.port).build()
 			return chain.proceed(request.newBuilder().url(target).header(ORIGINAL, request.url.toString()).build())
 		}

@@ -93,11 +93,14 @@ Each phase ends with a release installed on the tablet.
    - Detail: the `item.*` calls (`DetailCalls.swift`) serve a title, its seasons and episodes, extras,
      related shelves, watched marks and watchlist changes. `DetailModel` loads the item first and the rest
      in parallel. Pages are Navigation 3 routes (`ui/AppNavigation.kt`); the poster-to-hero shared element
-     runs only from the poster that was tapped. The tracks sheet is read-only and there is no Play or
+     runs only from the poster that was tapped, and the page's hero is on screen from the first frame,
+     drawing that poster's cached picture until its own has loaded, so an open is one flight whenever the
+     title's answer arrives. The tracks sheet is read-only and there is no Play or
      Resume until the player. An episode row swipes from the start edge to mark it watched or unwatched, as
      on the iPhone; the check and the More menu do the same.
    - The instrumented tests run `DetailBridgeTest` (the calls) and `DetailScreenTest` (the pages, with
      the app's own session restored onto the fake server) against the iPhone's FakePlex fixtures.
+     `BackAnimationTest` films a page closing frame by frame.
    - The baseline profile is recorded against the `nonMinifiedRelease` build, the one build with
      `src/nonMinifiedRelease`. Its manifest names `ProfilingApplication` through the `marqueeApplication`
      placeholder; that application serves the fixtures from a fake server and writes the fixture account
