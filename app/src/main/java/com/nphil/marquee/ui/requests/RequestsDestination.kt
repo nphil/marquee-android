@@ -21,6 +21,7 @@ import com.nphil.marquee.AppContainer
 import com.nphil.marquee.R
 import com.nphil.marquee.core.SeerrFeed
 import com.nphil.marquee.core.SeerrKind
+import com.nphil.marquee.ui.NavMotion
 import com.nphil.marquee.ui.components.EmptyState
 import com.nphil.marquee.ui.theme.lucent
 import kotlinx.serialization.modules.SerializersModule
@@ -87,6 +88,8 @@ private fun RequestsStack(container: AppContainer, onBack: (() -> Unit)?) {
 			rememberSaveableStateHolderNavEntryDecorator<NavKey>(),
 			rememberViewModelStoreNavEntryDecorator<NavKey>(),
 		),
+		popTransitionSpec = { NavMotion.close },
+		predictivePopTransitionSpec = { NavMotion.close },
 		entryProvider = entryProvider {
 			entry<RequestsHome> { RequestsHomeScreen(container, nav, onBack) }
 			entry<RequestsBrowse> { route -> BrowseScreen(container, route.feed, nav) }

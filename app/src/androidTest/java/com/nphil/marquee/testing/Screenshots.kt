@@ -24,10 +24,12 @@ private val screenshotFolder: File by lazy {
 }
 
 /** Saves what the node shows as `<name>.png` among the review screenshots, and copies it to [ReviewFolder]. */
-fun SemanticsNodeInteraction.saveScreenshot(name: String) {
-	val bitmap = captureToImage().asAndroidBitmap()
+fun SemanticsNodeInteraction.saveScreenshot(name: String) = captureToImage().asAndroidBitmap().saveScreenshot(name)
+
+/** Saves the bitmap as `<name>.png` among the review screenshots, and copies it to [ReviewFolder]. */
+fun Bitmap.saveScreenshot(name: String) {
 	val file = File(screenshotFolder, "$name.png")
-	file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+	file.outputStream().use { compress(Bitmap.CompressFormat.PNG, 100, it) }
 	publish(file)
 }
 

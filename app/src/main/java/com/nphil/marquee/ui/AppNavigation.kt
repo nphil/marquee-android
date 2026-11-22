@@ -160,13 +160,13 @@ internal fun Modifier.heroSharedElement(ratingKey: String): Modifier = zoom(rati
 private fun Modifier.zoom(ratingKey: String, radius: androidx.compose.ui.unit.Dp): Modifier {
 	val scope = LocalSharedTransitionScope.current ?: return this
 	val visibility = LocalEntryVisibility.current ?: return this
-	val effects = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
 	return with(scope) {
 		this@zoom.sharedBounds(
 			sharedContentState = rememberSharedContentState(PosterKey(ratingKey)),
 			animatedVisibilityScope = visibility,
-			enter = fadeIn(effects),
-			exit = fadeOut(effects),
+			enter = fadeIn(NavMotion.linear()),
+			exit = fadeOut(NavMotion.linear()),
+			boundsTransform = NavMotion.bounds,
 			resizeMode = SharedTransitionScope.ResizeMode.scaleToBounds(ContentScale.Crop, Alignment.Center),
 			clipInOverlayDuringTransition = OverlayClip(RoundedCornerShape(radius)),
 		)
@@ -209,7 +209,8 @@ fun AppNavigation(container: AppContainer, shell: @Composable (Navigator) -> Uni
 					),
 					sharedTransitionScope = this,
 					transitionSpec = { fadeIn(effects) togetherWith fadeOut(effects) },
-					popTransitionSpec = { fadeIn(effects) togetherWith fadeOut(effects) },
+					popTransitionSpec = { NavMotion.close },
+					predictivePopTransitionSpec = { NavMotion.close },
 					entryProvider = entryProvider {
 						entry<Root> { Visible { shell(navigator) } }
 						entry<Detail> { route -> Visible { DetailScreen(container, route, navigator) } }
