@@ -142,7 +142,7 @@ internal fun rememberPictureInPicture(
 	LaunchedEffect(state) { activity.setPictureInPictureParams(params(activity, state)) }
 
 	DisposableEffect(activity, pip) {
-		pip.enterNow = { activity.enterPictureInPictureMode(params(activity, current)) }
+		pip.enterNow = { if (current.ready) activity.enterPictureInPictureMode(params(activity, current)) }
 		val changed = Consumer<PictureInPictureModeChangedInfo> { pip.active = it.isInPictureInPictureMode }
 		activity.addOnPictureInPictureModeChangedListener(changed)
 		pip.active = activity.isInPictureInPictureMode

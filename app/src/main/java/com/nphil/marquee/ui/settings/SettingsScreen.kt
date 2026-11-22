@@ -38,6 +38,8 @@ import com.nphil.marquee.diagnostics.Diag
 import com.nphil.marquee.diagnostics.DiagScreen
 import com.nphil.marquee.playback.rememberPlaybackPrefs
 import com.nphil.marquee.session.AppSession
+import com.nphil.marquee.cast.CastProvider
+import com.nphil.marquee.ui.cast.CastSettingsPage
 import com.nphil.marquee.ui.components.Avatar
 import com.nphil.marquee.ui.components.GroupGap
 import com.nphil.marquee.ui.components.GroupRow
@@ -66,6 +68,8 @@ enum class SettingsPage(val title: String) {
 	Bazarr("Bazarr"),
 	SpeechDock("SpeechDock"),
 	TvRemote("LumaTV Remote"),
+	Chromecast("Chromecast"),
+	AirPlay("AirPlay"),
 	DiagnosticLogs("Diagnostic Logs"),
 	Licences("Licences"),
 }
@@ -202,27 +206,39 @@ private fun SettingsList(
 			}
 			item(key = "integrations") { Heading("Integrations") }
 			item(key = "seerr") {
-				PageRow(0, 4, SettingsPage.Seerr, selected, onOpen) {
+				PageRow(0, 6, SettingsPage.Seerr, selected, onOpen) {
 					IconBadge(R.drawable.ic_playlist_add)
 					Labels("Seerr", seerrSummary)
 				}
 			}
 			item(key = "bazarr") {
-				PageRow(1, 4, SettingsPage.Bazarr, selected, onOpen) {
+				PageRow(1, 6, SettingsPage.Bazarr, selected, onOpen) {
 					IconBadge(R.drawable.ic_closed_caption)
 					Labels("Bazarr", if (bazarr == null) "Not set up" else "Subtitle search")
 				}
 			}
 			item(key = "speechDock") {
-				PageRow(2, 4, SettingsPage.SpeechDock, selected, onOpen) {
+				PageRow(2, 6, SettingsPage.SpeechDock, selected, onOpen) {
 					IconBadge(R.drawable.ic_match_case)
 					Labels("SpeechDock", if (speechDock == null) "Off" else "Spoken subtitle timing")
 				}
 			}
 			item(key = "tvRemote") {
-				PageRow(3, 4, SettingsPage.TvRemote, selected, onOpen) {
+				PageRow(3, 6, SettingsPage.TvRemote, selected, onOpen) {
 					IconBadge(R.drawable.ic_tv_remote)
 					Labels(SettingsPage.TvRemote.title, if (remote.enabled) "On" else "Off")
+				}
+			}
+			item(key = "chromecast") {
+				PageRow(4, 6, SettingsPage.Chromecast, selected, onOpen) {
+					IconBadge(R.drawable.ic_cast)
+					Labels("Chromecast", if (container.cast[CastProvider.Chromecast].enabled) "On" else "Off")
+				}
+			}
+			item(key = "airPlay") {
+				PageRow(5, 6, SettingsPage.AirPlay, selected, onOpen) {
+					IconBadge(R.drawable.ic_tv)
+					Labels("AirPlay", if (container.cast[CastProvider.AirPlay].enabled) "On" else "Off")
 				}
 			}
 			item(key = "about") { Heading("About") }
@@ -324,6 +340,8 @@ private fun SettingsDetail(
 			SettingsPage.Bazarr -> SubtitleServicePage(SubtitleService.Bazarr, padding.plusInset())
 			SettingsPage.SpeechDock -> SubtitleServicePage(SubtitleService.SpeechDock, padding.plusInset())
 			SettingsPage.TvRemote -> TvRemoteSettings(padding.plusInset())
+			SettingsPage.Chromecast -> CastSettingsPage(padding.plusInset(), CastProvider.Chromecast)
+			SettingsPage.AirPlay -> CastSettingsPage(padding.plusInset(), CastProvider.AirPlay)
 			SettingsPage.Licences -> LicencesPage(padding.plusInset())
 		}
 	}

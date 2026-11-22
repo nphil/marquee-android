@@ -79,6 +79,9 @@ import com.nphil.marquee.playback.HideSystemBars
 import com.nphil.marquee.playback.LocalPlaybackHttp
 import com.nphil.marquee.playback.PlayerModel
 import com.nphil.marquee.playback.PlayerPhase
+import com.nphil.marquee.cast.CastProvider
+import com.nphil.marquee.ui.cast.CastChooser
+import com.nphil.marquee.ui.cast.LookForCastDevices
 import com.nphil.marquee.ui.theme.Radius
 import com.nphil.marquee.ui.theme.Space
 import kotlinx.coroutines.delay
@@ -189,7 +192,20 @@ fun PlayerScreen(
 	}
 	val playing = model.isPlaying
 	val engine = model.player
+	val cast = container.cast.takeUnless { model.isOffline }
+	val receiver = model.castReceiver
+	val pendingReceiver = cast?.connecting
+	val castStatus = when {
+		pendingReceiver != null -> "Connecting to ${pendingReceiver.name}…"
+		receiver == null -> null
+		model.phase is PlayerPhase.Failed -> "${receiver.id.provider.label} · ${receiver.name}"
+		model.phase == PlayerPhase.Starting || model.isBuffering -> "Loading on ${receiver.name}…"
+		playing -> "Playing on ${receiver.name}"
+		else -> "Paused on ${receiver.name}"
+	}
 	val pip = rememberPictureInPicture(model)
+	if (cast != null) LookForCastDevices(cast, visible = !pip.active)
+	var choosingCast by rememberSaveable { mutableStateOf(false) }
 	val haptics = LocalHapticFeedback.current
 	val accent = rememberPlayerAccent()
 	val window = LocalActivity.current?.window
@@ -219,7 +235,8 @@ fun PlayerScreen(
 	val focus = remember { FocusRequester() }
 	val lastPages = remember { arrayOf(listOf(TracksPage.Subtitles)) }
 	if (pages.isNotEmpty()) lastPages[0] = pages
-	val menuOpen = pages.isNotEmpty()
+	val panelOpen = pages.isNotEmpty()
+	val menuOpen = panelOpen || choosingCast
 
 	val hold = remember { PositionHold() }
 	val scrub = remember(model, hold) {
@@ -254,7 +271,11 @@ fun PlayerScreen(
 
 	// Back closes a page, then the panel, then the lock; with none of them open it is not taken.
 	fun back(): Boolean = when {
-		menuOpen -> {
+		choosingCast -> {
+			choosingCast = false
+			true
+		}
+		panelOpen -> {
 			pages = pages.dropLast(1)
 			true
 		}
@@ -273,7 +294,7 @@ fun PlayerScreen(
 		}
 		if (locked || menuOpen) return false
 		val action = keyAction(event.key, rootFocused) ?: return false
-		val player = model.player ?: return false
+		if (!model.canControl) return false
 		if (event.nativeKeyEvent.repeatCount > 0 && !action.repeats) return true
 		touches++
 		when (action) {
@@ -285,12 +306,12 @@ fun PlayerScreen(
 			KeyAction.Play -> {
 				shown = true
 				model.userActed()
-				player.play()
+				model.setPlaying(true)
 			}
 			KeyAction.Pause -> {
 				shown = true
 				model.userActed()
-				player.pause()
+				model.pause()
 			}
 			KeyAction.Back -> {
 				shown = true
@@ -301,13 +322,24 @@ fun PlayerScreen(
 				model.skip(model.skipInterval)
 			}
 			KeyAction.VolumeUp, KeyAction.VolumeDown -> {
-				muted = false
-				volumeMeter.show(volume.step(up = action == KeyAction.VolumeUp))
+				if (receiver?.id?.provider == CastProvider.AirPlay) return false
+				if (receiver != null) {
+					model.adjustCastVolume(if (action == KeyAction.VolumeUp) 0.05 else -0.05)
+				} else {
+					muted = false
+					volumeMeter.show(volume.step(up = action == KeyAction.VolumeUp))
+				}
 			}
-			KeyAction.Aspect -> changeAspect(if (aspect == PlayerAspect.Fit) PlayerAspect.Fill else PlayerAspect.Fit)
+			KeyAction.Aspect -> {
+				if (receiver != null) return false
+				changeAspect(if (aspect == PlayerAspect.Fit) PlayerAspect.Fill else PlayerAspect.Fit)
+			}
 			KeyAction.Mute -> {
-				muted = !muted
-				volumeMeter.show(if (muted) 0f else volume.level())
+				if (receiver?.id?.provider == CastProvider.AirPlay) return false
+				if (receiver != null) model.toggleCastMute() else {
+					muted = !muted
+					volumeMeter.show(if (muted) 0f else volume.level())
+				}
 			}
 			KeyAction.Next -> {
 				shown = true
@@ -375,6 +407,10 @@ fun PlayerScreen(
 	LaunchedEffect(model) {
 		model.controlTaps.collect { toggle -> if (!locked) shown = if (toggle) !shown else true }
 	}
+	LaunchedEffect(cast?.enabled) { if (cast?.enabled != true) choosingCast = false }
+	LaunchedEffect(cast?.connectionProblem) {
+		if (!choosingCast) cast?.connectionProblem?.let { container.toasts.show(it) }
+	}
 	LaunchedEffect(menuOpen) {
 		model.menusOpen = menuOpen
 		if (!menuOpen) focus.requestFocus()
@@ -398,7 +434,7 @@ fun PlayerScreen(
 		}
 	}
 	// The controls stay up while the picture is still, a menu is open or the bar is being scrubbed; else they hide.
-	val still = !playing || model.isBuffering || engine == null
+	val still = !playing || model.isBuffering
 	LaunchedEffect(shown, still, touches, menuOpen, scrub.active) {
 		if (still || menuOpen || scrub.active) {
 			shown = true
@@ -407,8 +443,8 @@ fun PlayerScreen(
 			shown = false
 		}
 	}
-	LaunchedEffect(menuOpen) {
-		if (!menuOpen) return@LaunchedEffect
+	LaunchedEffect(panelOpen) {
+		if (!panelOpen) return@LaunchedEffect
 		panelTouched = SystemClock.elapsedRealtime()
 		while (true) {
 			val left = PANEL_DWELL_MS - (SystemClock.elapsedRealtime() - panelTouched)
@@ -454,15 +490,27 @@ fun PlayerScreen(
 			)
 			if (!pip.active) {
 				Box(Modifier.fillMaxSize().pointerInput(picture) { detectPictureGestures(picture) })
-				SkipRipple(model.skipping, Modifier.fillMaxSize())
+			}
+		} else if (receiver != null && !pip.active) {
+			Box(Modifier.fillMaxSize().pointerInput(model) {
+				detectTapGestures { point ->
+					if (locked) unlockStamp++ else model.tap(point.x, size.width.toFloat())
+				}
+			})
+			if (!chromeOn && !locked && castStatus != null) {
+				Text(
+					castStatus, color = PlayerInk.ink2, style = MaterialTheme.typography.bodyLarge,
+					modifier = Modifier.align(Alignment.Center).padding(Space.s6), textAlign = TextAlign.Center,
+				)
 			}
 		}
+		if (model.canControl && !pip.active) SkipRipple(model.skipping, Modifier.fillMaxSize())
 		if (!pip.active) {
 			val motion = MaterialTheme.motionScheme
 			when (val phase = model.phase) {
 				PlayerPhase.Starting -> LoadingIndicator(Modifier.align(Alignment.Center), color = accent)
 				is PlayerPhase.Failed -> Failure(phase.message, accent, onRetry = model::retry, onClose = onClose, modifier = Modifier.align(Alignment.Center))
-				PlayerPhase.Playing -> if (engine != null && model.isBuffering && !chromeOn) LoadingIndicator(Modifier.align(Alignment.Center), color = accent)
+				PlayerPhase.Playing -> if (model.isBuffering && !chromeOn) LoadingIndicator(Modifier.align(Alignment.Center), color = accent)
 			}
 			AnimatedVisibility(
 				visible = chromeOn,
@@ -475,8 +523,8 @@ fun PlayerScreen(
 				val spans = plan?.let { it.intro + it.credits }.orEmpty()
 				val state = ChromeState(
 					title = model.title,
-					subtitle = model.subtitle,
-					ready = engine != null,
+					subtitle = castStatus ?: model.subtitle,
+					ready = model.canControl,
 					playing = playing,
 					buffering = model.isBuffering,
 					positionMs = positionMs,
@@ -493,9 +541,10 @@ fun PlayerScreen(
 					hasAudioChoices = tracks.lists.audio.size > 1,
 					qualityLabel = QualityPreset.title(model.quality).takeIf { model.quality != QualityPreset.AUTO },
 					canChangeQuality = !model.isOffline,
-					canPip = pip.supported,
+					canPip = pip.supported && receiver == null,
 					hasChapters = plan?.chapters?.isNotEmpty() == true,
 					hasNext = model.next != null,
+					casting = receiver != null,
 				)
 				val actions = ChromeActions(
 					back = onClose,
@@ -529,6 +578,9 @@ fun PlayerScreen(
 						touches++
 						showsRemaining = !showsRemaining
 					},
+					cast = if (cast?.enabled == true && (model.canControl || receiver != null || pendingReceiver != null)) {
+						{ pages = emptyList(); choosingCast = true }
+					} else null,
 				)
 				PlayerChrome(state, actions, scrub, model.previews)
 			}
@@ -558,12 +610,12 @@ fun PlayerScreen(
 				modifier = Modifier.align(Alignment.CenterEnd).safeDrawingPadding().padding(Space.s6),
 			)
 
-			if (menuOpen) {
+			if (panelOpen) {
 				// A tap outside the panel closes it. The picture stays in view, so a change of look is seen as it is made.
 				Box(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures(onTap = { pages = emptyList() }) })
 			}
 			AnimatedVisibility(
-				visible = menuOpen,
+				visible = panelOpen,
 				modifier = Modifier.align(Alignment.CenterEnd),
 				enter = fadeIn(motion.defaultEffectsSpec()) + slideInHorizontally(motion.defaultSpatialSpec<IntOffset>()) { it / 3 },
 				exit = fadeOut(motion.fastEffectsSpec()) + slideOutHorizontally(motion.fastSpatialSpec<IntOffset>()) { it / 3 },
@@ -587,6 +639,14 @@ fun PlayerScreen(
 				UnlockPill(unlockStamp, onUnlock = { unlock() }, modifier = Modifier.align(Alignment.BottomStart).safeDrawingPadding().padding(Space.s4))
 			}
 		}
+	}
+	if (choosingCast && cast?.enabled == true && !pip.active) {
+		CastChooser(
+			cast = cast,
+			onConnect = model::connectCast,
+			onLocal = { model.disconnectCast(); choosingCast = false },
+			onClose = { model.cancelCastConnect(); choosingCast = false },
+		)
 	}
 }
 

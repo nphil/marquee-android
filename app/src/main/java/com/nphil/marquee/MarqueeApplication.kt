@@ -12,6 +12,7 @@ import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import com.nphil.marquee.browse.BrowseEnvironment
 import com.nphil.marquee.browse.SessionBrowseSource
 import com.nphil.marquee.browse.Snapshots
+import com.nphil.marquee.cast.Casting
 import com.nphil.marquee.core.ClientIdentity
 import com.nphil.marquee.core.LibraryChanges
 import com.nphil.marquee.core.MarqueeCore
@@ -60,6 +61,8 @@ class AppContainer(
 	val seerr = Seerr(core, settings, SecretStore(context, "seerr"), session, scope)
 	internal val subtitleServices = SubtitleServices(settings, SecretStore(context, "subtitle_services"), scope)
 	internal val tvRemote by lazy { TvRemote(context.applicationContext, scope) }
+
+	internal val cast = Casting(context, settings, scope)
 
 	/** What this app changed on the server, so every screen showing a changed title refreshes it. */
 	val changes = LibraryChanges()

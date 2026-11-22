@@ -68,24 +68,27 @@ internal fun MorePage(
 	onPush: (TracksPage) -> Unit,
 	onClose: () -> Unit,
 ) {
+	val local = model.castReceiver == null
 	val settings = buildList {
 		if (!model.isOffline) add(NavEntry(R.drawable.ic_tune, "Quality", QualityPreset.title(model.quality), TracksPage.Quality))
-		add(NavEntry(R.drawable.ic_aspect_ratio, "Aspect Ratio", aspect.label, TracksPage.Aspect))
-		add(NavEntry(R.drawable.ic_speed, "Playback Speed", speedTitle(model.speed), TracksPage.Speed))
+		if (local) {
+			add(NavEntry(R.drawable.ic_aspect_ratio, "Aspect Ratio", aspect.label, TracksPage.Aspect))
+			add(NavEntry(R.drawable.ic_speed, "Playback Speed", speedTitle(model.speed), TracksPage.Speed))
+		}
 		if (model.plan?.chapters?.isNotEmpty() == true) add(NavEntry(R.drawable.ic_chapters, "Chapters", null, TracksPage.Chapters))
 		add(NavEntry(R.drawable.ic_bedtime, "Sleep Timer", sleepSummary(model, sleep), TracksPage.Sleep))
 	}
 	Column(verticalArrangement = Arrangement.spacedBy(GroupGap)) {
 		settings.forEachIndexed { index, entry -> NavRow(index, settings.size, entry.label, entry.value, entry.icon) { onPush(entry.page) } }
 	}
-	val tools = if (pip.supported) 3 else 2
+	val tools = if (pip.supported && local) 3 else 2
 	Column(verticalArrangement = Arrangement.spacedBy(GroupGap)) {
 		NavRow(0, tools, "Playback Info", null, R.drawable.ic_info) { onPush(TracksPage.Info) }
 		IconSwitchRow(1, tools, R.drawable.ic_stats, "Stats for Nerds", model.showsStats) {
 			model.toggleStats()
 			onClose()
 		}
-		if (pip.supported) {
+		if (pip.supported && local) {
 			SettingsActionRow(2, tools, R.drawable.ic_picture_in_picture, "Picture in Picture", enabled = true, onClick = {
 				onClose()
 				pip.enter()

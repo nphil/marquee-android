@@ -24,8 +24,17 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import com.nphil.marquee.AppContainer
 import com.nphil.marquee.BuildConfig
+import com.nphil.marquee.cast.CastEvent
+import com.nphil.marquee.cast.CastProvider
+import com.nphil.marquee.cast.CastReceiver
+import com.nphil.marquee.cast.CastTransport
+import com.nphil.marquee.cast.resolvesHandoff
 import com.nphil.marquee.core.AtCredits
 import com.nphil.marquee.core.AutoplayPlan
+import com.nphil.marquee.core.CastEnd
+import com.nphil.marquee.core.CastPlan
+import com.nphil.marquee.core.CastStartRequest
+import com.nphil.marquee.core.CastStatus
 import com.nphil.marquee.core.CoreException
 import com.nphil.marquee.core.CoreJson
 import com.nphil.marquee.core.FormatBadge
@@ -43,6 +52,8 @@ import com.nphil.marquee.core.StartRequest
 import com.nphil.marquee.core.SubtitlePick
 import com.nphil.marquee.core.TapAction
 import com.nphil.marquee.core.TranscodeState
+import com.nphil.marquee.core.castProgress
+import com.nphil.marquee.core.endCast
 import com.nphil.marquee.core.episodeCode
 import com.nphil.marquee.core.playAutoplay
 import com.nphil.marquee.core.playNeighbors
@@ -54,6 +65,7 @@ import com.nphil.marquee.core.playTapReset
 import com.nphil.marquee.core.playTranscode
 import com.nphil.marquee.core.subtitleSource
 import com.nphil.marquee.core.setWatched
+import com.nphil.marquee.core.startCast
 import com.nphil.marquee.core.startPlay
 import com.nphil.marquee.data.PlaybackPrefs
 import com.nphil.marquee.diagnostics.Diag
@@ -65,15 +77,19 @@ import com.nphil.marquee.downloads.startDownload
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonElement
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -125,7 +141,7 @@ class PlayerModel(
 	internal val tracks = PlayerTracks(viewModelScope, http, ::movieMs, container.core, container.subtitleServices.speechDock)
 	internal val subtitleFinder = PlayerSubtitleFinder(viewModelScope, container.core, container.subtitleServices)
 
-	private val onlineSubtitleSource get() = plan?.subtitleSource(isOffline)
+	private val onlineSubtitleSource get() = if (castReceiver == null) plan?.subtitleSource(isOffline) else null
 	internal val canFindSubtitles: Boolean get() = player != null && onlineSubtitleSource != null
 
 	/** Skip Intro and Up Next over the picture. */
@@ -137,6 +153,10 @@ class PlayerModel(
 	/** The open player; null while the stream is chosen and after a failure. */
 	var player: ExoPlayer? by mutableStateOf(null)
 		private set
+
+	internal var castReceiver: CastReceiver? by mutableStateOf(null)
+		private set
+	internal val canControl get() = player != null || (castReceiver != null && phase == PlayerPhase.Playing)
 
 	var title by mutableStateOf("")
 		private set
@@ -196,6 +216,9 @@ class PlayerModel(
 	/** Where the open stream starts in the title, in seconds: 0 for a file, the conversion's offset for the server's stream. */
 	private var origin = 0.0
 	private var session: String? = null
+	private val opening = Mutex()
+	private var lastOpened: PlayPlan? = null
+	private var stopBeforeOpening: Stop? = null
 	private var generation = 0
 	private var onDeviceFailed = false
 	private var everReady = false
@@ -203,6 +226,17 @@ class PlayerModel(
 	private var reporting = false
 	private var lastMs = 0L
 	private var ticker: Job? = null
+	private var reportJob: Job? = null
+	private var castTicker: Job? = null
+	private var castSession: String? = null
+	private var castStatus: CastStatus? = null
+	private var castSeekMs = -1L
+	private var castSeekUntil = 0L
+	private var handoff: Handoff? = null
+	private var playWhenReady = true
+	private var receiverFailed = false
+	private val castEvents: (CastEvent) -> Unit = ::castEvent
+	private val castTransport get() = if (isOffline) null else container.cast.transport
 	private var deadline: Job? = null
 	private var skipJob: Job? = null
 	private val skips = SkipBurst()
@@ -215,6 +249,7 @@ class PlayerModel(
 
 	/** The title whose play queue was last asked for its next episode. */
 	private var neighborsOf: String? = null
+	private var neighborsSession: String? = null
 
 	/** The picks made on the menus. They outlive the stream, which opens again for another audio. */
 	private var audioPick: Int? = null
@@ -330,21 +365,39 @@ class PlayerModel(
 		viewModelScope.launch { for (tap in taps) answerTap(tap) }
 	}
 
-	/** Where the title is, in milliseconds: the stream's position plus where the stream starts in the title. */
+	/** Where the title is, in milliseconds on the title's clock, regardless of which player is playing it. */
 	fun movieMs(): Long {
-		val engine = player ?: return lastMs.takeIf { it > 0 } ?: ((plan?.startAt ?: 0.0) * 1000).toLong()
-		lastMs = engine.currentPosition + (origin * 1000).toLong()
+		player?.let { lastMs = it.currentPosition + (origin * 1000).toLong() }
 		return lastMs
 	}
 
-	fun toggle() {
-		val engine = player ?: return
-		if (engine.playWhenReady) engine.pause() else engine.play()
+	private fun wantsPlay(): Boolean = player?.playWhenReady ?: playWhenReady
+
+	fun toggle() = setPlaying(!wantsPlay())
+
+	fun pause() = setPlaying(false)
+
+	internal fun setPlaying(playing: Boolean) {
+		if (castReceiver != null && canControl) {
+			if (castTransport?.setPlaying(playing) == true) playWhenReady = playing
+		} else {
+			val engine = player ?: return
+			playWhenReady = playing
+			if (playing) engine.play() else engine.pause()
+		}
 	}
 
-	fun pause() {
-		player?.pause()
+	internal fun connectCast(receiver: CastReceiver) {
+		if (!isOffline && canControl) container.cast.connect(receiver, castEvents)
 	}
+
+	internal fun disconnectCast() = castTransport?.disconnect()
+
+	internal fun cancelCastConnect() = castTransport?.cancelPending(castEvents)
+
+	internal fun adjustCastVolume(by: Double) = container.cast.adjustVolume(by)
+
+	internal fun toggleCastMute() = container.cast.toggleMute()
 
 	/** Plays at [value] times the speed, 0.5 to 2, and keeps it for every stream the title opens. */
 	@JvmName("pickSpeed")
@@ -426,13 +479,17 @@ class PlayerModel(
 	 * there. False when nothing could move.
 	 */
 	fun seekTo(seconds: Double): Boolean {
-		val engine = player
-		val plan = plan
-		if (engine == null || plan == null) {
-			Diag.info(DiagCategory.Player, "seek.refused", "to" to seconds, "why" to if (engine == null) "no player" else "no plan")
-			return false
-		}
+		val plan = plan ?: return false
 		val target = if (plan.duration > 0) seconds.coerceIn(0.0, maxOf(0.0, plan.duration - 1)) else maxOf(0.0, seconds)
+		if (castReceiver != null) {
+			val ms = (target * 1000).toLong()
+			if (!canControl || castTransport?.seek(ms) != true) return false
+			lastMs = ms
+			castSeekMs = ms
+			castSeekUntil = SystemClock.elapsedRealtime() + CAST_SEEK_SETTLE_MS
+			return true
+		}
+		val engine = player ?: return false
 		val local = target - origin
 		val length = engine.duration.takeIf { it != C.TIME_UNSET }?.let { it / 1000.0 } ?: plan.duration
 		val inStream = stream?.kind == PlayStream.StreamKind.File || staysInStream(local, length)
@@ -441,7 +498,8 @@ class PlayerModel(
 		if (inStream) {
 			engine.seekTo((maxOf(0.0, local) * 1000).toLong())
 		} else {
-			viewModelScope.launch { open(startAt = target) }
+			val autoplay = engine.playWhenReady
+			viewModelScope.launch { open(startAt = target, autoplay = autoplay) }
 		}
 		return true
 	}
@@ -467,7 +525,12 @@ class PlayerModel(
 		val picked = lists.subtitles.firstOrNull { it.id == id }
 		Diag.info(DiagCategory.Subtitles, "pick", "id" to id, "delivery" to picked?.delivery, "external" to picked?.isExternal)
 		remember(audio = null, subtitle = pick)
-		tracks.show(picked, player)
+		if (castReceiver != null) {
+			reopen()
+		} else {
+			cancelCastConnect()
+			tracks.show(picked, player)
+		}
 	}
 
 	/** Finds an English subtitle and puts it on screen without reopening video. */
@@ -487,91 +550,399 @@ class PlayerModel(
 	fun retry() = reopen()
 
 	private fun reopen() {
-		viewModelScope.launch { open(startAt = if (isOffline && plan == null) null else movieMs() / 1000.0) }
+		if (castReceiver != null && castTransport?.connecting != null) return
+		val at = if (isOffline && plan == null) null else
+			((if (castReceiver != null) castTransport?.positionMs else null) ?: movieMs()) / 1000.0
+		val autoplay = wantsPlay()
+		viewModelScope.launch { open(startAt = at, autoplay = autoplay) }
 	}
 
-	private suspend fun open(startAt: Double?) {
+	private suspend fun open(startAt: Double?, autoplay: Boolean = true) {
 		val gen = ++generation
-		stopEngine(keepService = true)
+		val receiver = castReceiver
+		if (receiver == null) cancelCastConnect()
+		val mediaIndex = plan?.mediaIndex
+		stopEngine(keepService = receiver == null && castSession == null)
+		if (startAt != null) lastMs = (startAt * 1000).toLong()
+		playWhenReady = autoplay
 		phase = PlayerPhase.Starting
 		openedAt = SystemClock.elapsedRealtime()
 		plannedAt = 0
 		readyAt = 0
 		try {
-			prefs = container.settings.playback(container.session.state.value.user?.uuid).first()
-			skipInterval = prefs.skipInterval
-			val capabilities = withContext(Dispatchers.Default) { PlayerCapabilities.read(app) }
-			quality = qualityPick ?: prefs.quality
-			val connectivity = app.getSystemService(ConnectivityManager::class.java)
-			val request = StartRequest(
-				ratingKey = ratingKey,
-				session = session,
-				startAt = startAt,
-				fromStart = if (startAt == null && fromStart) true else null,
-				quality = quality,
-				savesData = prefs.savesData,
-				metered = connectivity.isActiveNetworkMetered,
-				directPlay = prefs.directPlay,
-				capabilities = capabilities,
-				network = connectivity.activeNetwork?.networkHandle?.hashCode() ?: 0,
-				now = SystemClock.elapsedRealtime() / 1000.0,
-				view = screen(),
-				onDeviceFailed = if (onDeviceFailed) true else null,
-				audio = audioPick,
-				subtitle = subtitlePick,
-				recordingMediaID = recordingMediaID,
-			)
-			Diag.info(
-				DiagCategory.Player, "play.request",
-				"item" to ratingKey, "startAt" to startAt, "quality" to request.quality, "directPlay" to request.directPlay,
-				"metered" to request.metered, "savesData" to request.savesData, "onDeviceFailed" to request.onDeviceFailed,
-				"screen" to "${request.view?.width}x${request.view?.height}",
-				"hevc" to capabilities.hevc, "hevcMain10" to capabilities.hevcMain10, "av1" to capabilities.av1,
-				"hdrDisplay" to capabilities.hdrDisplay, "dolbyVision" to capabilities.dolbyVisionProfiles.joinToString(","),
-				"audio" to capabilities.nativeAudioCodecs.joinToString(","),
-			)
-			var chosen = start(request)
-			session = chosen.session
-			val probe = chosen.probe
-			if (chosen.stream == null && probe != null) {
-				val (reading, answerMs) = measure(probe)
-				val kbps = if (reading.seconds > 0) (reading.bytes * 8L / 1000 / reading.seconds).toInt() else 0
-				Diag.info(
-					DiagCategory.Link, "probe",
-					"bytes" to reading.bytes, "seconds" to reading.seconds, "kbps" to kbps, "answerMs" to answerMs,
-				)
-				chosen = start(request.copy(session = chosen.session, probe = reading, now = SystemClock.elapsedRealtime() / 1000.0))
+			opening.withLock {
+				if (gen != generation) return
+				stopQueuedStream()
+				if (gen != generation) return
+				prefs = container.settings.playback(container.session.state.value.user?.uuid).first()
+				if (gen != generation) return
+				skipInterval = prefs.skipInterval
+				quality = qualityPick ?: prefs.quality
+				if (receiver == null) {
+					clearCastSession()
+					openLocal(gen, startAt, autoplay, mediaIndex)
+				} else {
+					openReceiver(gen, receiver, startAt, autoplay, mediaIndex)
+				}
 			}
-			val rule = autoplayRule(creditsWatched = false)
-			if (gen != generation) return
-			val opens = chosen.stream
-			if (opens == null) fail("This video could not be opened.") else play(chosen, opens, rule)
 		} catch (e: CancellationException) {
 			throw e
 		} catch (e: Exception) {
 			val kind = (e as? CoreException)?.kind
 			Diag.warning(DiagCategory.Player, "play.start.failed", "error" to (kind?.name ?: e.javaClass.simpleName))
 			if (gen == generation) {
-				fail(when {
+				val message = when {
 					e is DownloadFailure -> e.message ?: "This download is unavailable."
 					isOffline -> "This download could not be opened."
 					kind == CoreException.Kind.Unreachable -> "The server could not be reached."
+					receiver != null -> castOpenProblem(receiver, kind)
 					else -> "This video could not be opened."
-				})
+				}
+				if (receiver == null) fail(message) else failCast(message)
 			}
 		}
 	}
 
-	private suspend fun start(request: StartRequest): PlayPlan {
+	private suspend fun openLocal(gen: Int, startAt: Double?, autoplay: Boolean, mediaIndex: Int?) {
+		val capabilities = withContext(Dispatchers.Default) { PlayerCapabilities.read(app) }
+		if (gen != generation) return
+		val connectivity = app.getSystemService(ConnectivityManager::class.java)
+		val request = StartRequest(
+			ratingKey = ratingKey,
+			session = session,
+			startAt = startAt,
+			fromStart = if (startAt == null && fromStart) true else null,
+			mediaIndex = mediaIndex,
+			quality = quality,
+			savesData = prefs.savesData,
+			metered = connectivity.isActiveNetworkMetered,
+			directPlay = prefs.directPlay,
+			capabilities = capabilities,
+			network = connectivity.activeNetwork?.networkHandle?.hashCode() ?: 0,
+			now = uptime(),
+			view = screen(),
+			onDeviceFailed = if (onDeviceFailed) true else null,
+			audio = audioPick,
+			subtitle = subtitlePick,
+			recordingMediaID = recordingMediaID,
+		)
+		Diag.info(
+			DiagCategory.Player, "play.request",
+			"item" to ratingKey, "startAt" to startAt, "quality" to request.quality, "directPlay" to request.directPlay,
+			"metered" to request.metered, "savesData" to request.savesData, "onDeviceFailed" to request.onDeviceFailed,
+			"screen" to "${request.view?.width}x${request.view?.height}",
+			"hevc" to capabilities.hevc, "hevcMain10" to capabilities.hevcMain10, "av1" to capabilities.av1,
+			"hdrDisplay" to capabilities.hdrDisplay, "dolbyVision" to capabilities.dolbyVisionProfiles.joinToString(","),
+			"audio" to capabilities.nativeAudioCodecs.joinToString(","),
+		)
+		var chosen = start(request)
+		if (gen != generation) return
+		val probe = chosen.probe
+		if (chosen.stream == null && probe != null) {
+			val (reading, answerMs) = measure(probe)
+			if (gen != generation) return
+			val kbps = if (reading.seconds > 0) (reading.bytes * 8L / 1000 / reading.seconds).toInt() else 0
+			Diag.info(
+				DiagCategory.Link, "probe",
+				"bytes" to reading.bytes, "seconds" to reading.seconds, "kbps" to kbps, "answerMs" to answerMs,
+			)
+			chosen = start(request.copy(session = chosen.session, probe = reading, now = uptime()))
+		}
+		val rule = autoplayRule(creditsWatched = false)
+		if (gen != generation) return
+		val opens = chosen.stream
+		if (opens == null) fail("This video could not be opened.") else play(chosen, opens, rule, autoplay)
+	}
+
+	// A completed Swift start must leave its session ID behind even if the user switched output or closed the player.
+	private suspend fun start(request: StartRequest): PlayPlan = withContext(NonCancellable) {
 		if (isOffline) {
 			val id = localId ?: throw DownloadFailure("This download is no longer available.")
 			val local = container.downloads.acquire(id) ?: throw DownloadFailure("This download is no longer available.")
 			localEntry = local.entry
 			val server = container.session.state.value.server
-			return container.core.startDownload(local, request.copy(memory = server?.let { kept(it) }))
+			return@withContext container.core.startDownload(local, request.copy(memory = server?.let { kept(it) }))
+				.also { session = it.session }
 		}
-		return container.session.onServer { server, remembered ->
-			container.core.startPlay(server, remembered, request.copy(memory = kept(server)))
+		container.session.onServer { server, remembered ->
+			container.core.startPlay(server, remembered, request.copy(memory = kept(server))).also(::trackStarted)
+		}
+	}
+
+	private fun trackStarted(chosen: PlayPlan) {
+		session = chosen.session
+		lastOpened = chosen
+	}
+
+	private suspend fun castPlan(
+		receiver: CastReceiver, startAt: Double?, mediaIndex: Int?, playSession: String?, forceConversion: Boolean,
+		started: (PlayPlan) -> Unit,
+	): CastPlan = container.session.onServer { server, remembered ->
+		val memory = kept(server)
+		val request = CastStartRequest(
+			ratingKey = ratingKey,
+			session = playSession,
+			startAt = startAt,
+			fromStart = (startAt == null && fromStart).takeIf { it },
+			mediaIndex = mediaIndex,
+			quality = quality,
+			directPlay = prefs.directPlay,
+			now = uptime(),
+			audio = audioPick,
+			subtitle = subtitlePick,
+			memory = memory,
+			receiverModel = receiver.model,
+			replacing = container.cast[receiver.id.provider].mediaSessionId,
+			receiverFailed = forceConversion.takeIf { it },
+			airPlay = receiver.id.provider == CastProvider.AirPlay,
+			recordingMediaID = recordingMediaID,
+		)
+		withContext(NonCancellable) {
+			container.core.startCast(server, remembered, request).also { started(it.plan) }
+		}
+	}
+
+	private suspend fun openReceiver(gen: Int, receiver: CastReceiver, startAt: Double?, autoplay: Boolean, mediaIndex: Int?) {
+		val transport = container.cast[receiver.id.provider]
+		val cast = castPlan(receiver, startAt, mediaIndex, session, receiverFailed) {
+			trackStarted(it)
+			castSession = it.session
+		}
+		if (gen != generation) return
+		val rule = autoplayRule(creditsWatched = false)
+		if (gen != generation) return
+		prepareCast(cast, rule)
+		check(transport.load(cast, autoplay))
+		followCast(cast.plan, gen, receiver, transport)
+	}
+
+	private class Handoff {
+		val status = MutableStateFlow<CastStatus?>(null)
+		var job: Job? = null
+		var preparedSession: String? = null
+
+		suspend fun await(id: Int, state: String): CastStatus? = withTimeoutOrNull(START_DEADLINE_MS) {
+			status.filterNotNull().first { it.resolvesHandoff(id, state) }
+		}
+	}
+
+	/** Preflight on its own session: the phone's stream and its timeline stay intact until the receiver is ready. */
+	private fun stageHandoff(receiver: CastReceiver, prior: PlayPlan) {
+		val transport = container.cast[receiver.id.provider]
+		val transfer = Handoff()
+		handoff = transfer
+		transfer.job = viewModelScope.launch {
+			try {
+				val rule = autoplayRule(offers.creditsDismissed)
+				var converted = false
+				while (true) {
+					val cast = castPlan(receiver, movieMs() / 1000.0, prior.mediaIndex, null, converted) {
+						transfer.preparedSession = it.session
+					}
+					if (handoff !== transfer) return@launch
+					transfer.status.value = null
+					check(transport.load(cast, autoplay = false))
+					val id = checkNotNull(transport.mediaSessionId)
+					var result = transfer.await(id, "paused")
+					var at = movieMs()
+					if (result?.player == "paused" && result.idle == null) {
+						val end = (cast.plan.duration * 1000).toLong()
+						if (end > 0) at = at.coerceAtMost(maxOf(0L, end - 1_000))
+						check(transport.positionBeforeHandoff(at))
+						result = confirmPlayIntent(transfer, transport, id, result)
+					}
+					if (result == null || result.idle != null) {
+						if ((result == null || result.idle == "error") && receiver.id.provider == CastProvider.Chromecast &&
+							!converted && cast.plan.route.kind == RouteKind.DirectPlay) {
+							releaseHandoff(transfer)
+							converted = true
+							continue
+						}
+						transport.rejectHandoff("The ${receiver.id.provider.label} receiver could not play this video.")
+						return@launch
+					}
+					if (handoff !== transfer || player == null || plan !== prior || finished) return@launch
+					val autoplay = result.player == "playing"
+					val position = transport.positionMs ?: at
+					check(transport.activate())
+					val gen = ++generation
+					stopEngine()
+					phase = PlayerPhase.Starting
+					playWhenReady = autoplay
+					castReceiver = receiver
+					receiverFailed = converted
+					trackStarted(cast.plan)
+					castSession = cast.plan.session
+					transfer.preparedSession = null
+					handoff = null
+					prepareCast(cast, rule)
+					lastMs = position
+					castStatus = result.copy(position = position / 1000.0)
+					followCast(cast.plan, gen, receiver, transport)
+					container.scope.launch { releaseStream(prior.session) }
+					return@launch
+				}
+			} catch (e: CancellationException) {
+				throw e
+			} catch (e: Exception) {
+				Diag.warning(DiagCategory.Player, "cast.handoff.failed", "error" to e.javaClass.simpleName)
+				if (handoff === transfer) transport.rejectHandoff(castOpenProblem(receiver, (e as? CoreException)?.kind))
+			} finally {
+				if (handoff === transfer) {
+					handoff = null
+					transport.cancelPending(castEvents)
+				}
+				releaseHandoff(transfer)
+			}
+		}
+	}
+
+	private suspend fun confirmPlayIntent(
+		transfer: Handoff, transport: CastTransport, id: Int, paused: CastStatus,
+	): CastStatus? = withTimeoutOrNull(START_DEADLINE_MS) {
+		var status = transfer.status.value?.takeIf { it.mediaSessionId == id } ?: paused
+		while (status.idle == null) {
+			val play = wantsPlay()
+			val expected = if (play) "playing" else "paused"
+			if (status.player == expected) break
+			check(transport.setPlaying(play))
+			status = transfer.await(id, expected) ?: return@withTimeoutOrNull null
+		}
+		status
+	}
+
+	private fun castOpenProblem(receiver: CastReceiver, kind: CoreException.Kind?): String = when (kind) {
+		CoreException.Kind.AirPlayUnsupported -> "AirPlay needs a compatible MP4. This video or track selection requires conversion."
+		CoreException.Kind.Unreachable -> "The server could not be reached."
+		else -> "The ${receiver.id.provider.label} receiver could not open this video."
+	}
+
+	private suspend fun releaseHandoff(transfer: Handoff) {
+		val id = transfer.preparedSession ?: return
+		transfer.preparedSession = null
+		withContext(NonCancellable) {
+			quietly("cast.end") { container.core.endCast(id) }
+			releaseStream(id)
+		}
+	}
+
+	private suspend fun releaseStream(id: String) {
+		quietly("stop") { container.core.playStop(id, 0, 0, close = true, report = false) }
+	}
+
+	private fun cancelHandoff() {
+		val previous = handoff
+		handoff = null
+		previous?.job?.cancel()
+	}
+
+	private data class Stop(val plan: PlayPlan, val timeMs: Int)
+
+	private fun queueStop() {
+		if (phase == PlayerPhase.Playing) {
+			plan?.let { stopBeforeOpening = Stop(it, movieMs().toInt()) }
+		}
+	}
+
+	private suspend fun stopQueuedStream() {
+		val stop = stopBeforeOpening ?: return
+		stopBeforeOpening = null
+		stopStream(stop, close = false)
+	}
+
+	private suspend fun stopStream(stop: Stop, close: Boolean) = withContext(NonCancellable) {
+		quietly("stop") {
+			container.core.playStop(stop.plan.session, stop.timeMs, (stop.plan.duration * 1000).toInt(), close)
+		}
+		container.changes.record(keysOf(stop.plan))
+	}
+
+	private suspend fun clearCastSession() {
+		val id = castSession ?: return
+		withContext(NonCancellable) { quietly("cast.end") { container.core.endCast(id) } }
+		castSession = null
+	}
+
+	private fun castEvent(event: CastEvent) {
+		when (event) {
+			is CastEvent.Connected -> {
+				if (castReceiver == null) {
+					val prior = plan
+					if (prior != null && player != null) stageHandoff(event.receiver, prior)
+					else castTransport?.rejectHandoff("Start playback on this device before casting.")
+					return
+				}
+				val at = plan?.let { movieMs() / 1000.0 }
+				val autoplay = wantsPlay()
+				queueStop()
+				castReceiver = event.receiver
+				receiverFailed = false
+				viewModelScope.launch { open(startAt = at, autoplay = autoplay) }
+			}
+			is CastEvent.Switching -> {
+				event.positionMs?.let { lastMs = it }
+				queueStop()
+				generation++
+				stopEngine()
+				phase = PlayerPhase.Starting
+				viewModelScope.launch {
+					opening.withLock { stopQueuedStream() }
+				}
+			}
+			is CastEvent.Disconnected -> {
+				cancelHandoff()
+				if (castReceiver == null) return
+				event.positionMs?.let { lastMs = it }
+				val at = plan?.let { lastMs / 1000.0 }
+				queueStop()
+				castReceiver = null
+				receiverFailed = false
+				controls.trySend(false)
+				viewModelScope.launch { open(startAt = at, autoplay = false) }
+			}
+			is CastEvent.Progress -> {
+				val transfer = handoff
+				if (transfer == null) {
+					castStatus = event.status
+					when (event.status.player) {
+						"playing" -> playWhenReady = true
+						"paused" -> playWhenReady = false
+						else -> Unit
+					}
+				} else {
+					transfer.status.value = event.status
+				}
+			}
+		}
+	}
+
+	private fun castFailed() {
+		val receiver = castReceiver ?: return
+		if (receiver.id.provider == CastProvider.Chromecast && plan?.route?.kind == RouteKind.DirectPlay && !receiverFailed) {
+			receiverFailed = true
+			val at = movieMs() / 1000.0
+			val autoplay = wantsPlay()
+			viewModelScope.launch { open(startAt = at, autoplay = autoplay) }
+		} else {
+			failCast("The ${receiver.id.provider.label} receiver could not play this video.")
+		}
+	}
+
+	private fun failCast(message: String) {
+		val transport = castTransport
+		if (transport?.connecting != null) {
+			transport.rejectHandoff(message)
+			return
+		}
+		transport?.stopMedia()
+		fail(message)
+		val gen = generation
+		viewModelScope.launch {
+			opening.withLock {
+				if (gen != generation) return@withLock
+				lastOpened?.let { stopStream(Stop(it, lastMs.toInt()), close = false) }
+				clearCastSession()
+			}
 		}
 	}
 
@@ -642,7 +1013,7 @@ class PlayerModel(
 		}
 	}
 
-	private fun play(chosen: PlayPlan, opens: PlayStream, rule: AutoplayPlan) {
+	private fun install(chosen: PlayPlan, opens: PlayStream, rule: AutoplayPlan) {
 		plan = chosen
 		stream = opens
 		val hls = opens.kind == PlayStream.StreamKind.Hls
@@ -657,9 +1028,20 @@ class PlayerModel(
 		title = chosen.item.grandparentTitle ?: chosen.item.title
 		subtitle = if (chosen.item.grandparentTitle == null) null else listOfNotNull(chosen.item.episodeCode, chosen.item.title).joinToString(" · ")
 		durationMs = (chosen.duration * 1000).toLong()
+		lastMs = (chosen.startAt * 1000).toLong()
 		tracks.begin(chosen, isFile = !hls, online = onlineSubtitleSource)
 		offers.configure(chosen, prefs.introSkipDelay, rule)
 		loadNeighbors(chosen)
+		if (badgedKey != chosen.item.ratingKey) {
+			badgedKey = chosen.item.ratingKey
+			pendingBadge = chosen.badge.takeUnless { it.isEmpty }
+		}
+		logOpen(chosen, opens)
+	}
+
+	private fun play(chosen: PlayPlan, opens: PlayStream, rule: AutoplayPlan, autoplay: Boolean) {
+		install(chosen, opens, rule)
+		val hls = opens.kind == PlayStream.StreamKind.Hls
 		val engine = factory.create(opens.headers, PlaybackFactory.Kind.Player)
 		engine.addListener(listener)
 		engineStats.reset()
@@ -668,17 +1050,12 @@ class PlayerModel(
 		engine.setWakeMode(if (isOffline) C.WAKE_MODE_LOCAL else C.WAKE_MODE_NETWORK)
 		val source = factory.source(opens.headers, opens.url, hls, mediaMetadata(chosen))
 		if (hls) engine.setMediaSource(source) else engine.setMediaSource(source, (chosen.startAt * 1000).toLong())
-		engine.playWhenReady = true
+		engine.playWhenReady = autoplay
 		engine.prepare()
 		player = engine
 		phase = PlayerPhase.Playing
 		if (prefs.keepsPlaying) container.playback.publish(app, engine)
 		previews = ScrubPreviewsFactory.create(app, viewModelScope, http, chosen, opens, { movieMs() / 1000.0 }, { isBuffering })
-		if (badgedKey != chosen.item.ratingKey) {
-			badgedKey = chosen.item.ratingKey
-			pendingBadge = chosen.badge.takeUnless { it.isEmpty }
-		}
-		logOpen(chosen, opens)
 		startTicker()
 		if (hls) {
 			deadline = viewModelScope.launch {
@@ -687,6 +1064,65 @@ class PlayerModel(
 			}
 		}
 	}
+
+	private fun prepareCast(cast: CastPlan, rule: AutoplayPlan) {
+		install(cast.plan, checkNotNull(cast.plan.stream), rule)
+		origin = 0.0
+	}
+
+	private fun followCast(chosen: PlayPlan, gen: Int, receiver: CastReceiver, transport: CastTransport) {
+		castTicker = viewModelScope.launch {
+			while (true) {
+				val status = castStatus
+				castStatus = null
+				val progress = quietly("cast.progress") { container.core.castProgress(chosen.session, uptime(), status) }
+				if (gen != generation) break
+				if (progress != null) {
+					val position = (progress.position * 1000).toLong().coerceIn(0L, durationMs.takeIf { it > 0 } ?: Long.MAX_VALUE)
+					if (castSeekMs >= 0L && (kotlin.math.abs(position - castSeekMs) <= 1_500L || SystemClock.elapsedRealtime() >= castSeekUntil)) {
+						castSeekMs = -1L
+					}
+					lastMs = castSeekMs.takeIf { it >= 0L } ?: position
+					when (progress.end) {
+						CastEnd.Finished -> {
+							if (durationMs > 0) lastMs = durationMs
+							ticker?.cancel()
+							deadline?.cancel()
+							isPlaying = false
+							ended()
+							break
+						}
+						CastEnd.Failed -> {
+							castFailed()
+							break
+						}
+						CastEnd.Stopped -> {
+							if (phase == PlayerPhase.Starting && transport.connecting != null) {
+								transport.rejectHandoff("Playback stopped on the ${receiver.id.provider.label} receiver.")
+							} else transport.disconnect(stopping = false)
+							break
+						}
+						null -> Unit
+					}
+					isPlaying = progress.state == "playing"
+					isBuffering = progress.state == "buffering"
+					if (phase == PlayerPhase.Starting && (isPlaying || progress.state == "paused") && transport.activate()) {
+						phase = PlayerPhase.Playing
+						ready()
+						startTicker()
+					}
+					offers.stateChanged(isPlaying)
+				}
+				delay(CAST_PROGRESS_INTERVAL_MS)
+			}
+		}
+		deadline = viewModelScope.launch {
+			delay(START_DEADLINE_MS)
+			if (!everReady) castFailed()
+		}
+	}
+
+	private fun uptime() = SystemClock.elapsedRealtime() / 1000.0
 
 	private fun ready() {
 		if (everReady) return
@@ -718,12 +1154,17 @@ class PlayerModel(
 				markWatched()
 				go(upcoming)
 			}
-			else -> viewModelScope.launch {
-				if (autoplayRule(offers.creditsDismissed).playsNextAtEnd) {
-					markWatched()
-					go(upcoming)
-				} else {
-					finish()
+			else -> {
+				val gen = generation
+				viewModelScope.launch {
+					val playsNext = autoplayRule(offers.creditsDismissed).playsNextAtEnd
+					if (gen != generation) return@launch
+					if (playsNext) {
+						markWatched()
+						go(upcoming)
+					} else {
+						finish()
+					}
 				}
 			}
 		}
@@ -746,13 +1187,14 @@ class PlayerModel(
 	}
 
 	/** The title is playing steadily: a stream is open, not paused and not waiting for data. */
-	private fun steady() = phase == PlayerPhase.Playing && player != null && isPlaying && !isBuffering
+	private fun steady() = phase == PlayerPhase.Playing && canControl && isPlaying && !isBuffering
 
 	/** The viewer did something: an Up Next countdown stops for good. */
 	fun userActed() = offers.interrupt()
 
 	/** Plays the episode after this one, if the queue has one. */
 	fun playNext() {
+		if (!canControl) return
 		val upcoming = next ?: return
 		// Going on from the credits counts as having watched the episode.
 		if (offers.offer is Offer.UpNext) markWatched()
@@ -762,13 +1204,14 @@ class PlayerModel(
 	/** Plays [target] in this player's place: the title stops where it is, and the session and its queue carry on. */
 	private fun go(target: PlexItem) {
 		if (isOffline && localNext == null) return
-		val chosen = plan
 		val time = movieMs().toInt()
 		Diag.notice(DiagCategory.Player, "go", "item" to target.ratingKey, "from" to ratingKey, "at" to time / 1000.0)
 		Diag.endPlayback()
 		Diag.beginPlayback()
+		if (castReceiver == null) cancelCastConnect()
+		if (!isOffline) queueStop()
 		generation++
-		stopEngine(keepService = true)
+		stopEngine(keepService = castReceiver == null)
 		if (isOffline) {
 			leaveDownload(time)
 			localId = localNext?.id
@@ -777,14 +1220,6 @@ class PlayerModel(
 			localCheckpointAt = 0L
 			localCheckpoint = null
 			session = null
-		} else if (chosen != null) {
-			val keys = keysOf(chosen)
-			container.scope.launch {
-				attempt("stop") { server, remembered ->
-					container.core.playStop(server, remembered, chosen.session, time, (chosen.duration * 1000).toInt(), close = false)
-				}
-				container.changes.record(keys)
-			}
 		}
 		ratingKey = target.ratingKey
 		titleKey = target.grandparentRatingKey ?: target.ratingKey
@@ -796,6 +1231,7 @@ class PlayerModel(
 		lastMs = 0
 		everReady = false
 		onDeviceFailed = false
+		receiverFailed = false
 		watched = false
 		fallback = null
 		sleepsAtEnd = false
@@ -806,12 +1242,15 @@ class PlayerModel(
 		viewModelScope.launch { open(startAt = null) }
 	}
 
-	/** Asks the play queue for the episode that follows, once per title: a restart of the same title keeps the answer. */
+	/** Restarts keep the next episode; a new session also needs its own association with the server's play queue. */
 	private fun loadNeighbors(chosen: PlayPlan) {
-		if (neighborsOf == chosen.item.ratingKey) return
+		if (neighborsOf == chosen.item.ratingKey && neighborsSession == chosen.session) return
+		if (neighborsOf != chosen.item.ratingKey) {
+			next = null
+			offers.follow(null)
+		}
 		neighborsOf = chosen.item.ratingKey
-		next = null
-		offers.follow(null)
+		neighborsSession = chosen.session
 		if (chosen.item.type != MediaType.Episode) return
 		if (isOffline) {
 			val upcoming = localEntry?.let(container.downloads::next)
@@ -830,7 +1269,7 @@ class PlayerModel(
 		}
 		viewModelScope.launch {
 			val found = attempt("queue") { server, remembered -> container.core.playNeighbors(server, remembered, chosen.session) }
-			if (neighborsOf != chosen.item.ratingKey) return@launch
+			if (neighborsOf != chosen.item.ratingKey || neighborsSession != chosen.session) return@launch
 			next = found?.next
 			offers.follow(found?.next.takeUnless { sleepsAtEnd })
 		}
@@ -892,12 +1331,17 @@ class PlayerModel(
 	private fun fail(message: String) {
 		// Reads the position while the player still exists, so Try Again and the final stop know where it was.
 		movieMs()
+		if (castReceiver == null) cancelCastConnect()
 		stopEngine()
 		phase = PlayerPhase.Failed(message)
 	}
 
 	private fun stopEngine(keepService: Boolean = false) {
 		deadline?.cancel()
+		castTicker?.cancel()
+		castSeekMs = -1L
+		castStatus = null
+		reportJob?.cancel()
 		ticker?.cancel()
 		skipJob?.cancel()
 		subtitleFinder.cancel()
@@ -939,12 +1383,12 @@ class PlayerModel(
 	/** Tells the server where playback is. Core decides how often that really goes out; one report is in flight at a time. */
 	private fun report() {
 		val chosen = plan ?: return
-		val engine = player ?: return
+		val local = player
 		val id = localId
 		if (id != null) {
-			if (!everReady || watched) return
+			if (local == null || !everReady || watched) return
 			val now = SystemClock.elapsedRealtime()
-			if (engine.isPlaying && now - localCheckpointAt < LOCAL_CHECKPOINT_MS) return
+			if (local.isPlaying && now - localCheckpointAt < LOCAL_CHECKPOINT_MS) return
 			val time = movieMs().toInt()
 			if (time == localCheckpoint) return
 			localCheckpoint = time
@@ -952,15 +1396,15 @@ class PlayerModel(
 			container.downloads.watched(id, offset = time, finished = false)
 			return
 		}
-		if (reporting) return
+		if (reporting || phase != PlayerPhase.Playing || !canControl) return
 		val state = when {
-			engine.playbackState == Player.STATE_BUFFERING -> "buffering"
-			engine.isPlaying -> "playing"
+			local?.let { it.playbackState == Player.STATE_BUFFERING } ?: isBuffering -> "buffering"
+			local?.isPlaying ?: isPlaying -> "playing"
 			else -> "paused"
 		}
 		val time = movieMs().toInt()
 		reporting = true
-		viewModelScope.launch {
+		reportJob = viewModelScope.launch {
 			try {
 				attempt("report") { server, remembered ->
 					container.core.playReport(server, remembered, chosen.session, state, time, (chosen.duration * 1000).toInt())
@@ -1020,8 +1464,7 @@ class PlayerModel(
 				"throttled" to state.throttled, "fullPipeline" to state.fullPipeline, "decoding" to state.decoding, "encoding" to state.encoding,
 			)
 			when {
-				// The server drawing a subtitle into the picture is what the app asks it never to do.
-				changed && state.subtitle == "burn" -> Diag.warning(DiagCategory.Player, "transcode.burn", *fields)
+				changed && castReceiver == null && state.subtitle == "burn" -> Diag.warning(DiagCategory.Player, "transcode.burn", *fields)
 				changed -> Diag.info(DiagCategory.Player, "transcode", *fields)
 				else -> Diag.debug(DiagCategory.Player, "transcode.speed", *fields)
 			}
@@ -1080,23 +1523,26 @@ class PlayerModel(
 	}
 
 	override fun onCleared() {
-		val chosen = plan
-		val time = movieMs().toInt()
+		val time = ((if (castReceiver != null) castTransport?.positionMs else null) ?: movieMs()).toInt()
 		generation++
+		cancelHandoff()
+		castTransport?.playerClosed(castEvents)
 		stopEngine()
 		Diag.endPlayback()
 		if (isOffline) {
-			leaveDownload(time)
+			container.scope.launch { opening.withLock { leaveDownload(time) } }
 			return
 		}
-		if (chosen == null) return
-		val keys = keysOf(chosen)
-		// The page is gone, so its scope is too: the app's own scope tells the server the title stopped.
+		// A start already sent to Swift can finish after the screen disappears. Stop that stream, not its predecessor.
 		container.scope.launch {
-			attempt("stop") { server, remembered ->
-				container.core.playStop(server, remembered, chosen.session, time, (chosen.duration * 1000).toInt(), close = true)
+			opening.withLock {
+				clearCastSession()
+				lastOpened?.let { chosen ->
+					val position = stopBeforeOpening?.takeIf { it.plan === chosen }?.timeMs
+						?: if (chosen === plan) time else (chosen.startAt * 1000).toInt()
+					stopStream(Stop(chosen, position), close = true)
+				}
 			}
-			container.changes.record(keys)
 		}
 	}
 
@@ -1104,6 +1550,8 @@ class PlayerModel(
 		const val NANOS = 1_000_000_000.0
 		const val REPORT_INTERVAL_MS = 1000L
 		const val LOCAL_CHECKPOINT_MS = 10_000L
+		const val CAST_PROGRESS_INTERVAL_MS = 500L
+		const val CAST_SEEK_SETTLE_MS = 2_000L
 		const val START_DEADLINE_MS = 30_000L
 		const val SKIP_SETTLE_MS = 400L
 		const val SKIP_FEEDBACK_MS = 700L

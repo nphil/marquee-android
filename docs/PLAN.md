@@ -132,7 +132,7 @@ Each phase ends with a release installed on the tablet.
      bar in the theme, dragged to any corner, resized, swiped away, tapped to expand.
    - **Free-form window** on tablets: the whole player, controls and menus included, in a resizable
      floating window (`resizeableActivity`, layouts that hold at small window sizes).
-4. **The rest.** Downloads, Live TV (guide, DVR, direct from tuner), Chromecast, linked phones, the
+4. **The rest.** Downloads, Live TV (guide, DVR, direct from tuner), casting, linked phones, the
    LumaTV remote, glasses, the HomeLabber quality map.
    - Plex Live TV uses Core's lineup, schedule, tuner sessions and stream cleanup. The guide uses a pinned
      channel/time grid when the content pane has room, and a Now & Next list at narrower widths or larger
@@ -146,6 +146,9 @@ Each phase ends with a release installed on the tablet.
    - LumaTV Remote is opt-in. A TV can pair by QR link or a code on the local network. The sidebar
      keeps the remote just above Settings; narrow windows use Home’s toolbar instead. Pairing and
      encrypted commands use the same LumaRemoteCore as iOS.
+   - Chromecast and AirPlay are separate per-device opt-ins under Integrations. The player has one receiver chooser.
+     A failed handoff leaves local playback running; returning from a receiver opens the title paused at its last position.
+     Offline downloads stay on this device.
 5. **Android extras** (section 6).
 
 ## 5. Verification

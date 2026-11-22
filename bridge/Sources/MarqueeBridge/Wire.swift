@@ -139,6 +139,9 @@ struct Failure: Encodable {
         case let error as RemoteFailure:
             kind = "remote"
             message = error.message
+        case AirPlayMediaError.unsupported:
+            kind = "airPlayUnsupported"
+            message = "This video needs a format or track change that AirPlay does not support here. AirPlay plays compatible H.264/AAC MP4 files."
         case is CancellationError:
             kind = "cancelled"
         case is DecodingError:

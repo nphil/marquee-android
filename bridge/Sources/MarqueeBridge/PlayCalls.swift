@@ -39,7 +39,11 @@ enum PlayCalls {
         case "play.stop":
             let call = try decode(StopCall.self, payload)
             let session = try services.session(call.session)
-            await session.stop(time: call.timeMs, duration: call.durationMs)
+            if call.report == false {
+                await session.endStream()
+            } else {
+                await session.stop(time: call.timeMs, duration: call.durationMs)
+            }
             if call.close { services.sessions.close(call.session) }
             return try Reply.ok(Empty())
         case "play.look":
@@ -408,7 +412,7 @@ actor PlaySession {
     /// The server address the stream comes from, for readings of the link.
     private(set) var address: URL?
     private var item: PlexMetadata?
-    private var localTracks: MediaTracks?
+    private var unboundTracks: MediaTracks?
     var subtitleFile: PlayingSubtitleFile?
     var subtitleSearch = SubtitleSearchState()
     var speechTiming: SpeechTiming?
@@ -468,22 +472,28 @@ actor PlaySession {
         return nil
     }
 
-    func begin(_ item: PlexMetadata, subtitles: PlayingSubtitleFile, adaptive: AdaptiveQuality?, address: URL?, conversion: String?) {
+    func begin(_ item: PlexMetadata, subtitles: PlayingSubtitleFile?, adaptive: AdaptiveQuality?, address: URL?, conversion: String?) {
         self.item = item
         subtitleFile = subtitles
+        unboundTracks = nil
         self.adaptive = adaptive
         self.address = address
         self.conversion = conversion
         reporter = library.map { TimelineReporter(library: $0, item: item, sessionIdentifier: conversion) }
     }
 
+    func beginCast(_ item: PlexMetadata, tracks: MediaTracks, address: URL, conversion: String?) {
+        begin(item, subtitles: nil, adaptive: nil, address: address, conversion: conversion)
+        unboundTracks = tracks
+    }
+
     func beginLocal(tracks: MediaTracks) {
-        localTracks = tracks
+        unboundTracks = tracks
     }
 
     /// The tracks of the file playing, for a pick to be remembered against.
     func currentTracks() throws -> MediaTracks {
-        guard let tracks = localTracks ?? subtitleFile?.tracks else { throw PlayError.noSession }
+        guard let tracks = subtitleFile?.tracks ?? unboundTracks else { throw PlayError.noSession }
         return tracks
     }
 

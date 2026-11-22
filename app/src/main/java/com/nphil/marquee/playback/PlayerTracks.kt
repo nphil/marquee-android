@@ -12,6 +12,7 @@ import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.common.text.Cue
 import androidx.media3.common.util.UnstableApi
+import com.nphil.marquee.core.DELIVERY_BURNED_IN
 import com.nphil.marquee.core.DELIVERY_IN_STREAM
 import com.nphil.marquee.core.DELIVERY_NONE
 import com.nphil.marquee.core.DELIVERY_SIDECAR
@@ -78,7 +79,7 @@ internal class PlayerTracks(
 	var cues: List<Cue> by mutableStateOf(emptyList(), referentialEqualityPolicy())
 		private set
 
-	/** How the subtitle on screen is delivered: [DELIVERY_SIDECAR], [DELIVERY_IN_STREAM], or none. */
+	/** How the subtitle is delivered; only a local player draws cues. */
 	private var how = DELIVERY_NONE
 
 	/** The stream is the file itself, so its audio tracks are the player's to select; the server's conversion plays one. */
@@ -134,7 +135,7 @@ internal class PlayerTracks(
 	}
 
 	private fun showOption(option: SubtitleOption?, delivery: String?) {
-		how = delivery?.takeIf { option != null && (it == DELIVERY_SIDECAR || it == DELIVERY_IN_STREAM) } ?: DELIVERY_NONE
+		how = delivery?.takeIf { option != null && (it == DELIVERY_SIDECAR || it == DELIVERY_IN_STREAM || it == DELIVERY_BURNED_IN) } ?: DELIVERY_NONE
 		subtitleId = option?.id.takeIf { how != DELIVERY_NONE }
 		if (how == DELIVERY_SIDECAR && option != null) option.url?.let { load(option.id, it) }
 	}

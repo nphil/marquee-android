@@ -44,6 +44,7 @@ fun LicencesPage(contentPadding: PaddingValues) {
 	val context = LocalContext.current
 	val fontLicence by licenceText("Manrope-OFL.txt")
 	val ffmpegLicence by licenceText("FFmpeg-LGPL-2.1.txt")
+	val airkastLicence by licenceText("Airkast-Apache-2.0.txt")
 	val ffmpegLinks = listOf(
 		"FFmpeg ${FfmpegBuild.FFMPEG_VERSION} source code" to "https://ffmpeg.org/releases/ffmpeg-${FfmpegBuild.FFMPEG_VERSION}.tar.xz",
 		"Build script and extension source" to "https://github.com/nphil/marquee-android/tree/main/ffmpeg",
@@ -67,6 +68,8 @@ fun LicencesPage(contentPadding: PaddingValues) {
 			}
 		}
 		ffmpegLicence?.let { licence -> item(key = "ffmpeg-text") { LicenceText(licence) } }
+		item(key = "airkast") { Licence("Airkast", "Apache License 2.0") }
+		airkastLicence?.let { licence -> item(key = "airkast-text") { LicenceText(licence) } }
 	}
 }
 

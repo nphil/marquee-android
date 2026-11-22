@@ -110,7 +110,7 @@ class MarqueeCore(private val identity: suspend () -> ClientIdentity) {
 
 /** A MarqueeCore failure; [kind] is the PlexError case or the bridge's own condition. */
 class CoreException internal constructor(error: CoreError) : Exception(error.message ?: error.kind) {
-	enum class Kind { Unauthorized, Unreachable, Server, Decoding, PinExpired, ProfilePinRejected, NoConnections, Seerr, Other }
+	enum class Kind { Unauthorized, Unreachable, Server, Decoding, PinExpired, ProfilePinRejected, NoConnections, Seerr, AirPlayUnsupported, Other }
 
 	val kind: Kind = when (error.kind) {
 		"unauthorized" -> Kind.Unauthorized
@@ -121,6 +121,7 @@ class CoreException internal constructor(error: CoreError) : Exception(error.mes
 		"profilePINRejected" -> Kind.ProfilePinRejected
 		"noConnections" -> Kind.NoConnections
 		"seerr" -> Kind.Seerr
+		"airPlayUnsupported" -> Kind.AirPlayUnsupported
 		else -> Kind.Other
 	}
 

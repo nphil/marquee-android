@@ -78,6 +78,19 @@ class AppSettings(context: Context) : BrowsePreferences {
 		store.edit { prefs -> prefs.setSeerrPrefs(change(prefs.seerrPrefs())) }
 	}
 
+	/** Receiver discovery is a device setting, not a setting of the Plex profile. */
+	internal val castEnabled = store.data.map { it[CAST_ENABLED] ?: false }.distinctUntilChanged()
+
+	internal suspend fun setCastEnabled(on: Boolean) {
+		store.edit { it[CAST_ENABLED] = on }
+	}
+
+	internal val airPlayEnabled = store.data.map { it[AIRPLAY_ENABLED] ?: false }.distinctUntilChanged()
+
+	internal suspend fun setAirPlayEnabled(on: Boolean) {
+		store.edit { it[AIRPLAY_ENABLED] = on }
+	}
+
 	/** This install's X-Plex-Client-Identifier, made on first use and kept across sign-ins. */
 	suspend fun clientIdentifier(): String {
 		store.data.first()[CLIENT_ID]?.let { return it }
@@ -224,6 +237,8 @@ class AppSettings(context: Context) : BrowsePreferences {
 		val TAB_ORDER = stringPreferencesKey("shell.tabOrder")
 		val TAB_SHOWN = stringPreferencesKey("shell.tabsShown")
 		val TAB_BAR = stringPreferencesKey("shell.tabBarBehavior")
+		val CAST_ENABLED = booleanPreferencesKey("cast.enabled")
+		val AIRPLAY_ENABLED = booleanPreferencesKey("airplay.enabled")
 
 		fun homeLayoutKey(profile: String) = stringPreferencesKey("home.layout.$profile")
 		fun dismissalsKey(profile: String) = stringPreferencesKey("home.rewatchDismissed.$profile")

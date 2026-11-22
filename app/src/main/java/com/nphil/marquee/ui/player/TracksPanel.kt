@@ -31,6 +31,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import com.nphil.marquee.R
+import com.nphil.marquee.cast.CastProvider
+import com.nphil.marquee.core.DELIVERY_BURNED_IN
 import com.nphil.marquee.core.DELIVERY_IN_STREAM
 import com.nphil.marquee.core.DELIVERY_SIDECAR
 import com.nphil.marquee.core.SubtitlePick
@@ -45,6 +47,7 @@ import com.nphil.marquee.ui.components.ChoiceRow
 import com.nphil.marquee.ui.components.GroupGap
 import com.nphil.marquee.ui.components.GroupRow
 import com.nphil.marquee.ui.settings.SettingsActionRow
+import com.nphil.marquee.ui.settings.SettingsFootnote
 import com.nphil.marquee.ui.settings.SettingsSwitchRow
 import com.nphil.marquee.ui.theme.Radius
 import com.nphil.marquee.ui.theme.Space
@@ -159,6 +162,19 @@ private fun Header(page: TracksPage, onBack: (() -> Unit)?, onClose: () -> Unit)
 private fun SubtitlesPage(model: PlayerModel, look: SubtitleLook, onPush: (TracksPage) -> Unit, onClose: () -> Unit) {
 	val tracks = model.tracks
 	val showing = tracks.lists.subtitles.firstOrNull { it.id == tracks.subtitleId }
+	val casting = model.castReceiver != null
+	if (model.castReceiver?.id?.provider == CastProvider.AirPlay) {
+		SettingsFootnote("Subtitles aren’t available over AirPlay.")
+		return
+	}
+	if (casting) {
+		Column(verticalArrangement = Arrangement.spacedBy(GroupGap)) {
+			PickRow(0, 2, "Off", selected = showing == null) { model.pickSubtitle(SubtitlePick.Off) }
+			NavRow(1, 2, "Advanced", showing?.label) { onPush(TracksPage.Advanced) }
+		}
+		SettingsFootnote("Text subtitles aren't shown while casting. Compatible picture subtitles can be picked in Advanced.")
+		return
+	}
 	val automatic = tracks.lists.subtitles.firstOrNull { it.id == tracks.lists.automatic }
 	val canFind = model.canFindSubtitles && !model.subtitleFinder.busy
 	Column(verticalArrangement = Arrangement.spacedBy(GroupGap)) {
@@ -199,17 +215,18 @@ private fun AudioPage(model: PlayerModel) {
 @Composable
 private fun AdvancedPage(model: PlayerModel, onClose: () -> Unit) {
 	val tracks = model.tracks
+	val casting = model.castReceiver != null
 	val options = tracks.lists.menuSubtitles
 	if (options.isEmpty()) {
 		Text("This title has no subtitles.", style = MaterialTheme.typography.bodyMedium, color = lucent.ink2, modifier = Modifier.padding(Space.s3))
 	}
 	Column(verticalArrangement = Arrangement.spacedBy(GroupGap)) {
 		options.forEachIndexed { index, option ->
-			val shown = option.delivery == DELIVERY_SIDECAR || option.delivery == DELIVERY_IN_STREAM
+			val shown = option.delivery == DELIVERY_SIDECAR || option.delivery == DELIVERY_IN_STREAM || option.delivery == DELIVERY_BURNED_IN
 			PickRow(
 				index, options.size, option.label,
 				selected = option.id == tracks.subtitleId,
-				detail = if (shown) null else "Not shown on this tablet",
+				detail = if (shown) null else if (casting) "Not shown while casting" else "Not shown on this tablet",
 				enabled = shown,
 			) { model.pickSubtitle(SubtitlePick.track(option.id)) }
 		}

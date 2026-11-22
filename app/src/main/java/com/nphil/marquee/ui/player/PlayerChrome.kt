@@ -88,6 +88,7 @@ internal class ChromeState(
 	val canPip: Boolean = false,
 	val hasChapters: Boolean = false,
 	val hasNext: Boolean = false,
+	val casting: Boolean = false,
 )
 
 /** What the controls do. */
@@ -107,6 +108,7 @@ internal class ChromeActions(
 	val chapters: () -> Unit,
 	val next: () -> Unit,
 	val remaining: () -> Unit,
+	val cast: (() -> Unit)? = null,
 )
 
 /** A playback speed as the controls write it: 1.5×, 0.75×, 2×. */
@@ -169,20 +171,33 @@ private fun TopBar(state: ChromeState, actions: ChromeActions, accent: Color, wi
 				Text(it, style = shadowed(MaterialTheme.typography.bodyMedium), color = PlayerInk.ink2, maxLines = 1, overflow = TextOverflow.Ellipsis)
 			}
 		}
+		if (wide || !state.ready) CastButton(state, actions.cast, accent)
 		if (!state.ready) return@Row
 		if (state.hasSubtitles) GlassButton(R.drawable.ic_closed_caption, "Subtitles", actions.subtitles, tint = if (state.subtitlesOn) accent else PlayerInk.ink)
 		if (state.hasAudioChoices) GlassButton(R.drawable.ic_volume_up, "Audio", actions.audio)
 		if (wide) {
 			if (state.canChangeQuality) GlassButton(R.drawable.ic_tune, "Quality", actions.quality, tint = if (state.qualityLabel != null) accent else PlayerInk.ink)
-			if (state.speed != 1f) {
-				GlassPill(speedLabel(state.speed), actions.speed, content = accent)
-			} else {
-				GlassButton(R.drawable.ic_speed, "Playback speed", actions.speed)
+			if (!state.casting) {
+				if (state.speed != 1f) {
+					GlassPill(speedLabel(state.speed), actions.speed, content = accent)
+				} else {
+					GlassButton(R.drawable.ic_speed, "Playback speed", actions.speed)
+				}
 			}
-			if (state.canPip) GlassButton(R.drawable.ic_picture_in_picture, "Picture in Picture", actions.pip)
 		}
 		GlassButton(R.drawable.ic_more_vert, "More", actions.more)
 	}
+}
+
+@Composable
+private fun CastButton(state: ChromeState, onClick: (() -> Unit)?, accent: Color) {
+	if (onClick == null) return
+	GlassButton(
+		if (state.casting) R.drawable.ic_cast_connected else R.drawable.ic_cast,
+		if (state.casting) "Cast devices, connected" else "Cast devices",
+		onClick,
+		tint = if (state.casting) accent else PlayerInk.ink,
+	)
 }
 
 /**
@@ -302,12 +317,12 @@ private fun BottomRow(state: ChromeState, actions: ChromeActions, accent: Color,
 		horizontalArrangement = Arrangement.spacedBy(Space.s2),
 	) {
 		GlassButton(R.drawable.ic_lock, "Lock controls", actions.lock)
+		if (!wide) CastButton(state, actions.cast, accent)
 		Spacer(Modifier.weight(1f))
 		if (state.hasChapters) GlassButton(R.drawable.ic_chapters, "Chapters", actions.chapters)
-		if (wide) {
-			GlassPill(state.aspect.label, actions.aspect, icon = R.drawable.ic_aspect_ratio)
-		} else {
-			GlassButton(R.drawable.ic_aspect_ratio, "Aspect: ${state.aspect.label}", actions.aspect)
+		if (!state.casting) {
+			if (wide) GlassPill(state.aspect.label, actions.aspect, icon = R.drawable.ic_aspect_ratio)
+			else GlassButton(R.drawable.ic_aspect_ratio, "Aspect: ${state.aspect.label}", actions.aspect)
 		}
 		if (state.hasNext) {
 			if (wide) {

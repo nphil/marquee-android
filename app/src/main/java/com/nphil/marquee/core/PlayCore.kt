@@ -165,7 +165,7 @@ enum class BadgeSound(val words: String) {
 	@SerialName("surround71") Surround71("7.1"),
 }
 
-/** How the chosen subtitle reaches the screen: none, sidecar, inStream or notShown. This player never has the server burn one in. */
+/** How the chosen subtitle reaches the screen; only a Chromecast route can ask the server to burn it in. */
 @Serializable
 data class Delivery(val kind: String = DELIVERY_NONE, val track: Int? = null)
 
@@ -249,6 +249,7 @@ data class SubtitleOption(
 const val DELIVERY_NONE = "none"
 const val DELIVERY_SIDECAR = "sidecar"
 const val DELIVERY_IN_STREAM = "inStream"
+internal const val DELIVERY_BURNED_IN = "burnedIn"
 const val DELIVERY_NOT_SHOWN = "notShown"
 
 /** The items on either side of the one playing in the play queue. */
@@ -301,15 +302,14 @@ suspend fun MarqueeCore.playReport(
 	put("durationMs", durationMs)
 }).took
 
-/** Reports the stop and stops the server's conversion. [close] ends the session with the screen. */
-suspend fun MarqueeCore.playStop(
-	server: PlexServer, remembered: String?, session: String, timeMs: Int, durationMs: Int, close: Boolean,
-) {
-	call<JsonObject>("play.stop", serverParams(server, remembered) {
+/** Releases the server stream. Dropping an uncommitted or transferred stream doesn't change the timeline. */
+internal suspend fun MarqueeCore.playStop(session: String, timeMs: Int, durationMs: Int, close: Boolean, report: Boolean = true) {
+	call<JsonObject>("play.stop", buildJsonObject {
 		put("session", session)
 		put("timeMs", timeMs)
 		put("durationMs", durationMs)
 		put("close", close)
+		if (!report) put("report", false)
 	})
 }
 

@@ -82,7 +82,7 @@ internal fun SettingsFieldRow(
 			keyboardOptions = KeyboardOptions(
 				capitalization = KeyboardCapitalization.None,
 				autoCorrectEnabled = false,
-				keyboardType = if (secret) KeyboardType.Password else keyboardType,
+				keyboardType = if (secret && keyboardType != KeyboardType.NumberPassword) KeyboardType.Password else keyboardType,
 				imeAction = imeAction,
 			),
 			keyboardActions = KeyboardActions(onDone = {

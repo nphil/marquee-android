@@ -110,12 +110,14 @@ final class Methods: Sendable {
             return try await DownloadCalls.handle(method, payload, library: library(for:))
         case _ where RemoteCalls.handles(method):
             return try await RemoteCalls.handle(method, payload)
+        case _ where CastCalls.handles(method):
+            return try await CastCalls.handle(method, payload, using: castServices)
         default:
             throw BridgeError.unknownMethod(method)
         }
     }
 
-    private func identity() throws -> PlexClientIdentity {
+    func identity() throws -> PlexClientIdentity {
         guard let identity = state.withLock({ $0.identity }) else { throw BridgeError.notConfigured }
         return identity
     }

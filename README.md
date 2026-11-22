@@ -7,6 +7,24 @@ Compose.
 
 Plan and status: [docs/PLAN.md](docs/PLAN.md).
 
+## AirPlay video
+
+The Android sender uses [Airkast 0.6.0](https://github.com/aivanyuk/airkast/tree/0.6.0)
+under Apache 2.0. The receiver must advertise AirPlay 2 video, allow the sender on its network,
+and reach the Plex server. Marquee supports direct H.264/AAC MP4 playback; it does not send
+Plex's HLS conversions because LG's AirPlay web player requires cross-origin headers on
+the playlist and segments. Subtitles and audio-track switching are not available on this file path.
+
+[Airkast's hardware checks](https://github.com/aivanyuk/airkast/blob/0.6.0/docs/compatibility.md#checked)
+cover an LG OLED CX with or without a PIN and a Mac set to allow AirPlay from the same network.
+AirPlay 1 devices, audio-only receivers, and receivers restricted to the owner's Apple Account
+are not supported. Apple TV and other AirPlay 2 displays need hardware verification.
+
+The older Connect SDK sender uses legacy video commands; the LG CX does not accept them.
+Physical acceptance needs an Android device, an LG CX, and a test Plex server with an
+unprotected H.264/AAC MP4. It checks discovery, the receiver's on-screen PIN, actual video
+at the resume position, seek, pause and disconnect back to the phone.
+
 ## Install
 
 Add this repository to [Obtainium](https://github.com/ImranR98/Obtainium):

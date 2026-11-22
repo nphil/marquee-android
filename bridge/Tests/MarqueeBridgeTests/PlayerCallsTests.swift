@@ -319,6 +319,18 @@ import Testing
         }
     }
 
+    @Test func discardingAStagedStreamReleasesItWithoutChangingTheTimeline() async throws {
+        let server = Server()
+        let services = services(server)
+        let session = try #require(try await start(services, ["quality": 4000, "probe": ["bytes": 4_000_000, "seconds": 0.4]])["session"] as? String)
+
+        _ = try await call("play.stop", services, ["session": session, "timeMs": 0, "durationMs": 0, "close": true, "report": false])
+
+        #expect(server.count("/video/:/transcode/universal/stop") == 1)
+        #expect(server.count("/:/timeline") == 0)
+        #expect(services.sessions.find(session) == nil)
+    }
+
     @Test func anAC3FilePlaysAsItIsOnATabletThatDecodesAC3() async throws {
         let server = Server()
         let services = services(server)

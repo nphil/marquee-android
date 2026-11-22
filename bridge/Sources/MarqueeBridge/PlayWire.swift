@@ -117,6 +117,8 @@ struct StopCall: Decodable {
     let durationMs: Int
     /// The screen is closing: the session ends too.
     let close: Bool
+    /// An uncommitted handoff can release resources without changing the active title's timeline.
+    let report: Bool?
 }
 
 struct LookCall: Decodable {
