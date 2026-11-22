@@ -11,6 +11,7 @@ import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onFirst
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import com.nphil.marquee.testing.Device
 import com.nphil.marquee.testing.DeviceWindow
@@ -22,6 +23,7 @@ import com.nphil.marquee.ui.theme.LucentTheme
 import com.nphil.marquee.ui.theme.MarqueeTheme
 import com.nphil.marquee.ui.theme.ThemeChoice
 import com.nphil.marquee.ui.theme.ThemeMode
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -104,13 +106,22 @@ class ReviewScreenshotsTest(private val screen: Screen, private val device: Devi
 		await(hasClickLabel("Search for ${RecentSearches.first()}"))
 	}
 
-	// A recent search is typed for the person, so no keyboard comes up over the page.
+	// A recent search is typed for the person, so no keyboard comes up over the page. A phone lists the results as rows
+	// that open by their title; a tablet lays them out as poster and episode cards that fill the width.
 	private fun searchResults() {
 		openTab("Search")
 		click(hasClickLabel("Search for Caminandes"))
-		await(hasClickLabel("Open Caminandes"))
-		await(hasClickLabel("Open Llama Drama"))
+		for (title in listOf("Caminandes", "Llama Drama", "Gran Dillama", "Llamigos")) await(searchResult(title))
+		if (device != Device.Phone) {
+			// The third episode card sits in the right half of the window, so the results are not a column on the left.
+			val card = rule.onNode(searchResult("Llamigos")).fetchSemanticsNode().boundsInRoot
+			val width = rule.onRoot().fetchSemanticsNode().size.width
+			assertTrue("Llamigos at ${card.left} of $width px", card.left > width / 2f)
+		}
 	}
+
+	private fun searchResult(title: String) =
+		if (device == Device.Phone) hasClickLabel("Open $title") else hasContentDescription(title, substring = true) and hasClickAction()
 
 	/** Settings as the Home bar's button (phone) or the sidebar's footer (tablet) opens it, then the page [row] opens. */
 	private fun settingsPage(row: String, anchor: SemanticsMatcher) {

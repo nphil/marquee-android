@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -34,10 +35,12 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
@@ -45,6 +48,7 @@ import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -54,16 +58,25 @@ import com.nphil.marquee.browse.BrowsePlace
 import com.nphil.marquee.browse.SearchModel
 import com.nphil.marquee.browse.SearchScope
 import com.nphil.marquee.browse.SearchUi
+import com.nphil.marquee.core.MediaType
+import com.nphil.marquee.core.PlexHub
 import com.nphil.marquee.core.PlexItem
 import com.nphil.marquee.core.kindLine
 import com.nphil.marquee.core.posterPath
+import com.nphil.marquee.core.progress
+import com.nphil.marquee.core.spokenSummary
 import com.nphil.marquee.ui.LocalNavigator
+import com.nphil.marquee.ui.browse.ItemPoster
+import com.nphil.marquee.ui.browse.PosterGridMetrics
 import com.nphil.marquee.ui.browse.RowsSkeleton
 import com.nphil.marquee.ui.components.BackArrow
 import com.nphil.marquee.ui.components.EmptyState
+import com.nphil.marquee.ui.components.EpisodeCard
 import com.nphil.marquee.ui.components.PlexArt
 import com.nphil.marquee.ui.components.RetryButton
+import com.nphil.marquee.ui.components.SectionHeader
 import com.nphil.marquee.ui.components.TextAction
+import com.nphil.marquee.ui.posterSharedElement
 import com.nphil.marquee.ui.theme.Radius
 import com.nphil.marquee.ui.theme.Size
 import com.nphil.marquee.ui.theme.Space
@@ -228,6 +241,23 @@ private fun Results(ui: SearchUi, onOpen: (PlexItem) -> Unit) {
 		Centered { EmptyState(R.drawable.ic_search, "No results for “${ui.query.trim()}”", "Check the spelling or try a different search.") }
 		return
 	}
+	BoxWithConstraints(Modifier.fillMaxSize()) {
+		if (maxWidth < WideResultsMin) {
+			ResultList(groups, onOpen)
+		} else {
+			ResultGrids(groups, maxWidth - Space.inset * 2, onOpen)
+		}
+	}
+}
+
+/** The width from which results fill the screen in grids, as Library's posters do; narrower, they stay a list. */
+private val WideResultsMin = 600.dp
+
+/** The least width of an episode card in the grid: wide enough for a 16:9 still and a two-line title. */
+private val EpisodeCardMin = 280.dp
+
+@Composable
+private fun ResultList(groups: List<PlexHub>, onOpen: (PlexItem) -> Unit) {
 	LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = Space.s6)) {
 		groups.forEachIndexed { index, hub ->
 			item(key = "hub:$index") {
@@ -241,6 +271,72 @@ private fun Results(ui: SearchUi, onOpen: (PlexItem) -> Unit) {
 			items(hub.items, key = { "$index/${it.ratingKey}" }) { item -> ResultRow(item) { onOpen(item) } }
 		}
 	}
+}
+
+/** One line of the wide results: a header across the width, or one row of a group's grid of posters or episode cards. */
+private sealed interface ResultEntry {
+	val key: String
+
+	data class Header(override val key: String, val title: String) : ResultEntry
+	data class Posters(override val key: String, val items: List<PlexItem>) : ResultEntry
+	data class Episodes(override val key: String, val items: List<PlexItem>) : ResultEntry
+}
+
+/** The groups as header and grid-row entries: titles as posters, episodes as cards, each in as many columns as fit. */
+private fun resultEntries(groups: List<PlexHub>, posterColumns: Int, episodeColumns: Int): List<ResultEntry> = buildList {
+	groups.forEachIndexed { index, hub ->
+		add(ResultEntry.Header("hub:$index", hub.title))
+		val (episodes, titles) = hub.items.partition { it.type == MediaType.Episode }
+		titles.chunked(posterColumns).forEach { row -> add(ResultEntry.Posters("p:$index/${row.first().ratingKey}", row)) }
+		episodes.chunked(episodeColumns).forEach { row -> add(ResultEntry.Episodes("e:$index/${row.first().ratingKey}", row)) }
+	}
+}
+
+/**
+ * The results on a wide screen, like Library's grid: each group's titles as posters and its episodes as cards, filling
+ * [width], under headers that span it. Rows of a grid are the list's items, so only the rows on screen are composed.
+ */
+@Composable
+private fun ResultGrids(groups: List<PlexHub>, width: Dp, onOpen: (PlexItem) -> Unit) {
+	val fontScale = LocalDensity.current.fontScale
+	val posters = PosterGridMetrics.of(width, fontScale)
+	val cards = PosterGridMetrics.of(width, fontScale, minCell = EpisodeCardMin)
+	val entries = remember(groups, posters.columns, cards.columns) { resultEntries(groups, posters.columns, cards.columns) }
+	LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = Space.s1, bottom = Space.s7)) {
+		items(entries, key = { it.key }, contentType = { it::class }) { entry ->
+			when (entry) {
+				is ResultEntry.Header -> SectionHeader(entry.title)
+				is ResultEntry.Posters -> GridRow(posters.gutter) {
+					for (item in entry.items) {
+						ItemPoster(item, posters.cellWidth, onClick = { onOpen(item) }, line = item.kindLine, reserveLine = true)
+					}
+				}
+				is ResultEntry.Episodes -> GridRow(cards.gutter) {
+					for (item in entry.items) {
+						EpisodeCard(
+							title = item.title,
+							artPath = item.thumb ?: item.art ?: item.grandparentArt,
+							width = cards.cellWidth,
+							line = item.kindLine,
+							progress = item.progress,
+							description = item.spokenSummary,
+							onClick = { onOpen(item) },
+							artModifier = Modifier.posterSharedElement(item.ratingKey),
+						)
+					}
+				}
+			}
+		}
+	}
+}
+
+@Composable
+private fun GridRow(gutter: Dp, content: @Composable () -> Unit) {
+	Row(
+		Modifier.fillMaxWidth().padding(start = Space.inset, end = Space.inset, bottom = Space.s5),
+		horizontalArrangement = Arrangement.spacedBy(gutter),
+		verticalAlignment = Alignment.Top,
+	) { content() }
 }
 
 @Composable
