@@ -69,9 +69,9 @@ enum PlayCalls {
         let media = item.media[mediaIndex]
         let duration = Double([item.duration, media.duration, part.duration].first { $0 > 0 } ?? 0) / 1000
         let tracks = MediaTracks(part: part)
-        let tagged = await services.anime.isAnime(item, in: library)
+        let tags = await services.anime.tags(item, in: library)
         let picked = TrackRules.pick(
-            from: tracks, isAnime: tagged,
+            from: tracks, isAnime: tags.isAnime, countries: tags.countries,
             choices: TrackRules.Choices(audio: call.audio, subtitle: call.subtitle?.choice, memory: call.memory)
         )
 
