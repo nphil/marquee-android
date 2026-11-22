@@ -35,14 +35,21 @@ fun Bitmap.saveScreenshot(name: String) {
 
 /**
  * Copies [file] into [ReviewFolder] through the shell: scoped storage keeps an app out of Download, and the shell is
- * not kept out. The command's output ends only when the copy has, so reading it to the end is the wait. A copy that
- * fails is logged and left for the script's pull to find missing; screenshots are no reason to fail a test run.
+ * not kept out. UiAutomation starts a command without a shell, so `&&` and quotes would be passed on as arguments:
+ * each step is one plain command, and reading its output to the end is the wait for it. A copy that fails is logged
+ * and left for the script's pull to find missing; screenshots are no reason to fail a test run.
  */
 private fun publish(file: File) {
-	val command = "mkdir -p $ReviewFolder && cp '${file.path}' '$ReviewFolder/' && echo copied"
+	shell("mkdir -p $ReviewFolder")
+	shell("cp ${file.path} $ReviewFolder/")
+	val copy = "$ReviewFolder/${file.name}"
+	val listed = shell("ls $copy")
+	if (listed != copy) Log.w(Tag, "${file.name} was not copied to $ReviewFolder: '$listed'")
+}
+
+private fun shell(command: String): String {
 	val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
-	val output = ParcelFileDescriptor.AutoCloseInputStream(automation.executeShellCommand(command)).use {
+	return ParcelFileDescriptor.AutoCloseInputStream(automation.executeShellCommand(command)).use {
 		it.readBytes().decodeToString().trim()
 	}
-	if (output != "copied") Log.w(Tag, "${file.name} was not copied to $ReviewFolder")
 }
