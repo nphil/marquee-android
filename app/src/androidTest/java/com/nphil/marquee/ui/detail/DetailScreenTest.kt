@@ -76,7 +76,7 @@ class DetailScreenTest {
 
 	@After
 	fun signOut() {
-		context.container.session.signOut()
+		runBlocking { context.container.session.signOut().join() }
 		fake.stop()
 	}
 

@@ -30,8 +30,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -193,7 +193,14 @@ private const val SettingsLabel = "Settings"
 
 @Composable
 internal fun CompactSettingsButton(profile: PlexHomeUser?, onClick: () -> Unit) {
-	IconButton(onClick = onClick, modifier = Modifier.semantics { contentDescription = SettingsLabel }) {
+	Box(
+		Modifier
+			.size(Size.target)
+			.clip(CircleShape)
+			.clickable(role = Role.Button, onClick = onClick)
+			.semantics { contentDescription = SettingsLabel },
+		contentAlignment = Alignment.Center,
+	) {
 		SettingsAvatar(profile)
 	}
 }

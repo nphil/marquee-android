@@ -185,9 +185,7 @@ class TrailerStartTest {
 		/** How far from the art the hero must be once the picture has faded in: the picture has taken its place. It was 0.38 to 0.40 on the CI emulator. */
 		const val Replaced = 0.15f
 
-		// Where the fade sits between the art and the picture, frame to frame. A 400 ms ease moves at most about 0.11 of the
-		// way in a frame of 16 ms (0.08 on the CI emulator); a cut moves all of it in one. The video plays on under the fade,
-		// so a frame may also step back by what the picture moved.
+		// A 400 ms ease moves at most about 0.11 of the way in a frame of 16 ms; a cut moves all of it in one.
 		const val BiggestStep = 0.2f
 		const val BiggestStepBack = 0.1f
 	}

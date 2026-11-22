@@ -273,15 +273,15 @@ class AppSession(
 		}
 	}
 
-	/** Forgets the sign-in: the token and the server list are deleted. Settings and themes stay. */
-	fun signOut() {
+	/** Forgets the sign-in. The returned job finishes clearing the stored account and its connections. */
+	fun signOut(): Job {
 		Diag.notice(DiagCategory.Plex, "signout")
 		signInJob?.cancel()
 		refreshJob?.cancel()
 		addressJob?.cancel()
 		token = null
 		mutableState.value = State(phase = Phase.SignedOut)
-		scope.launch {
+		return scope.launch {
 			signInWrites.withLock {
 				if (token == null) {
 					withContext(Dispatchers.IO) { secrets.clear() }

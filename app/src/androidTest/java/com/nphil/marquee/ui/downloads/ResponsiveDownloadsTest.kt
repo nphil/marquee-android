@@ -85,6 +85,8 @@ class ResponsiveDownloadsTest {
 			pane = DpSize(320.dp, 640.dp)
 		}
 
+		val compactCard = play.getUnclippedBoundsInRoot()
+		assertTrue(compactCard.right - compactCard.left <= 289.dp)
 		assertEquals(first.bounds().left, second.bounds().left, 1f)
 		assertTrue(first.bounds().bottom < second.bounds().top)
 		play.assertIsDisplayed()
@@ -160,7 +162,8 @@ class ResponsiveDownloadsTest {
 		val id = if (mode == ThemeMode.Dark) LucentTheme.DEFAULT_DARK else LucentTheme.DEFAULT_LIGHT
 		DeviceConfigurationOverride(DeviceConfigurationOverride.WindowSize(DpSize(1280.dp, 800.dp))) {
 			DeviceConfigurationOverride(DeviceConfigurationOverride.FontScale(fontScale)) {
-				MarqueeTheme(themes.resolve(id, mode), typography, content)
+				// The window override supplies fixed minima as well as maxima; the pane needs loose minima to resize.
+				MarqueeTheme(themes.resolve(id, mode), typography) { Box { content() } }
 			}
 		}
 	}
@@ -184,7 +187,15 @@ class ResponsiveDownloadsTest {
 		assertIsDisplayed()
 		val result = mutableListOf<TextLayoutResult>()
 		performSemanticsAction(SemanticsActions.GetTextLayoutResult) { assertTrue(it(result)) }
-		assertFalse(result.single().hasVisualOverflow)
+		val layout = result.single()
+		// Compose reconstructs the semantic paragraph at the parent's max width, even for short labels.
+		// Check its actual lines against the measured text box instead of comparing the paragraph widths.
+		assertFalse(layout.didOverflowHeight)
+		assertEquals(layout.layoutInput.text.length, layout.getLineEnd(layout.lineCount - 1))
+		for (line in 0 until layout.lineCount) {
+			assertFalse(layout.isLineEllipsized(line))
+			assertTrue(layout.getLineLeft(line) >= -1f && layout.getLineRight(line) <= layout.size.width + 1f)
+		}
 		return this
 	}
 

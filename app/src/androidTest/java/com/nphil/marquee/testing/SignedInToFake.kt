@@ -59,7 +59,8 @@ class SignedInToFake(private val trailer: String? = null, private val film: Byte
 
 	override fun after() {
 		art.restore()
-		container.session.signOut()
+		// The next test seeds the same store, so finish clearing it before leaving this rule.
+		runBlocking { container.session.signOut().join() }
 		fake.stop()
 		// The app's own transport again, as the container left it.
 		NativeCore.install(NativeTransport(container.http))
