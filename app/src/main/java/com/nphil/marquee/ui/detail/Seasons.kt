@@ -1,9 +1,14 @@
 package com.nphil.marquee.ui.detail
 
 import androidx.annotation.DrawableRes
+import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,6 +17,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -25,7 +31,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -33,12 +41,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.nphil.marquee.R
 import com.nphil.marquee.core.ItemText
@@ -53,6 +69,7 @@ import com.nphil.marquee.ui.theme.Radius
 import com.nphil.marquee.ui.theme.Size
 import com.nphil.marquee.ui.theme.Space
 import com.nphil.marquee.ui.theme.lucent
+import kotlin.math.roundToInt
 
 private val StillWidth = 128.dp
 private val StillHeight = 72.dp
@@ -172,13 +189,24 @@ private fun SeasonMenu(state: DetailState, model: DetailModel) {
 	}
 }
 
-/** A 128 by 72 still with a bar for how far in, the number and name, the runtime and air date, two lines of the summary. */
+/**
+ * A 128 by 72 still with a bar for how far in, the number and name, the runtime and air date, two lines of the
+ * summary. A swipe from the start edge marks it watched or unwatched, as on the iPhone; the check and the More menu
+ * do the same without one.
+ */
 @Composable
 private fun EpisodeRow(episode: PlexItem, model: DetailModel, navigator: Navigator, modifier: Modifier) {
+	SwipeToMarkWatched(episode.isWatched, modifier, onToggle = { model.setWatched(episode.ratingKey, !episode.isWatched) }) {
+		EpisodeRowContent(episode, model, navigator)
+	}
+}
+
+@Composable
+private fun EpisodeRowContent(episode: PlexItem, model: DetailModel, navigator: Navigator) {
 	var menu by remember { mutableStateOf(false) }
 	val progress = episode.progress
 	Row(
-		modifier = modifier
+		modifier = Modifier
 			.fillMaxWidth()
 			.clip(RoundedCornerShape(Radius.tile))
 			.clickable(role = Role.Button, onClickLabel = "Open ${episode.title}") { navigator.openItem(episode.ratingKey) }
@@ -230,6 +258,56 @@ private fun EpisodeRow(episode: PlexItem, model: DetailModel, navigator: Navigat
 					)
 				}
 			}
+		}
+	}
+}
+
+private val SwipeCommit = 96.dp
+private val SwipeFling = 400.dp
+
+/**
+ * Shows an accent strip under the row as it is dragged from the start edge and springs back when let go. A drag past
+ * [SwipeCommit], or a fling, takes effect, as the leading swipe action does in the iPhone's episode lists.
+ */
+@Composable
+private fun SwipeToMarkWatched(watched: Boolean, modifier: Modifier, onToggle: () -> Unit, content: @Composable () -> Unit) {
+	val haptics = LocalHapticFeedback.current
+	val density = LocalDensity.current
+	val reach = with(density) { SwipeCommit.toPx() }
+	val fling = with(density) { SwipeFling.toPx() }
+	val direction = if (LocalLayoutDirection.current == LayoutDirection.Rtl) -1f else 1f
+	var dragged by remember { mutableFloatStateOf(0f) }
+	val swiping by remember { derivedStateOf { dragged > 0f } }
+	Box(
+		modifier
+			.draggable(
+				orientation = Orientation.Horizontal,
+				state = rememberDraggableState { delta -> dragged = (dragged + delta * direction).coerceIn(0f, reach * 2) },
+				onDragStopped = { velocity ->
+					if (dragged >= reach || velocity * direction > fling) {
+						haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+						onToggle()
+					}
+					animate(dragged, 0f, animationSpec = spring()) { value, _ -> dragged = value }
+				},
+			)
+			.semantics {
+				customActions = listOf(CustomAccessibilityAction(if (watched) "Mark unwatched" else "Mark watched") { onToggle(); true })
+			},
+	) {
+		if (swiping) {
+			Row(
+				Modifier.matchParentSize().clip(RoundedCornerShape(Radius.tile)).background(lucent.accent).padding(horizontal = Space.s5),
+				horizontalArrangement = Arrangement.spacedBy(Space.s2),
+				verticalAlignment = Alignment.CenterVertically,
+			) {
+				Icon(painterResource(if (watched) R.drawable.ic_radio_button_unchecked else R.drawable.ic_check_circle), contentDescription = null, tint = lucent.accentInk)
+				Text(if (watched) "Unwatched" else "Watched", style = MaterialTheme.typography.labelLarge, color = lucent.accentInk, maxLines = 1)
+			}
+		}
+		// Opaque only while the row is away from its place, so the strip does not show through it.
+		Box(Modifier.offset { IntOffset((dragged * direction).roundToInt(), 0) }.then(if (swiping) Modifier.background(lucent.canvas) else Modifier)) {
+			content()
 		}
 	}
 }

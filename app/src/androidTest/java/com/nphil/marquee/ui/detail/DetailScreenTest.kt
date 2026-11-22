@@ -24,6 +24,8 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeRight
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -130,6 +132,17 @@ class DetailScreenTest {
 		rule.onAllNodesWithContentDescription("Back").onLast().performClick()
 		waitUntilGone(hasClickLabel("Open Caminandes"))
 		scrollTo(hasClickLabel("Open Llama Drama"))
+	}
+
+	@Test
+	fun swipingAnEpisodeFromTheStartEdgeMarksItWatched() {
+		show()
+		open("Caminandes")
+		scrollTo(hasClickLabel("Open Gran Dillama"))
+		waitFor(hasContentDescription("Mark Gran Dillama watched"))
+
+		rule.onNode(hasClickLabel("Open Gran Dillama")).performTouchInput { swipeRight() }
+		waitFor(hasContentDescription("Mark Gran Dillama unwatched"))
 	}
 
 	@Test
