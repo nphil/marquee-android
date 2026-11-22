@@ -40,9 +40,8 @@ import org.junit.runner.RunWith
  * Elephants Dream over the fake Plex of core/UITests/FakePlex, with a stand-in for the tabs. The fake serves the
  * letterboxed [Clips.Scope] as the movie's trailer, so the trailer is the real one end to end: the page's dwell, the
  * player over the fake's HTTP, the decoder, and the picture over the page's art. The clock stops before the dwell runs
- * out and moves a frame at a time, and each frame is a shot of the hero: the art alone, the video's first frame, and the
- * cross-fade to its end. It is saved as a numbered contact sheet among the review screenshots, the frame the picture
- * began to show in red.
+ * out and moves a frame at a time once the player view exists. Each shot shows the art alone, the video's first frame,
+ * or the cross-fade to its end. The numbered contact sheet marks the frame the picture began to show in red.
  *
  * The art is seen first and nothing is drawn over it until the picture shows: no flash of black or of a shutter. The
  * picture fades in rather than cutting in. When it has, the letterbox is cropped away and the hero is picture to every
@@ -108,12 +107,14 @@ class TrailerStartTest {
 		}
 	}
 
-	/** Runs the page's dwell out a frame at a time, up to the first frame the trailer is on screen in. */
+	/** Advances the dwell without waiting for Android to draw after each tick. */
 	private fun awaitTrailer() {
-		val end = System.currentTimeMillis() + LoadMillis
-		while (probe.state() == null) {
-			if (System.currentTimeMillis() > end) throw AssertionError("the trailer was not on screen $LoadMillis ms after the page was still, with the clock moving a frame at a time")
-			rule.mainClock.advanceTimeByFrame()
+		probe.await("the trailer view to mount", LoadMillis) {
+			if (probe.state() != null) return@await true
+			// A bulk step runs on the UI thread. The newly mounted player's first-frame callback cannot
+			// run until the step returns, so the fade still starts under the frame-by-frame clock.
+			rule.mainClock.advanceTimeBy(TrailerAutoplay.dwell.inWholeMilliseconds)
+			false
 		}
 	}
 
