@@ -125,8 +125,12 @@ jobs:
           set -euo pipefail
           # The package's JNI target includes <jni.h>, which the NDK supplies for Android and the JDK here.
           # A scratch path of its own keeps the host build out of the cached Android build in bridge/.build.
-          swift test --build-system native --scratch-path "$RUNNER_TEMP/swift-host-tests" \
-            -Xcc -I"$JAVA_HOME/include" -Xcc -I"$JAVA_HOME/include/linux"
+          # The diagnostics tests install the process-wide log sink and compare exact journal lines, so a target
+          # that logs while they run breaks them: each target gets a process of its own.
+          for target in MarqueeDiagnosticsTests MarqueeBridgeTests; do
+            swift test --build-system native --scratch-path "$RUNNER_TEMP/swift-host-tests" --filter "$target" \
+              -Xcc -I"$JAVA_HOME/include" -Xcc -I"$JAVA_HOME/include/linux"
+          done
 
       - name: Core revision
         id: core
