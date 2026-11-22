@@ -39,5 +39,14 @@ let package = Package(
                 .product(name: "MarqueeCore", package: "MarqueeCore"),
             ]
         ),
+        // The browse calls against a scripted server. No JNI is called, but the target links the bridge, so the
+        // host build needs the JDK headers, as the other tests do.
+        .testTarget(
+            name: "MarqueeBridgeTests",
+            dependencies: [
+                "MarqueeBridge",
+                .product(name: "MarqueeCore", package: "MarqueeCore"),
+            ]
+        ),
     ]
 )

@@ -74,11 +74,14 @@ struct Section: Encodable {
     let key: String
     let title: String
     let type: PlexMediaType
+    /// What Home's layout knows the library by (`HomeLayout.libraryID`): the uuid, else the key.
+    let id: String
 
     init(_ section: PlexLibrarySection) {
         key = section.key
         title = section.title
         type = section.type
+        id = HomeLayout.libraryID(section)
     }
 }
 

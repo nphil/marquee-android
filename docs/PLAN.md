@@ -74,6 +74,10 @@ Each phase ends with a release installed on the tablet.
      log) and Settings › Diagnostic Logs, with the Report a Problem sheet and the floating button.
 2. **Browse.** Home with its rows and layout editor (Continue Watching with rewatches), libraries,
    detail pages with trailers and theme music, seasons and episodes, search, watchlist, Seerr requests.
+   - Browse bridge: `bridge/Sources/MarqueeBridge/BrowseCalls.swift` serves Home (rows, rewatch cards, the
+     last Home from disk), library pages and letters, search, the plex.tv watchlist and snapshot removal;
+     its header lists the calls and `bridge/Tests/MarqueeBridgeTests` runs them against a scripted server
+     in CI. The profile's Home layout is applied by the app, so the bridge sends rows without `shown`.
 3. **Player.** Routes from Core, Auto quality with the link probe and Save Data, track and subtitle
    rules, Bazarr and SpeechDock, subtitle style, Skip Intro, credits and Up Next, background play,
    playback info, format badge, stats for nerds. Three small-player modes:
@@ -118,3 +122,5 @@ Each phase ends with a release installed on the tablet.
   tablet.
 - Compose 1.13 needs compileSdk 37.1 or later, so the app builds against `android-37.2`
   (`compileSdkMinor = 2`). AGP 9 makes unit tests for the debug build type only.
+- 2026-11-21: Footnote text in Settings read too thin on the tablet at Regular weight, so the body styles
+  (`bodyLarge`, `bodyMedium`, `bodySmall`) use Medium app-wide. Not yet looked at on the tablet since.
