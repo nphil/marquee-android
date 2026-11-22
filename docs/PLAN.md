@@ -80,6 +80,14 @@ Each phase ends with a release installed on the tablet.
      last Home from disk), library pages and letters, search, the plex.tv watchlist and snapshot removal;
      its header lists the calls and `bridge/Tests/MarqueeBridgeTests` runs them against a scripted server
      in CI. The profile's Home layout is applied by the app, so the bridge sends rows without `shown`.
+   - Detail: the `item.*` calls (`DetailCalls.swift`) serve a title, its seasons and episodes, extras,
+     related shelves, watched marks and watchlist changes. `DetailModel` loads the item first and the rest
+     in parallel. Pages are Navigation 3 routes (`ui/AppNavigation.kt`); the poster-to-hero shared element
+     runs only from the poster that was tapped. The tracks sheet is read-only and there is no Play or
+     Resume until the player. Episode rows have no swipe actions; their menu has the same ones.
+   - The instrumented tests run `DetailBridgeTest` against the iPhone's FakePlex fixtures. The baseline
+     profile still records the start only: the detail screens need a signed-in session, and no seed hook
+     for one exists.
 3. **Player.** Routes from Core, Auto quality with the link probe and Save Data, track and subtitle
    rules, Bazarr and SpeechDock, subtitle style, Skip Intro, credits and Up Next, background play,
    playback info, format badge, stats for nerds. Three small-player modes:

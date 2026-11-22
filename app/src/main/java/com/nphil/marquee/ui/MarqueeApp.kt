@@ -74,7 +74,7 @@ fun MarqueeApp(container: AppContainer, choice: ThemeChoice, onTheme: ((ThemeCho
 			when (screen) {
 				RootScreen.SignIn -> SignInScreen(container.session)
 				RootScreen.Servers -> ServerChoiceScreen(container.session)
-				RootScreen.Shell -> Shell(container, choice, onTheme)
+				RootScreen.Shell -> AppNavigation(container) { Shell(container, choice, onTheme) }
 			}
 		}
 	}
