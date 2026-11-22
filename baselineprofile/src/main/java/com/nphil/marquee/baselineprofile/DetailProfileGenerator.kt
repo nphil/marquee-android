@@ -8,6 +8,7 @@ import androidx.test.uiautomator.By
 import androidx.test.uiautomator.Direction
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
+import androidx.test.uiautomator.Until
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -37,7 +38,7 @@ class DetailProfileGenerator {
 		ProfileTarget.openFromHome(device, By.descContains("unwatched episodes"))
 		var episode: UiObject2? = null
 		repeat(5) {
-			episode = episode ?: device.findObject(By.textContains(EPISODE)) ?: run { ProfileTarget.scroll(device, down = true); null }
+			episode = episode ?: device.wait(Until.findObject(By.textContains(EPISODE)), 4_000) ?: run { ProfileTarget.scroll(device, down = true); null }
 		}
 		checkNotNull(episode) { "the show page has no episode row" }.swipe(Direction.RIGHT, 0.6f)
 		device.waitForIdle()
