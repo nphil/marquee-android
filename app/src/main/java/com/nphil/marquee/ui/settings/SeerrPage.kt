@@ -86,7 +86,11 @@ fun SeerrPage(contentPadding: PaddingValues) {
 			SettingsSwitchRow(0, 1, "Enabled", config.on, enabled = config.configured, onChange = model::setOn)
 		}
 		item(key = "enabledNote") {
-			SettingsFootnote("Requests appears in the tablet's navigation while this is on.", Modifier.padding(top = Space.s2, bottom = Space.s5))
+			SettingsFootnote(
+				if (config.configured) "Requests appears in the tablet's navigation while this is on."
+				else "Add Seerr's address below and test the connection; then this can be turned on.",
+				Modifier.padding(top = Space.s2, bottom = Space.s5),
+			)
 		}
 
 		item(key = "address") {
