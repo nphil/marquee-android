@@ -184,16 +184,32 @@ class BackAnimationTest {
 		}
 	}
 
-	private fun shoot() {
+	private fun shoot(into: Film = film) {
 		val frame = rule.onRoot().captureToImage().asAndroidBitmap()
-		film.add(frame)
+		into.add(frame)
 		frame.recycle()
 	}
 
-	/** Waits for the page to open and settle, its pictures included, then stops the clock and shoots the first frame. */
+	/**
+	 * Waits until two shots a moment apart match: the pictures have arrived and nothing is moving. The art loader's
+	 * counters never settled on these pages on the CI emulator, so the screen itself is the judge. A page that never goes
+	 * still is filmed as it is.
+	 */
+	private fun awaitStill() {
+		val end = System.currentTimeMillis() + LoadMillis
+		do {
+			val shots = Film()
+			shoot(shots)
+			Thread.sleep(StillMillis)
+			rule.waitForIdle()
+			shoot(shots)
+		} while (shots.reach > StillGap && System.currentTimeMillis() < end)
+	}
+
+	/** Waits for the page to open and go still, then stops the clock and shoots the first frame. */
 	private fun startFilming(page: Page) {
 		page.awaitLoaded()
-		app.art.awaitSettled(rule)
+		awaitStill()
 		rule.waitForIdle()
 		rule.mainClock.autoAdvance = false
 		shoot()
@@ -263,6 +279,10 @@ class BackAnimationTest {
 	private companion object {
 		/** Long enough for the emulator's first frames and the fixtures' answers. */
 		const val LoadMillis = 20_000L
+
+		/** Two shots this far apart in real time, and this close in the picture, make a page still. */
+		const val StillMillis = 300L
+		const val StillGap = 0.001f
 
 		/** Frames of 16 ms after the finger comes off: the close takes 350 ms and ends well inside this. */
 		const val AfterFrames = 40
