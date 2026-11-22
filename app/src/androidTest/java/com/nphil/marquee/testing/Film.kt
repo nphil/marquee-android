@@ -11,8 +11,9 @@ import kotlin.math.abs
  * (the screen it reveals): 0 is still the page, 1 is the screen under it. A smooth close rises evenly. A page left
  * standing until it is cut away shows as a flat run and then one big step, and an animation that starts over shows
  * as a step back.
+ * The pictures are kept [tileWidth] pixels wide: the default tells a page from its neighbour, a wider one shows detail.
  */
-class Film {
+class Film(private val tileWidth: Int = Width) {
 	private val pictures = mutableListOf<IntArray>()
 	private var width = 0
 	private var height = 0
@@ -81,8 +82,8 @@ class Film {
 
 	private fun shrink(frame: Bitmap): IntArray {
 		if (pictures.isEmpty()) {
-			width = Width
-			height = Width * frame.height / frame.width
+			width = tileWidth
+			height = tileWidth * frame.height / frame.width
 		}
 		var small = frame
 		// Halving averages 2x2 pixels at a time; one big step would sample a few pixels and lose thin things.

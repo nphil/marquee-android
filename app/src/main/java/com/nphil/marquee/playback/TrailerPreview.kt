@@ -1,8 +1,5 @@
 package com.nphil.marquee.playback
 
-import android.view.LayoutInflater
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -13,19 +10,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.ui.PlayerView
-import com.nphil.marquee.R
 import com.nphil.marquee.container
 import com.nphil.marquee.core.PlexItem
 import com.nphil.marquee.diagnostics.Diag
@@ -33,15 +25,18 @@ import com.nphil.marquee.diagnostics.DiagCategory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
 
-private const val FADE_MILLIS = 400
+/** The client trailers are fetched over: the app's own, unless a test points them at a fake server that client cannot reach. */
+internal val LocalPlaybackHttp = staticCompositionLocalOf<OkHttpClient?> { null }
 
 /**
  * The trailer playing over a title's hero art; the caller sizes it to the hero (16:9). It starts after
- * [TrailerAutoplay.dwell] while [TrailerAutoplay.decide] allows, plays once with the tablet's sound rules, fades in when
- * its first picture is on screen and out, with its sound stopped at once, when any condition closes. It is a preview:
- * no controls, no watch state, and only a file the tablet plays untouched ([DirectPlay]); with none, it shows nothing.
- * [visible] is true while the page is on top and the hero is on screen.
+ * [TrailerAutoplay.dwell] while [TrailerAutoplay.decide] allows, plays once with the tablet's sound rules, fades in
+ * when its first picture is on screen, filling the hero with any black bars baked into the trailer cropped away
+ * ([TrailerPicture]), and out, with its sound stopped at once, when any condition closes or the trailer nears its end.
+ * It is a preview: no controls, no watch state, and only a file the tablet plays untouched ([DirectPlay]); with none,
+ * it shows nothing. [visible] is true while the page is on top and the hero is on screen.
  */
 @Composable
 fun TrailerPreview(trailer: PlexItem, visible: Boolean, modifier: Modifier = Modifier) {
@@ -51,7 +46,8 @@ fun TrailerPreview(trailer: PlexItem, visible: Boolean, modifier: Modifier = Mod
 	val prefs by rememberPlaybackPrefs()
 	val signals = rememberPlaybackSignals()
 	val onTop by rememberUpdatedState(visible)
-	val factory = remember(container) { PlaybackFactory(context, container.http) }
+	val http = LocalPlaybackHttp.current ?: container.http
+	val factory = remember(http) { PlaybackFactory(context, http) }
 
 	val verdict by remember {
 		derivedStateOf {
@@ -83,7 +79,7 @@ fun TrailerPreview(trailer: PlexItem, visible: Boolean, modifier: Modifier = Mod
 			val ending = run ?: return@LaunchedEffect
 			ending.silence()
 			try {
-				delay(FADE_MILLIS + 50L)
+				delay(TrailerFade.MILLIS + 50L)
 			} finally {
 				ending.release()
 				if (run === ending) run = null
@@ -130,29 +126,22 @@ fun TrailerPreview(trailer: PlexItem, visible: Boolean, modifier: Modifier = Mod
 		}
 	}
 
-	val alpha by animateFloatAsState(if (current?.shown == true) 1f else 0f, tween(FADE_MILLIS), label = "trailer")
-	if (current != null) {
-		AndroidView(
-			factory = { LayoutInflater.from(it).inflate(R.layout.trailer_player_view, null) as PlayerView },
-			update = { it.player = current.player },
-			modifier = modifier
-				.graphicsLayer { this.alpha = alpha }
-				.semantics { contentDescription = "Trailer playing" },
-			onRelease = { it.player = null },
-		)
-	}
+	if (current != null) TrailerPicture(current.player, current.rendered, current.stopped, modifier)
 }
 
-/** One trailer's player and what it shows: whether its first picture is up and whether it is playing. */
+/** One trailer's player and what it reports: whether its first picture has been drawn, whether it was stopped, whether it is playing. */
 @Stable
 private class TrailerRun(val player: ExoPlayer, val focus: TrailerFocus, onEnded: () -> Unit) {
-	/** The first picture is on screen; the art beneath shows again when the trailer ends or stops. */
-	var shown by mutableStateOf(false)
+	/** The player has drawn its first picture; [TrailerPicture] decides when that shows. */
+	var rendered by mutableStateOf(false)
+		private set
+
+	/** Stopped by [silence]: the picture fades out, and the art beneath shows again, before [release]. */
+	var stopped by mutableStateOf(false)
 		private set
 	var playing by mutableStateOf(false)
 		private set
 
-	private var silenced = false
 	private var released = false
 	private var soundOn = true
 
@@ -161,7 +150,7 @@ private class TrailerRun(val player: ExoPlayer, val focus: TrailerFocus, onEnded
 		player.addListener(
 			object : Player.Listener {
 				override fun onRenderedFirstFrame() {
-					if (!silenced) shown = true
+					rendered = true
 				}
 
 				override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -190,8 +179,7 @@ private class TrailerRun(val player: ExoPlayer, val focus: TrailerFocus, onEnded
 	/** Stops the sound now; the picture fades out before [release]. */
 	fun silence() {
 		if (released) return
-		silenced = true
-		shown = false
+		stopped = true
 		player.pause()
 	}
 
