@@ -35,8 +35,9 @@ core/       git submodule: nphil/marquee-ios, pinned; MarqueeCore and the shared
   OkHttp, supplied from Kotlin, so requests use Android's certificate store, HTTP/2 and network callbacks.
 - **Player.** Media3 ExoPlayer plays MKV, MP4 and the server's HLS directly. Audio the device cannot
   decode (DTS, TrueHD and similar) goes through Media3's FFmpeg decoder extension; passthrough to a
-  receiver where one is attached. Subtitles: SRT, ASS/SSA, WebVTT, PGS and VobSub in the player; sidecar
-  files as on iPhone. VideoEngine's on-device remux is not used: Android needs no repackaging.
+  receiver where one is attached. Subtitles: SRT sidecars as on iPhone, a cue starting `{\an8}` at the
+  top, and the file's own text and picture (PGS, VobSub) tracks; which audio and subtitle play is Core's
+  `TrackRules`. VideoEngine's on-device remux is not used: Android needs no repackaging.
 - **UI.** Compose with Material 3 Expressive. `NavigationSuiteScaffold` gives a rail on tablets and a bar
   on phones; list-detail and supporting-pane layouts on wide windows; shared-element transitions and
   predictive back.
@@ -103,9 +104,11 @@ Each phase ends with a release installed on the tablet.
      into the secret store on every start, so the build is always signed in and the generators need no
      sign-in step. `DetailProfileGenerator` opens a movie and a show from Home, swipes an episode and
      opens it; the debug and release builds contain none of it.
-3. **Player.** Routes from Core, Auto quality with the link probe and Save Data, track and subtitle
-   rules, Bazarr and SpeechDock, subtitle style, Skip Intro, credits and Up Next, background play,
-   playback info, format badge, stats for nerds. Three small-player modes:
+3. **Player.** Routes from Core, Auto quality with the link probe and Save Data, the track rules from
+   Core (English subtitles on by default; original audio, or the English dub with its own subtitle for
+   anime; a Tracks menu of On, Off, Style and one Advanced row), Bazarr and SpeechDock, subtitle style,
+   Skip Intro, credits and Up Next, background play, playback info, format badge, stats for nerds. Three
+   small-player modes:
    - **Picture in Picture** outside the app: resizable by the system; Android draws its controls, so the
      app adds remote actions (play/pause, back and forward 10 s, Skip Intro, Next Episode) up to the
      device's limit.
