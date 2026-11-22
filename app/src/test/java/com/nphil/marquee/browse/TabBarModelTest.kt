@@ -1,5 +1,6 @@
 package com.nphil.marquee.browse
 
+import com.nphil.marquee.core.Destination.Downloads
 import com.nphil.marquee.core.Destination.Home
 import com.nphil.marquee.core.Destination.Library
 import com.nphil.marquee.core.Destination.LiveTv
@@ -14,14 +15,14 @@ import org.junit.Test
 class TabBarModelTest {
 	@Test
 	fun theRowsAreTheDestinationsTheAppHasWithoutSearch() {
-		assertEquals(listOf(Home, Library, Watchlist, Requests), TabLayout.standard.movable())
+		assertEquals(listOf(Home, Library, Watchlist, Requests, Downloads), TabLayout.standard.movable())
 	}
 
 	@Test
 	fun aRowMovesAndSearchStaysLast() {
-		val moved = TabLayout.standard.movedRow(from = 3, to = 1)
+		val moved = TabLayout.standard.movedRow(from = 4, to = 1)
 
-		assertEquals(listOf(Home, Requests, Library, Watchlist), moved.movable())
+		assertEquals(listOf(Home, Downloads, Library, Watchlist, Requests), moved.movable())
 		assertEquals(Search, moved.order.last())
 	}
 
@@ -36,7 +37,7 @@ class TabBarModelTest {
 	fun aMoveOutsideTheRowsChangesNothing() {
 		val layout = TabLayout.standard
 
-		assertSame(layout, layout.movedRow(from = 0, to = 4))
+		assertSame(layout, layout.movedRow(from = 0, to = layout.movable().size))
 		assertSame(layout, layout.movedRow(from = -1, to = 0))
 		assertSame(layout, layout.movedRow(from = 2, to = 2))
 	}
