@@ -110,6 +110,18 @@ android {
 	testOptions {
 		unitTests.all {
 			it.systemProperty("marquee.themes", rootProject.file("core/Resources/themes.json").path)
+			it.systemProperty("marquee.fakeplex", rootProject.file("core/UITests/FakePlex").path)
+		}
+	}
+
+	sourceSets {
+		// The iPhone app's fake Plex fixtures ship in the test APK, and the fixture rules in androidTest's
+		// fakeplex/router are plain Kotlin that the JVM tests compile too.
+		getByName("androidTest") {
+			assets.directories += rootProject.file("core/UITests/FakePlex").path
+		}
+		getByName("test") {
+			kotlin.directories += "src/androidTest/java/com/nphil/marquee/fakeplex/router"
 		}
 	}
 
@@ -237,6 +249,12 @@ dependencies {
 	implementation(libs.androidx.browser)
 	implementation(libs.androidx.lifecycle.runtime.compose)
 	implementation(libs.androidx.lifecycle.viewmodel.compose)
+	implementation(libs.androidx.lifecycle.viewmodel.navigation3)
+	implementation(libs.androidx.navigation3.runtime)
+	implementation(libs.androidx.navigation3.ui)
+	implementation(libs.androidx.media3.exoplayer)
+	implementation(libs.androidx.media3.ui)
+	implementation(libs.androidx.media3.datasource.okhttp)
 	implementation(libs.androidx.splashscreen)
 	implementation(libs.androidx.profileinstaller)
 
