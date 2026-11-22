@@ -7,7 +7,7 @@ import androidx.compose.ui.test.captureToImage
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
 
-/** Where the review screenshots go: the app's external files, which the CI script pulls before it uninstalls the app. */
+/** Where the review screenshots go: the app's external files on the device; `adb pull` them while the app is still installed. */
 private val screenshotFolder: File by lazy {
 	val context = InstrumentationRegistry.getInstrumentation().targetContext
 	File(checkNotNull(context.getExternalFilesDir(null)), "screenshots").also { it.mkdirs() }
