@@ -205,6 +205,7 @@ fun PlayerScreen(ratingKey: String, titleKey: String, fromStart: Boolean, onClos
 	val sleep = rememberSaveable(saver = SleepTimer.Saver) { SleepTimer() }
 	val profile by remember(container) { container.session.state.map { it.user?.uuid }.distinctUntilChanged() }.collectAsStateWithLifecycle(null)
 	val look by remember(container, profile) { container.settings.subtitleLook(profile) }.collectAsStateWithLifecycle(SubtitleLook())
+	LaunchedEffect(model, look.reveal) { model.tracks.setReveal(look.reveal) }
 	val sample = remember { listOf(Cue.Builder().setText("Subtitles look like this").build()) }
 	val focus = remember { FocusRequester() }
 	val lastPages = remember { arrayOf(listOf(TracksPage.Subtitles)) }
@@ -478,7 +479,7 @@ fun PlayerScreen(ratingKey: String, titleKey: String, fromStart: Boolean, onClos
 					showsRemaining = showsRemaining,
 					speed = model.speed,
 					aspect = aspect,
-					hasSubtitles = tracks.lists.menuSubtitles.isNotEmpty(),
+					hasSubtitles = tracks.lists.menuSubtitles.isNotEmpty() || model.canFindSubtitles,
 					subtitlesOn = tracks.subtitleId != null,
 					hasAudioChoices = tracks.lists.audio.size > 1,
 					qualityLabel = QualityPreset.title(model.quality).takeIf { model.quality != QualityPreset.AUTO },
@@ -533,6 +534,7 @@ fun PlayerScreen(ratingKey: String, titleKey: String, fromStart: Boolean, onClos
 			Note(aspectStamp, aspect.label, R.drawable.ic_aspect_ratio, ASPECT_NOTE_MS, noteAt)
 			Note(lockStamp, "Controls Locked", R.drawable.ic_lock, LOCK_NOTE_MS, noteAt)
 			HoldPill(held, noteAt)
+			if (!locked && !held && !menuOpen) SubtitleSearchBanner(model.subtitleFinder, noteAt)
 			MeterView(
 				brightnessMeter,
 				icon = { R.drawable.ic_brightness },

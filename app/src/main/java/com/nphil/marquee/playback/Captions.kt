@@ -7,16 +7,24 @@ import androidx.media3.extractor.text.CuesWithTiming
 import androidx.media3.extractor.text.SubtitleParser
 import androidx.media3.extractor.text.subrip.SubripParser
 
+/** One visible cue and the time the file gives it. A stream cue's end may not be known yet. */
+internal data class CaptionFrame(val cue: Cue, val startMs: Long, val durationMs: Long? = null)
+
 /**
  * A separate text subtitle file's cues by time. Media3 reads the SubRip: its markup, and `{\an8}` (the line at the top
  * of the picture) as a cue placed there. Times are milliseconds into the title.
  */
 @OptIn(UnstableApi::class)
-internal class Captions private constructor(private val groups: List<List<Cue>>, private val timeline: CueTimeline) {
-	/** The cues on screen at [ms]. */
-	fun at(ms: Long): List<Cue> {
+internal class Captions private constructor(private val groups: List<List<CaptionFrame>>, private val timeline: CueTimeline) {
+	val isEmpty: Boolean get() = groups.isEmpty()
+
+	fun framesAt(ms: Long): List<CaptionFrame> {
 		val shown = timeline.at(ms)
-		return if (shown.isEmpty()) emptyList() else shown.flatMap { groups[it] }
+		return when (shown.size) {
+			0 -> emptyList()
+			1 -> groups[shown[0]]
+			else -> shown.flatMap { groups[it] }
+		}
 	}
 
 	companion object {
@@ -26,7 +34,10 @@ internal class Captions private constructor(private val groups: List<List<Cue>>,
 			timed.sortBy { it.startTimeUs }
 			val starts = LongArray(timed.size) { timed[it].startTimeUs / 1000 }
 			val ends = LongArray(timed.size) { timed[it].endTimeUs / 1000 }
-			return Captions(timed.map { it.cues }, CueTimeline(starts, ends))
+			return Captions(
+				timed.mapIndexed { i, group -> group.cues.map { CaptionFrame(it, starts[i], ends[i] - starts[i]) } },
+				CueTimeline(starts, ends),
+			)
 		}
 	}
 }
@@ -54,6 +65,7 @@ internal class CueTimeline(private val starts: LongArray, private val ends: Long
 			val middle = (low + high) ushr 1
 			if (starts[middle] <= ms) low = middle + 1 else high = middle
 		}
+		if (low == 0 || reach[low - 1] <= ms) return emptyList()
 		val shown = ArrayList<Int>()
 		var i = low - 1
 		while (i >= 0 && reach[i] > ms) {

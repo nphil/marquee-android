@@ -136,10 +136,14 @@ enum PlayCalls {
                 linkKbps: adaptive == nil ? linkKbps : nil
             )
         }
-        let route = decide(media: media, part: part, tracks: tracks, audio: picked.audio, subtitle: picked.subtitle, call: call, limits: limits)
+        let capabilities = call.capabilities.capabilities
+        let route = decide(
+            media: media, part: part, tracks: tracks, audio: picked.audio, subtitle: picked.subtitle, capabilities: capabilities, limits: limits
+        )
+        let headers = library.authorizationHeaders()
         let lists = trackLists(
-            media: media, part: part, tracks: tracks, picked: picked, call: call, limits: limits,
-            base: connection?.uri, headers: library.authorizationHeaders()
+            media: media, part: part, tracks: tracks, picked: picked, capabilities: capabilities, limits: limits,
+            base: connection?.uri, headers: headers
         )
 
         let startAt = startSeconds(call, item: item, duration: duration)
@@ -171,18 +175,23 @@ enum PlayCalls {
             return plan(nil, probe: probe)
         }
 
+        func subtitleFile(at base: URL?) -> PlayingSubtitleFile {
+            PlayingSubtitleFile(item: item, media: media, partId: part.id, audio: route.audio?.id, tracks: tracks) { media, part, tracks in
+                trackLists(media: media, part: part, tracks: tracks, picked: picked, capabilities: capabilities, limits: limits, base: base, headers: headers)
+            }
+        }
         switch route.kind {
         case .directPlay, .remux:
             let base = try await library.connection.connection().uri
             guard let url = PlexURL.make(base: base, path: part.key) else { throw PlexError.decoding("bad path") }
-            await session.begin(item, tracks: tracks, adaptive: adaptive, address: base, conversion: nil)
+            await session.begin(item, subtitles: subtitleFile(at: base), adaptive: adaptive, address: base, conversion: nil)
             return plan(StreamSpec(kind: "file", url: url.absoluteString, headers: library.authorizationHeaders(), session: nil, offset: 0))
         case .serverTranscode:
             try await selectForServer(route, part: part, tracks: tracks, library: library, session: session)
             let conversion = UUID().uuidString
             let request = TranscodeRequest(item: item, mediaIndex: mediaIndex, route: route, offset: startAt, session: conversion)
             let url = try await library.transcodeURL(request)
-            await session.begin(item, tracks: tracks, adaptive: adaptive, address: connection?.uri, conversion: conversion)
+            await session.begin(item, subtitles: subtitleFile(at: connection?.uri), adaptive: adaptive, address: connection?.uri, conversion: conversion)
             return plan(StreamSpec(kind: "hls", url: url.absoluteString, headers: library.authorizationHeaders(), session: conversion, offset: startAt))
         }
     }
@@ -214,14 +223,14 @@ enum PlayCalls {
     /// The route for the tracks picked. This player never asks the server to burn a subtitle in, so a picture
     /// subtitle only a re-encode could show is chosen but not shown, as when the rules pick it.
     private static func decide(
-        media: PlexMedia, part: PlexPart, tracks: MediaTracks, audio: AudioTrack?, subtitle: SubtitleDecision, call: StartCall,
-        limits: RouteLimits
+        media: PlexMedia, part: PlexPart, tracks: MediaTracks, audio: AudioTrack?, subtitle: SubtitleDecision,
+        capabilities: DeviceCapabilities, limits: RouteLimits
     ) -> PlaybackRoute {
         func route(_ subtitle: SubtitleDecision) -> PlaybackRoute {
             // ExoPlayer opens HEVC in MP4 whichever sample entry tag the file carries.
             PlaybackRouteDecider.decide(
                 media: media, part: part, tracks: tracks, audio: audio, subtitle: subtitle,
-                capabilities: call.capabilities.capabilities, limits: limits, hevcSampleEntry: "hvc1"
+                capabilities: capabilities, limits: limits, hevcSampleEntry: "hvc1"
             )
         }
         let decided = route(subtitle)
@@ -232,15 +241,15 @@ enum PlayCalls {
     /// The tracks as the menu lists them. A subtitle's delivery is how it would show on this route if it were picked,
     /// so the menu can say which ones this tablet cannot draw.
     private static func trackLists(
-        media: PlexMedia, part: PlexPart, tracks: MediaTracks, picked: TrackRules.Pick, call: StartCall, limits: RouteLimits,
-        base: URL?, headers: [String: String]
+        media: PlexMedia, part: PlexPart, tracks: MediaTracks, picked: TrackRules.Pick,
+        capabilities: DeviceCapabilities, limits: RouteLimits, base: URL?, headers: [String: String]
     ) -> PlayTracksWire {
         let audio = tracks.audio.map {
             PlayAudioWire(id: $0.id, label: $0.label, language: $0.language.code, isDefault: $0.isDefault)
         }
         let subtitles = tracks.subtitles.map { track in
             let alone = SubtitleDecision(track: track, source: .handPick)
-            let route = decide(media: media, part: part, tracks: tracks, audio: picked.audio, subtitle: alone, call: call, limits: limits)
+            let route = decide(media: media, part: part, tracks: tracks, audio: picked.audio, subtitle: alone, capabilities: capabilities, limits: limits)
             let query = [URLQueryItem(name: "encoding", value: "utf-8"), URLQueryItem(name: "format", value: "srt")]
             let download = track.isExternal && !track.isImageBased
                 ? base.flatMap { PlexURL.make(base: $0, path: "/library/streams/\(track.id)", query: query) } : nil
@@ -343,13 +352,18 @@ final class LinkStore: Sendable {
 /// One player screen's state on the bridge, from opening to closing.
 actor PlaySession {
     let id: String
-    private let library: PlexLibrary
+    let library: PlexLibrary
     private(set) var adaptive: AdaptiveQuality?
     /// The server address the stream comes from, for readings of the link.
     private(set) var address: URL?
     private var item: PlexMetadata?
-    private var tracks: MediaTracks?
+    var subtitleFile: PlayingSubtitleFile?
+    var subtitleSearch = SubtitleSearchState()
+    var speechTiming: SpeechTiming?
     private var reporter: TimelineReporter?
+
+    /// Track memory survives a restart; searches and alignment require an active stream.
+    var hasStream: Bool { reporter != nil }
     private var conversion: String?
     /// The subtitle the server had selected before a server stream cleared it, put back when that stream ends.
     private var restore: (part: Int, audio: Int?, subtitle: Int)?
@@ -368,6 +382,8 @@ actor PlaySession {
     /// Ends what the last stream held on the server: its conversion, and the subtitle it cleared.
     func endStream() async {
         reporter = nil
+        speechTiming = nil
+        subtitleSearch.progress = nil
         if let restore {
             self.restore = nil
             try? await library.selectStreams(partID: restore.part, audioStreamID: restore.audio, subtitleStreamID: restore.subtitle)
@@ -399,9 +415,9 @@ actor PlaySession {
         return nil
     }
 
-    func begin(_ item: PlexMetadata, tracks: MediaTracks, adaptive: AdaptiveQuality?, address: URL?, conversion: String?) {
+    func begin(_ item: PlexMetadata, subtitles: PlayingSubtitleFile, adaptive: AdaptiveQuality?, address: URL?, conversion: String?) {
         self.item = item
-        self.tracks = tracks
+        subtitleFile = subtitles
         self.adaptive = adaptive
         self.address = address
         self.conversion = conversion
@@ -410,7 +426,7 @@ actor PlaySession {
 
     /// The tracks of the file playing, for a pick to be remembered against.
     func currentTracks() throws -> MediaTracks {
-        guard let tracks else { throw PlayError.noSession }
+        guard let tracks = subtitleFile?.tracks else { throw PlayError.noSession }
         return tracks
     }
 

@@ -18,14 +18,14 @@ class SubtitleLookTest {
 
 	@Test
 	fun aPresetIsOnlyTickedWhileNothingIsChangedFromIt() {
-		SubtitlePreset.entries.forEach { assertTrue(SubtitleLook.of(it).isPreset) }
+		SubtitlePreset.entries.forEach { assertTrue(SubtitleLook.of(it, SubtitleReveal.Line).isPreset) }
 		assertFalse(SubtitleLook.of(SubtitlePreset.Netflix).copy(size = 130).isPreset)
 	}
 
 	@Test
 	fun aLookIsKeptPerProfileAndAnUnreadableOneFallsBackToBlend() {
 		val prefs = mutablePreferencesOf()
-		val chosen = SubtitleLook.of(SubtitlePreset.LargePrint).copy(colour = SubtitleColour.Cyan)
+		val chosen = SubtitleLook.of(SubtitlePreset.LargePrint, SubtitleReveal.Word).copy(colour = SubtitleColour.Cyan)
 		prefs.setSubtitleLook("a", chosen)
 		assertEquals(chosen, prefs.subtitleLook("a"))
 		assertEquals(SubtitleLook(), prefs.subtitleLook("b"))

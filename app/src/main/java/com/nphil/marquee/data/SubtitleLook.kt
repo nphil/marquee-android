@@ -24,6 +24,12 @@ enum class SubtitleFont { Standard, Mono, Legible }
 
 enum class SubtitleEdge { None, Outline, DropShadow, SoftShadow }
 
+enum class SubtitleReveal(val title: String) {
+	Off("Off"),
+	Word("Word by Word"),
+	Line("Line by Line"),
+}
+
 /** Text colours; the channels are the iPhone's, 0 to 1. */
 enum class SubtitleColour(val title: String, val red: Float, val green: Float, val blue: Float) {
 	White("White", 1f, 1f, 1f),
@@ -56,9 +62,10 @@ data class SubtitleLook(
 	val boxOpacity: Int = 75,
 	/** The colour is lifted off pure white a little: see [textArgb]. */
 	val softens: Boolean = true,
+	val reveal: SubtitleReveal = SubtitleReveal.Off,
 ) {
-	/** Whether the look is still a preset's own, so the style menu can tick it. */
-	val isPreset: Boolean get() = this == of(preset)
+	/** Reveal belongs to the text, independently of which visual preset is in use. */
+	val isPreset: Boolean get() = this == of(preset, reveal)
 
 	/** The text colour as drawn: ARGB, the picked colour softened when [softens], at [opacity]. */
 	val textArgb: Int
@@ -79,20 +86,21 @@ data class SubtitleLook(
 		private const val SOFTEN_LIFT = 0.06f
 
 		/** Every setting the preset defines. */
-		fun of(preset: SubtitlePreset): SubtitleLook = when (preset) {
-			SubtitlePreset.Blend -> SubtitleLook()
-			SubtitlePreset.AppleTV -> SubtitleLook(preset, opacity = 100, softens = false)
+		fun of(preset: SubtitlePreset, reveal: SubtitleReveal = SubtitleReveal.Off): SubtitleLook = when (preset) {
+			SubtitlePreset.Blend -> SubtitleLook(reveal = reveal)
+			SubtitlePreset.AppleTV -> SubtitleLook(preset, opacity = 100, softens = false, reveal = reveal)
 			SubtitlePreset.Classic -> SubtitleLook(
-				preset, SubtitleFont.Mono, bold = false, opacity = 100, edge = SubtitleEdge.None, box = true, boxOpacity = 100, softens = false,
+				preset, SubtitleFont.Mono, bold = false, opacity = 100, edge = SubtitleEdge.None, box = true, boxOpacity = 100,
+				softens = false, reveal = reveal,
 			)
-			SubtitlePreset.Netflix -> SubtitleLook(preset, opacity = 100, edge = SubtitleEdge.DropShadow, softens = false)
-			SubtitlePreset.Outline -> SubtitleLook(preset, opacity = 100, edge = SubtitleEdge.Outline, softens = false)
+			SubtitlePreset.Netflix -> SubtitleLook(preset, opacity = 100, edge = SubtitleEdge.DropShadow, softens = false, reveal = reveal)
+			SubtitlePreset.Outline -> SubtitleLook(preset, opacity = 100, edge = SubtitleEdge.Outline, softens = false, reveal = reveal)
 			SubtitlePreset.LargePrint -> SubtitleLook(
-				preset, SubtitleFont.Legible, size = 150, opacity = 100, edge = SubtitleEdge.Outline, softens = false,
+				preset, SubtitleFont.Legible, size = 150, opacity = 100, edge = SubtitleEdge.Outline, softens = false, reveal = reveal,
 			)
 			SubtitlePreset.HighContrast -> SubtitleLook(
 				preset, SubtitleFont.Legible, colour = SubtitleColour.Yellow, opacity = 100, edge = SubtitleEdge.Outline,
-				box = true, boxOpacity = 90, softens = false,
+				box = true, boxOpacity = 90, softens = false, reveal = reveal,
 			)
 		}
 	}

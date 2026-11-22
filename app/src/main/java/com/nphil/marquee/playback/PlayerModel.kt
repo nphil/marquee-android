@@ -17,6 +17,7 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.Timeline
 import androidx.media3.common.Tracks
 import androidx.media3.common.text.CueGroup
 import androidx.media3.common.util.UnstableApi
@@ -51,6 +52,7 @@ import com.nphil.marquee.core.playStop
 import com.nphil.marquee.core.playTap
 import com.nphil.marquee.core.playTapReset
 import com.nphil.marquee.core.playTranscode
+import com.nphil.marquee.core.subtitleSource
 import com.nphil.marquee.core.setWatched
 import com.nphil.marquee.core.startPlay
 import com.nphil.marquee.data.PlaybackPrefs
@@ -106,7 +108,11 @@ class PlayerModel(
 	private val factory = PlaybackFactory(app, http)
 
 	/** The audio and subtitle tracks the menus list, and the subtitle on screen. */
-	internal val tracks = PlayerTracks(viewModelScope, http, ::movieMs)
+	internal val tracks = PlayerTracks(viewModelScope, http, ::movieMs, container.core, container.subtitleServices.speechDock)
+	internal val subtitleFinder = PlayerSubtitleFinder(viewModelScope, container.core, container.subtitleServices)
+
+	private val onlineSubtitleSource get() = plan?.subtitleSource()
+	internal val canFindSubtitles: Boolean get() = player != null && onlineSubtitleSource != null
 
 	/** Skip Intro and Up Next over the picture. */
 	internal val offers = PlayerOffers(viewModelScope, container.core, ::steady, { menusOpen || scrubbing }, ::seekTo, ::playNext)
@@ -254,9 +260,11 @@ class PlayerModel(
 	/** Why the title plays on the server although the tablet was to play it; null when it does not. */
 	private var fallback: String? = null
 
+	private val cuePeriod = Timeline.Period()
 	private val listener = object : Player.Listener {
 		override fun onIsPlayingChanged(isPlaying: Boolean) {
 			this@PlayerModel.isPlaying = isPlaying
+			tracks.motion(isPlaying)
 			offers.stateChanged(isPlaying)
 			report()
 		}
@@ -283,7 +291,21 @@ class PlayerModel(
 			player?.let(tracks::sync)
 		}
 
-		override fun onCues(cueGroup: CueGroup) = tracks.onCues(cueGroup.cues)
+		override fun onCues(cueGroup: CueGroup) {
+			val engine = player
+			val timeline = engine?.currentTimeline
+			val at = if (engine == null || timeline == null || timeline.isEmpty || cueGroup.presentationTimeUs == C.TIME_UNSET) {
+				movieMs()
+			} else {
+				val period = timeline.getPeriod(engine.currentPeriodIndex, cuePeriod)
+				(cueGroup.presentationTimeUs + period.positionInWindowUs) / 1000 + (origin * 1000).toLong()
+			}
+			tracks.onCues(cueGroup.cues, at)
+		}
+
+		override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
+			tracks.reposition()
+		}
 
 		override fun onPlayerError(error: PlaybackException) = failed(error)
 	}
@@ -431,7 +453,20 @@ class PlayerModel(
 		val picked = lists.subtitles.firstOrNull { it.id == id }
 		Diag.info(DiagCategory.Subtitles, "pick", "id" to id, "delivery" to picked?.delivery, "external" to picked?.isExternal)
 		remember(audio = null, subtitle = pick)
-		tracks.show(lists.subtitles.firstOrNull { it.id == id }, player)
+		tracks.show(picked, player)
+	}
+
+	/** Finds an English subtitle and puts it on screen without reopening video. */
+	internal fun findSubtitles() {
+		if (!canFindSubtitles) return
+		val source = onlineSubtitleSource ?: return
+		subtitleFinder.find(source) { lists, id ->
+			if (player == null || onlineSubtitleSource != source) return@find false
+			tracks.refresh(lists)
+			if (id == null) return@find false
+			pickSubtitle(SubtitlePick.track(id))
+			tracks.awaitSidecar(id)
+		}
 	}
 
 	/** Opens the title again from where it was, after a failure. */
@@ -593,7 +628,7 @@ class PlayerModel(
 		title = chosen.item.grandparentTitle ?: chosen.item.title
 		subtitle = if (chosen.item.grandparentTitle == null) null else listOfNotNull(chosen.item.episodeCode, chosen.item.title).joinToString(" · ")
 		durationMs = (chosen.duration * 1000).toLong()
-		tracks.begin(chosen, isFile = !hls)
+		tracks.begin(chosen, isFile = !hls, online = onlineSubtitleSource)
 		offers.configure(chosen, prefs.introSkipDelay, rule)
 		loadNeighbors(chosen)
 		val engine = factory.create(opens.headers, PlaybackFactory.Kind.Player)
@@ -811,6 +846,7 @@ class PlayerModel(
 		deadline?.cancel()
 		ticker?.cancel()
 		skipJob?.cancel()
+		subtitleFinder.cancel()
 		previews?.close()
 		previews = null
 		transcode = null
@@ -823,6 +859,7 @@ class PlayerModel(
 			it.release()
 		}
 		player = null
+		tracks.motion(false)
 		tracks.stop()
 		isPlaying = false
 		isBuffering = true

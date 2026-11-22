@@ -55,6 +55,15 @@ class AppSettings(context: Context) : BrowsePreferences {
 		store.edit { prefs -> prefs.setSubtitleLook(profile, change(prefs.subtitleLook(profile))) }
 	}
 
+	/** SpeechDock is off while there is no service address on this device. */
+	internal val speechDockAddress: Flow<String?> = store.data.map { it[SPEECH_DOCK] }.distinctUntilChanged()
+
+	internal suspend fun setSpeechDockAddress(address: String?) {
+		store.edit { prefs ->
+			if (address == null) prefs.remove(SPEECH_DOCK) else prefs[SPEECH_DOCK] = address
+		}
+	}
+
 	/** What a profile remembers of a title's audio and subtitle picks, as Core wrote it; null when nothing yet. */
 	suspend fun trackMemory(key: String): String? = store.data.first()[stringPreferencesKey(key)]
 
@@ -209,6 +218,7 @@ class AppSettings(context: Context) : BrowsePreferences {
 		val SERVER_ID = stringPreferencesKey("plex.serverId")
 		val PROFILE = stringPreferencesKey("plex.profile")
 		val ADDRESSES = stringPreferencesKey("plex.addresses")
+		val SPEECH_DOCK = stringPreferencesKey("subtitles.speechDock")
 		val addressSerializer = MapSerializer(String.serializer(), String.serializer())
 		val SIDEBAR_EXPANDED = booleanPreferencesKey("shell.sidebarExpanded")
 		val TAB_ORDER = stringPreferencesKey("shell.tabOrder")

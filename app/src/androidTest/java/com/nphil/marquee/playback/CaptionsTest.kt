@@ -24,15 +24,15 @@ class CaptionsTest {
 
 	@Test
 	fun linesShowOnlyWhileTheirTimeIsOn() {
-		assertTrue(captions.at(500).isEmpty())
-		assertEquals(listOf("Hello"), captions.at(1_000).map { it.text.toString() })
-		assertEquals(listOf("Hello", "Top line"), captions.at(2_700).map { it.text.toString() })
-		assertTrue(captions.at(4_000).isEmpty())
+		assertTrue(captions.framesAt(500).isEmpty())
+		assertEquals(listOf("Hello"), captions.framesAt(1_000).map { it.cue.text.toString() })
+		assertEquals(listOf("Hello", "Top line"), captions.framesAt(2_700).map { it.cue.text.toString() })
+		assertTrue(captions.framesAt(4_000).isEmpty())
 	}
 
 	@Test
 	fun anEightTagPutsTheLineAtTheTopAndIsNotShown() {
-		val top = captions.at(3_000).single()
+		val top = captions.framesAt(3_000).single().cue
 		assertEquals("Top line", top.text.toString())
 		assertEquals(Cue.LINE_TYPE_FRACTION, top.lineType)
 		assertEquals(Cue.ANCHOR_TYPE_START, top.lineAnchor)
@@ -41,6 +41,9 @@ class CaptionsTest {
 
 	@Test
 	fun aLineWithNoTagHasNoPlaceOfItsOwn() {
-		assertEquals(Cue.DIMEN_UNSET, captions.at(1_000).single().line, 0f)
+		val frame = captions.framesAt(1_000).single()
+		assertEquals(Cue.DIMEN_UNSET, frame.cue.line, 0f)
+		assertEquals(1_000L, frame.startMs)
+		assertEquals(2_000L, frame.durationMs)
 	}
 }

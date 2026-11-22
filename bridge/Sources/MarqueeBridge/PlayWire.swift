@@ -361,7 +361,7 @@ struct ChapterWire: Encodable {
 }
 
 /// The playing file's tracks as the Tracks menu lists them.
-struct PlayTracksWire: Encodable {
+struct PlayTracksWire: Encodable, Sendable {
     let audio: [PlayAudioWire]
     /// Every subtitle in file order with the separate files last, so the embedded ones line up with the player's own
     /// text tracks. A menu leaves out the `isHidden` ones: a separate file that replaces an embedded copy hides it.

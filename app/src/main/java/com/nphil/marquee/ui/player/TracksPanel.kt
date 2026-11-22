@@ -39,10 +39,12 @@ import com.nphil.marquee.data.SubtitleEdge
 import com.nphil.marquee.data.SubtitleFont
 import com.nphil.marquee.data.SubtitleLook
 import com.nphil.marquee.data.SubtitlePreset
+import com.nphil.marquee.data.SubtitleReveal
 import com.nphil.marquee.playback.PlayerModel
 import com.nphil.marquee.ui.components.ChoiceRow
 import com.nphil.marquee.ui.components.GroupGap
 import com.nphil.marquee.ui.components.GroupRow
+import com.nphil.marquee.ui.settings.SettingsActionRow
 import com.nphil.marquee.ui.settings.SettingsSwitchRow
 import com.nphil.marquee.ui.theme.Radius
 import com.nphil.marquee.ui.theme.Space
@@ -120,10 +122,10 @@ internal fun TracksPanel(
 		) { shown ->
 			Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Space.s3)) {
 				when (shown) {
-					TracksPage.Subtitles -> SubtitlesPage(model, look, onPush)
+					TracksPage.Subtitles -> SubtitlesPage(model, look, onPush, onClose)
 					TracksPage.Audio -> AudioPage(model)
 					TracksPage.Style -> StylePage(look, onLook)
-					TracksPage.Advanced -> AdvancedPage(model)
+					TracksPage.Advanced -> AdvancedPage(model, onClose)
 					TracksPage.More -> MorePage(model, pip, aspect, sleep, onPush, onClose)
 					TracksPage.Quality -> QualityPage(model)
 					TracksPage.Speed -> SpeedPage(model)
@@ -154,19 +156,26 @@ private fun Header(page: TracksPage, onBack: (() -> Unit)?, onClose: () -> Unit)
 }
 
 @Composable
-private fun SubtitlesPage(model: PlayerModel, look: SubtitleLook, onPush: (TracksPage) -> Unit) {
+private fun SubtitlesPage(model: PlayerModel, look: SubtitleLook, onPush: (TracksPage) -> Unit, onClose: () -> Unit) {
 	val tracks = model.tracks
 	val showing = tracks.lists.subtitles.firstOrNull { it.id == tracks.subtitleId }
 	val automatic = tracks.lists.subtitles.firstOrNull { it.id == tracks.lists.automatic }
+	val canFind = model.canFindSubtitles && !model.subtitleFinder.busy
 	Column(verticalArrangement = Arrangement.spacedBy(GroupGap)) {
 		PickRow(0, 2, "Off", selected = showing == null) { model.pickSubtitle(SubtitlePick.Off) }
 		PickRow(
 			1, 2, "On",
 			selected = showing != null,
-			detail = (showing ?: automatic)?.label ?: "None available",
-			enabled = showing != null || automatic != null,
+			detail = (showing ?: automatic)?.label ?: if (model.canFindSubtitles) "Find English subtitles" else "None available",
+			enabled = showing != null || automatic != null || canFind,
 		) {
-			if (showing == null) model.pickSubtitle(SubtitlePick.Automatic)
+			if (showing == null) {
+				if (automatic != null) model.pickSubtitle(SubtitlePick.Automatic)
+				else {
+					model.findSubtitles()
+					onClose()
+				}
+			}
 		}
 	}
 	Column(verticalArrangement = Arrangement.spacedBy(GroupGap)) {
@@ -188,12 +197,11 @@ private fun AudioPage(model: PlayerModel) {
 
 /** Every subtitle the file has, for picking one by name. The ones this tablet cannot draw say so and cannot be picked. */
 @Composable
-private fun AdvancedPage(model: PlayerModel) {
+private fun AdvancedPage(model: PlayerModel, onClose: () -> Unit) {
 	val tracks = model.tracks
 	val options = tracks.lists.menuSubtitles
 	if (options.isEmpty()) {
 		Text("This title has no subtitles.", style = MaterialTheme.typography.bodyMedium, color = lucent.ink2, modifier = Modifier.padding(Space.s3))
-		return
 	}
 	Column(verticalArrangement = Arrangement.spacedBy(GroupGap)) {
 		options.forEachIndexed { index, option ->
@@ -206,6 +214,12 @@ private fun AdvancedPage(model: PlayerModel) {
 			) { model.pickSubtitle(SubtitlePick.track(option.id)) }
 		}
 	}
+	if (model.canFindSubtitles) {
+		SettingsActionRow(
+			0, 1, R.drawable.ic_search, "Find Subtitles", enabled = !model.subtitleFinder.busy,
+			onClick = { model.findSubtitles(); onClose() },
+		)
+	}
 }
 
 @Composable
@@ -213,7 +227,9 @@ private fun StylePage(look: SubtitleLook, onLook: ((SubtitleLook) -> SubtitleLoo
 	val presets = SubtitlePreset.entries
 	Column(verticalArrangement = Arrangement.spacedBy(GroupGap)) {
 		presets.forEachIndexed { index, preset ->
-			PickRow(index, presets.size, preset.title, selected = look == SubtitleLook.of(preset)) { onLook { SubtitleLook.of(preset) } }
+			PickRow(index, presets.size, preset.title, selected = look.preset == preset && look.isPreset) {
+				onLook { SubtitleLook.of(preset, reveal = it.reveal) }
+			}
 		}
 	}
 	Column(verticalArrangement = Arrangement.spacedBy(GroupGap)) {
@@ -223,6 +239,9 @@ private fun StylePage(look: SubtitleLook, onLook: ((SubtitleLook) -> SubtitleLoo
 		ChoiceRow("Edge", look.edge, SubtitleEdge.entries, { it.title() }, 3, 6) { edge -> onLook { it.copy(edge = edge) } }
 		SettingsSwitchRow(4, 6, "Bold", look.bold, enabled = true) { bold -> onLook { it.copy(bold = bold) } }
 		SettingsSwitchRow(5, 6, "Background", look.box, enabled = true) { box -> onLook { it.copy(box = box) } }
+	}
+	ChoiceRow("Reveal as Spoken", look.reveal, SubtitleReveal.entries, { it.title }, 0, 1) { mode ->
+		onLook { it.copy(reveal = mode) }
 	}
 }
 

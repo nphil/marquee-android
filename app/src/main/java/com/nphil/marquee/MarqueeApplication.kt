@@ -19,6 +19,7 @@ import com.nphil.marquee.core.NativeCore
 import com.nphil.marquee.core.NativeTransport
 import com.nphil.marquee.data.AppSettings
 import com.nphil.marquee.data.SecretStore
+import com.nphil.marquee.data.SubtitleServices
 import com.nphil.marquee.diagnostics.Diag
 import com.nphil.marquee.diagnostics.DiagRequestLog
 import com.nphil.marquee.playback.PlaybackCoordinator
@@ -54,6 +55,7 @@ class AppContainer(
 
 	/** Requests: off until Settings › Integrations › Seerr turns it on. Its own secrets survive a Plex sign-out. */
 	val seerr = Seerr(core, settings, SecretStore(context, "seerr"), session, scope)
+	internal val subtitleServices = SubtitleServices(settings, SecretStore(context, "subtitle_services"), scope)
 
 	/** What this app changed on the server, so every screen showing a changed title refreshes it. */
 	val changes = LibraryChanges()

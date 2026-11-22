@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nphil.marquee.R
 import com.nphil.marquee.container
+import com.nphil.marquee.core.SubtitleService
 import com.nphil.marquee.diagnostics.Diag
 import com.nphil.marquee.diagnostics.DiagScreen
 import com.nphil.marquee.playback.rememberPlaybackPrefs
@@ -60,6 +61,8 @@ enum class SettingsPage(val title: String) {
 	FavoriteLibraries("Favorite Libraries"),
 	VideoPlayback("Video & Playback"),
 	Seerr("Seerr"),
+	Bazarr("Bazarr"),
+	SpeechDock("SpeechDock"),
 	DiagnosticLogs("Diagnostic Logs"),
 	Licences("Licences"),
 }
@@ -130,6 +133,8 @@ private fun SettingsList(
 	val playbackSummary = rememberPlaybackPrefs().value?.let { "Trailers ${onOff(it.playsTrailers)} · Theme music ${onOff(it.playsThemeMusic)}" } ?: ""
 	val container = LocalContext.current.container
 	val seerr by container.seerr.config.collectAsStateWithLifecycle()
+	val bazarr by container.subtitleServices.bazarr.collectAsStateWithLifecycle()
+	val speechDock by container.subtitleServices.speechDock.collectAsStateWithLifecycle(null)
 	val profile = state.user?.uuid.orEmpty()
 	val hidden by remember(profile) { container.browse.preferences.hiddenLibraries(profile) }.collectAsStateWithLifecycle(emptySet())
 	val seerrSummary = when {
@@ -185,9 +190,21 @@ private fun SettingsList(
 			}
 			item(key = "integrations") { Heading("Integrations") }
 			item(key = "seerr") {
-				PageRow(0, 1, SettingsPage.Seerr, selected, onOpen) {
+				PageRow(0, 3, SettingsPage.Seerr, selected, onOpen) {
 					IconBadge(R.drawable.ic_playlist_add)
 					Labels("Seerr", seerrSummary)
+				}
+			}
+			item(key = "bazarr") {
+				PageRow(1, 3, SettingsPage.Bazarr, selected, onOpen) {
+					IconBadge(R.drawable.ic_closed_caption)
+					Labels("Bazarr", if (bazarr == null) "Not set up" else "Subtitle search")
+				}
+			}
+			item(key = "speechDock") {
+				PageRow(2, 3, SettingsPage.SpeechDock, selected, onOpen) {
+					IconBadge(R.drawable.ic_match_case)
+					Labels("SpeechDock", if (speechDock == null) "Off" else "Spoken subtitle timing")
 				}
 			}
 			item(key = "about") { Heading("About") }
@@ -284,6 +301,8 @@ private fun SettingsDetail(
 			SettingsPage.DiagnosticLogs -> DiagnosticLogsPage(padding.plusInset())
 			SettingsPage.VideoPlayback -> VideoPlaybackPage(padding.plusInset())
 			SettingsPage.Seerr -> SeerrPage(padding.plusInset())
+			SettingsPage.Bazarr -> SubtitleServicePage(SubtitleService.Bazarr, padding.plusInset())
+			SettingsPage.SpeechDock -> SubtitleServicePage(SubtitleService.SpeechDock, padding.plusInset())
 			SettingsPage.Licences -> LicencesPage(padding.plusInset())
 		}
 	}
