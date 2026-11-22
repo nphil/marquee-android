@@ -33,7 +33,18 @@ count=$(find "$shots" -name '*.png' | wc -l)
 	echo '```'
 } | tee -a "$summary"
 
-"${gradle[@]}" :app:generateReleaseBaselineProfile
+# The Kotlin compile daemons the Gradle runs leave behind each hold up to the 3 GB Gradle gets, next to the
+# emulator's 4 GB. Twice the emulator vanished mid-journey (adb offline, no output of its own); this run compiles
+# in the Gradle process instead, and the host's memory state is printed if it happens again.
+pkill -f KotlinCompileDaemon || true
+"${gradle[@]}" -Pkotlin.compiler.execution.strategy=in-process :app:generateReleaseBaselineProfile || {
+	status=$?
+	echo "::group::Host memory after the failed profile run"
+	free -m
+	sudo dmesg | grep -iE 'out of memory|killed process' | tail -n 5 || true
+	echo "::endgroup::"
+	exit "$status"
+}
 
 "${gradle[@]}" :app:assembleRelease
 adb uninstall "$app" > /dev/null 2>&1 || true
