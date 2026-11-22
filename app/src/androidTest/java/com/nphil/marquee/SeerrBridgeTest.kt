@@ -35,7 +35,8 @@ class SeerrBridgeTest {
 	private val core = MarqueeCore {
 		ClientIdentity("seerr-bridge-test", "Marquee", "test", "Android", "test", "emulator", "emulator")
 	}
-	private val link = SeerrLink("http://seerr.local:5055", apiKey = "key", plexToken = null, session = null)
+	// Core accepts a key of 16 to 128 characters.
+	private val link = SeerrLink("http://seerr.local:5055", apiKey = "k".repeat(40), plexToken = null, session = null)
 
 	@Before
 	fun start() {
