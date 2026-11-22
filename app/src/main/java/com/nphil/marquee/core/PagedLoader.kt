@@ -87,8 +87,13 @@ class PagedLoader<Item : Any>(
 	suspend fun loadMoreIfNeeded(afterKey: String) {
 		if (!canLoadMore) return
 		val items = mutable.value.items
-		if (items.takeLast(maxOf(1, pageSize * 3 / 4)).none { keyOf(it) == afterKey }) return
-		loadNext(pageSize)
+		val first = (items.size - maxOf(1, pageSize * 3 / 4)).coerceAtLeast(0)
+		for (index in first until items.size) {
+			if (keyOf(items[index]) == afterKey) {
+				loadNext(pageSize)
+				return
+			}
+		}
 	}
 
 	/**

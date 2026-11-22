@@ -15,6 +15,9 @@ how the Android app meets it and what differs.
   Marquee's themes (`core/Resources/themes.json`), so every iPhone theme exists here, plus a Wallpaper
   theme from Android's dynamic colour.
 - **Smooth at the panel's refresh rate.** No dropped frames in scrolling, transitions or the player.
+  NatePad acceptance covers Home and Library flings, sidebar toggles and opening a title. Compare the
+  same gestures with warm artwork. `ui window.frames` records the display rate at report time, missed
+  rendering deadlines and the slowest UI frame; the display rate alone is not the app's frame rate.
 - **Robust video and audio.** Direct play of what the device can decode, including MKV, with the server
   converting only what it cannot.
 - **Installed and updated with Obtainium** from this repo's signed GitHub releases.

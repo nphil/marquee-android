@@ -21,6 +21,7 @@ import androidx.lifecycle.lifecycleScope
 import com.nphil.marquee.diagnostics.Diag
 import com.nphil.marquee.diagnostics.DiagCategory
 import com.nphil.marquee.diagnostics.DiagReportText
+import com.nphil.marquee.diagnostics.WindowFrames
 import com.nphil.marquee.session.AppSession
 import com.nphil.marquee.ui.MarqueeApp
 import com.nphil.marquee.ui.diagnostics.ReportButtonHost
@@ -40,6 +41,7 @@ import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
 	private lateinit var reportButton: ReportButtonHost
+	private var frameTimings: WindowFrames? = null
 
 	override fun onCreate(savedInstanceState: Bundle?) {
 		val splash = installSplashScreen()
@@ -76,6 +78,13 @@ class MainActivity : ComponentActivity() {
 	override fun onAttachedToWindow() {
 		super.onAttachedToWindow()
 		preferFastestRefreshRate()
+		frameTimings = WindowFrames(window)
+	}
+
+	override fun onDetachedFromWindow() {
+		frameTimings?.close()
+		frameTimings = null
+		super.onDetachedFromWindow()
 	}
 
 	/** Without asking, a 120 Hz panel runs this window's scrolling and transitions at 60 Hz. */

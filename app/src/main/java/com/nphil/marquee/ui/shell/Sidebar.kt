@@ -164,8 +164,8 @@ internal object SidebarTags {
 	fun item(key: String) = "sidebar-item-$key"
 }
 
-private val CollapsedWidth = 72.dp
-private val ExpandedWidth = 236.dp
+internal val CollapsedWidth = 72.dp
+internal val ExpandedWidth = 236.dp
 
 /**
  * The glyph is about 35 dp wide in it, a little bigger than the icons below, and the slabs still move inside the

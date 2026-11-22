@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -34,6 +35,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalConfiguration
@@ -185,19 +187,30 @@ private fun ShellPages(
 	var expanded by rememberSaveable { mutableStateOf(rememberedExpanded ?: true) }
 	val scope = rememberCoroutineScope()
 	val startInsets = WindowInsets.systemBars.union(WindowInsets.displayCutout).only(WindowInsetsSides.Start)
-	Row(Modifier.fillMaxSize().background(lucent.canvas)) {
-		MarqueeSidebar(
-			destinations = tabs.map { it.sidebarEntry() },
-			selected = page,
-			onSelect = select,
-			expanded = expanded,
-			onToggle = {
-				expanded = !expanded
-				scope.launch { env.preferences.setSidebarExpanded(expanded) }
-			},
-			footer = listOf(SettingsEntry),
-		)
-		pages(Modifier.weight(1f).fillMaxHeight().consumeWindowInsets(startInsets))
+	BoxWithConstraints(Modifier.fillMaxSize().background(lucent.canvas)) {
+		val shellWidth = constraints.maxWidth
+		Row(Modifier.fillMaxSize()) {
+			MarqueeSidebar(
+				destinations = tabs.map { it.sidebarEntry() },
+				selected = page,
+				onSelect = select,
+				expanded = expanded,
+				onToggle = {
+					expanded = !expanded
+					scope.launch { env.preferences.setSidebarExpanded(expanded) }
+				},
+				footer = listOf(SettingsEntry),
+			)
+			pages(Modifier.weight(1f).fillMaxHeight().clipToBounds().layout { child, available ->
+				val full = shellWidth - startInsets.getLeft(this, layoutDirection) - startInsets.getRight(this, layoutDirection)
+				// Slide the wide page behind the trailing clip. Reflow posters once, not at each spring step.
+				val narrow = (full - ExpandedWidth.roundToPx()).coerceAtLeast(0)
+				val width = if (expanded && available.maxWidth <= narrow) available.maxWidth
+					else (full - CollapsedWidth.roundToPx()).coerceAtLeast(available.maxWidth)
+				val page = child.measure(available.copy(minWidth = width, maxWidth = width))
+				layout(available.maxWidth, page.height) { page.placeRelative(0, 0) }
+			}.consumeWindowInsets(startInsets))
+		}
 	}
 }
 
