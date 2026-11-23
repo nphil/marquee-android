@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStoreFile
@@ -175,6 +176,12 @@ class AppSettings(context: Context) : BrowsePreferences {
 		store.edit { it[SIDEBAR_EXPANDED] = expanded }
 	}
 
+	override val sidebarWidth: Flow<Float?> = store.data.map { it[SIDEBAR_WIDTH] }.distinctUntilChanged()
+
+	override suspend fun setSidebarWidth(dp: Float) {
+		store.edit { it[SIDEBAR_WIDTH] = dp }
+	}
+
 	override val tabLayout: Flow<TabLayout> = store.data.map { prefs ->
 		prefs[TAB_ORDER]?.let { order -> TabLayout.saved(order.split(','), prefs[TAB_SHOWN].orEmpty().split(',')) } ?: TabLayout.standard
 	}.distinctUntilChanged()
@@ -255,6 +262,7 @@ class AppSettings(context: Context) : BrowsePreferences {
 		val SPEECH_DOCK = stringPreferencesKey("subtitles.speechDock")
 		val addressSerializer = MapSerializer(String.serializer(), String.serializer())
 		val SIDEBAR_EXPANDED = booleanPreferencesKey("shell.sidebarExpanded")
+		val SIDEBAR_WIDTH = floatPreferencesKey("shell.sidebarWidth")
 		val TAB_ORDER = stringPreferencesKey("shell.tabOrder")
 		val TAB_SHOWN = stringPreferencesKey("shell.tabsShown")
 		val TAB_BAR = stringPreferencesKey("shell.tabBarBehavior")
