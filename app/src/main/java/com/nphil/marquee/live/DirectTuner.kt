@@ -16,12 +16,19 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DataSource
+import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.HttpDataSource
+import androidx.media3.datasource.TransferListener
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
+import androidx.media3.extractor.ExtractorsFactory
+import androidx.media3.extractor.text.SubtitleParser
+import androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory
+import androidx.media3.extractor.ts.TsExtractor
 import com.nphil.marquee.core.CoreJson
 import com.nphil.marquee.core.GuideChannel
 import com.nphil.marquee.core.MarqueeCore
@@ -157,7 +164,9 @@ internal class TunerCandidate private constructor(
 		return DirectTunerFeed(this, stream)
 	}
 
-	fun streamClient(admission: (Call) -> Unit, claim: (TunerAvailability) -> Unit): OkHttpClient =
+	fun streamClient(
+		admission: (Call) -> Unit, claim: (TunerAvailability) -> Unit, stamp: (TuneTiming.Stage) -> Unit,
+	): OkHttpClient =
 		http.newBuilder().addInterceptor { chain ->
 			var request = chain.request()
 			var response = chain.proceed(request)
@@ -170,10 +179,12 @@ internal class TunerCandidate private constructor(
 				response = chain.proceed(request)
 				redirects++
 			}
+			stamp(TuneTiming.Stage.Headers)
 			// A busy LumaTV can send 200 with a playable slate without granting a tuner lease.
 			if (isLuma && response.isSuccessful) {
 				claim(TunerAvailability.Unreported)
 				claim(checkAdmission(admission))
+				stamp(TuneTiming.Stage.Admitted)
 			}
 			response
 		}.build()
@@ -227,7 +238,7 @@ internal sealed interface TunerAvailability {
 /** This one HTTP socket is the tuner lease; cancel it even if Media3 has not finished opening its source. */
 @OptIn(UnstableApi::class)
 internal class DirectTunerFeed(val tuner: TunerCandidate, private val url: HttpUrl) : Call.Factory {
-	private val client = tuner.streamClient(::trackCheck) { admission = it }
+	private val client = tuner.streamClient(::trackCheck, { admission = it }, { timing?.mark(it) })
 	private var call: Call? = null
 	private var check: Call? = null
 	@Volatile private var admission: TunerAvailability? = null
@@ -243,6 +254,9 @@ internal class DirectTunerFeed(val tuner: TunerCandidate, private val url: HttpU
 			else -> null
 		}
 	private var stopped = false
+
+	/** Where this tune's time goes; set before the stream is opened. */
+	@Volatile var timing: TuneTiming? = null
 
 	/** A listener can deliver multiple errors for one tune; only the first can end or replace it. */
 	@Synchronized
@@ -261,6 +275,7 @@ internal class DirectTunerFeed(val tuner: TunerCandidate, private val url: HttpU
 
 	@Synchronized
 	override fun newCall(request: Request): Call = client.newCall(request).also {
+		timing?.mark(TuneTiming.Stage.Request)
 		if (stopped || call != null) it.cancel() else call = it
 	}
 
@@ -278,12 +293,30 @@ internal class DirectTunerFeed(val tuner: TunerCandidate, private val url: HttpU
 		check = null
 	}
 
-	fun source(about: MediaMetadata): MediaSource = ProgressiveMediaSource.Factory(OkHttpDataSource.Factory(this).setUserAgent(TUNER_AGENT))
+	/**
+	 * The stream is a transport stream, so only the TS extractor is offered: the default list sniffs every container
+	 * format before it reaches TS. Non-IDR keyframes let an H.264 stream start at a recovery point instead of the next
+	 * IDR; MPEG-2 pictures are unaffected.
+	 */
+	fun source(about: MediaMetadata): MediaSource = ProgressiveMediaSource.Factory(
+		OkHttpDataSource.Factory(this).setUserAgent(TUNER_AGENT).setTransferListener(firstBytesListener()),
+		ExtractorsFactory { arrayOf(TsExtractor(DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES, SubtitleParser.Factory.UNSUPPORTED)) },
+	)
 		.setLoadErrorHandlingPolicy(object : DefaultLoadErrorHandlingPolicy(0) {
 			// A retry is another GET /auto/v… and can replace a live tuner session.
 			override fun getRetryDelayMsFor(loadErrorInfo: LoadErrorHandlingPolicy.LoadErrorInfo): Long = C.TIME_UNSET
 		})
 		.createMediaSource(MediaItem.Builder().setUri(url.toString()).setMediaMetadata(about).build())
+}
+
+@OptIn(UnstableApi::class)
+private fun DirectTunerFeed.firstBytesListener() = object : TransferListener {
+	override fun onTransferInitializing(source: DataSource, dataSpec: DataSpec, isNetwork: Boolean) = Unit
+	override fun onTransferStart(source: DataSource, dataSpec: DataSpec, isNetwork: Boolean) = Unit
+	override fun onBytesTransferred(source: DataSource, dataSpec: DataSpec, isNetwork: Boolean, bytesTransferred: Int) {
+		timing?.mark(TuneTiming.Stage.FirstBytes)
+	}
+	override fun onTransferEnd(source: DataSource, dataSpec: DataSpec, isNetwork: Boolean) = Unit
 }
 
 @OptIn(UnstableApi::class)

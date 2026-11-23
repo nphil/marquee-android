@@ -46,8 +46,8 @@ class PlaybackFactory(private val context: Context, private val http: OkHttpClie
 		Player,
 	}
 
-	/** A player for [kind] that fetches with [headers]; the caller sets the media item and releases it. Main thread. */
-	fun create(headers: Map<String, String>, kind: Kind): ExoPlayer {
+	/** A player for [kind] that fetches with [headers], and [loadControl] when given; the caller sets the media item and releases it. Main thread. */
+	fun create(headers: Map<String, String>, kind: Kind, loadControl: LoadControl? = null): ExoPlayer {
 		val source = DefaultMediaSourceFactory(data(headers))
 		// ON, not PREFER: the FFmpeg audio renderer (:ffmpeg) then sits behind the platform's, so it plays only what the
 		// platform's decoders and any passthrough to a receiver cannot. FFmpeg's MPEG-2 video renderer is behind
@@ -55,6 +55,7 @@ class PlaybackFactory(private val context: Context, private val http: OkHttpClie
 		val renderers = SoftVideoRenderers(context).setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
 		val builder = ExoPlayer.Builder(context, renderers).setMediaSourceFactory(source)
 		if (kind == Kind.Player) builder.setLoadControl(titleLoadControl())
+		if (loadControl != null) builder.setLoadControl(loadControl)
 		val player = builder.build()
 		val content = if (kind == Kind.ThemeMusic) C.AUDIO_CONTENT_TYPE_MUSIC else C.AUDIO_CONTENT_TYPE_MOVIE
 		val attributes = AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(content).build()

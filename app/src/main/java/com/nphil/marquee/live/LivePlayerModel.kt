@@ -27,6 +27,7 @@ import com.nphil.marquee.core.reportLive
 import com.nphil.marquee.diagnostics.Diag
 import com.nphil.marquee.diagnostics.DiagCategory
 import com.nphil.marquee.playback.DeviceDecoders
+import com.nphil.marquee.playback.LiveLoadControl
 import com.nphil.marquee.playback.PlaybackFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -65,6 +66,10 @@ internal class LivePlayerModel(
 	private var statusTimer: Job? = null
 	private var heartbeat: Job? = null
 	private var timeout: Job? = null
+	private val loadControl = LiveLoadControl()
+
+	/** The direct tune in flight, until its first picture is logged. */
+	@Volatile private var timing: TuneTiming? = null
 	private var revealed: GuideChannel? = null
 	private var wantedPlaying = true
 	private var published = false
@@ -116,6 +121,8 @@ internal class LivePlayerModel(
 	private fun queueTune(next: GuideChannel, plexNotice: String? = null, plexReason: String? = null) {
 		val mine = ++generation
 		stopMedia()
+		timing = null
+		val tap = TuneTiming()
 		announce(plexNotice)
 		val previous = revealed
 		if (previous != null && previous.id != next.id) lastChannel = previous
@@ -136,6 +143,9 @@ internal class LivePlayerModel(
 				when (choice) {
 					is TuneChoice.Direct -> {
 						direct = choice.feed
+						choice.feed.timing = tap
+						timing = tap
+						tap.mark(TuneTiming.Stage.Route)
 						Diag.info(DiagCategory.Player, "live.route", "route" to "direct", "reason" to "eligible")
 						play(next, mine)
 						guardRecordings(next, choice.feed.tuner, choice.handover, mine)
@@ -403,6 +413,7 @@ internal class LivePlayerModel(
 
 		override fun onTracksChanged(tracks: Tracks) {
 			if (loaded != generation || direct == null || tracks.isEmpty) return
+			timing?.mark(TuneTiming.Stage.Tracks)
 			val seen = arrayOf("video" to tracks.describe(C.TRACK_TYPE_VIDEO), "audio" to tracks.describe(C.TRACK_TYPE_AUDIO))
 			val unplayable = tracks.unplayable()
 			if (unplayable.isEmpty()) {
@@ -415,7 +426,12 @@ internal class LivePlayerModel(
 		}
 
 		override fun onRenderedFirstFrame() {
-			if (loaded == generation && direct != null) timeout?.cancel()
+			if (loaded != generation || direct == null) return
+			timeout?.cancel()
+			val tap = timing ?: return
+			timing = null
+			tap.mark(TuneTiming.Stage.Rendered)
+			Diag.info(DiagCategory.Player, "live.tune.timing", "route" to "direct", *tap.fields())
 		}
 
 		override fun onPlaybackStateChanged(playbackState: Int) {
@@ -433,13 +449,20 @@ internal class LivePlayerModel(
 		val opened = stream
 		val tuner = direct
 		val headers = opened?.headers.orEmpty()
-		val engine = player ?: factory.create(headers, PlaybackFactory.Kind.Viewer).also {
+		val engine = player ?: factory.create(headers, PlaybackFactory.Kind.Viewer, loadControl).also {
 			it.addListener(listener)
+			it.setVideoFrameMetadataListener { _, _, _, _ ->
+				// Runs on the playback thread for every frame. The first after the stream's first bytes is the first picture of
+				// this tune; anything earlier is the previous channel's last frames.
+				val tap = timing
+				if (tap != null && tap.has(TuneTiming.Stage.FirstBytes)) tap.mark(TuneTiming.Stage.Decoded)
+			}
 			it.setWakeMode(C.WAKE_MODE_NETWORK)
 			player = it
 		}
 		val about = MediaMetadata.Builder().setTitle(channel.label).setArtist("Live TV").build()
 		engine.setMediaSource(tuner?.source(about) ?: factory.source(headers, checkNotNull(opened).url, hls = true, about = about))
+		loadControl.direct = tuner != null
 		engine.playWhenReady = wantedPlaying
 		loaded = mine
 		// The socket times out after five idle seconds. Give Media3 time to buffer and decode its first picture.
