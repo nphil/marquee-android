@@ -26,6 +26,7 @@ import com.nphil.marquee.data.SubtitleServices
 import com.nphil.marquee.diagnostics.Diag
 import com.nphil.marquee.diagnostics.DiagRequestLog
 import com.nphil.marquee.downloads.Downloads
+import com.nphil.marquee.link.LinkedPhones
 import com.nphil.marquee.live.LiveTv
 import com.nphil.marquee.playback.PlaybackCoordinator
 import com.nphil.marquee.seerr.Seerr
@@ -67,6 +68,9 @@ class AppContainer(
 
 	/** The big-screen plugin: off until Settings turns it on; it watches displays only while it is on and the app is open. */
 	internal val glasses by lazy { GlassesCenter(this, scope) }
+
+	/** Linked phones: off until Settings › Linked Phones turns it on; each is the other's remote. */
+	internal val link by lazy { LinkedPhones(context.applicationContext, scope) { session.state.value.user?.title } }
 
 	internal val cast = Casting(context, settings, scope)
 

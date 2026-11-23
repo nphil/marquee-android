@@ -75,6 +75,7 @@ enum class SettingsPage(val title: String) {
 	BigScreen("XR Glasses & TV"),
 	Chromecast("Chromecast"),
 	AirPlay("AirPlay"),
+	LinkedPhones("Linked Phones"),
 	DiagnosticLogs("Diagnostic Logs"),
 	Licences("Licences"),
 }
@@ -153,6 +154,8 @@ private fun SettingsList(
 	val bazarr by container.subtitleServices.bazarr.collectAsStateWithLifecycle()
 	val speechDock by container.subtitleServices.speechDock.collectAsStateWithLifecycle(null)
 	val remote by container.tvRemote.state.collectAsStateWithLifecycle()
+	val link by container.link.state.collectAsStateWithLifecycle()
+	val linkSummary = if (!link.enabled) "Off" else if (link.phones.isEmpty()) "On" else "${link.phones.size} linked"
 	val profile = state.user?.uuid.orEmpty()
 	val hidden by remember(profile) { container.browse.preferences.hiddenLibraries(profile) }.collectAsStateWithLifecycle(emptySet())
 	val seerrSummary = when {
@@ -232,51 +235,57 @@ private fun SettingsList(
 			}
 			item(key = "integrations") { Heading("Integrations") }
 			item(key = "seerr") {
-				PageRow(0, 8, SettingsPage.Seerr, selected, onOpen) {
+				PageRow(0, 9, SettingsPage.Seerr, selected, onOpen) {
 					IconBadge(R.drawable.ic_playlist_add)
 					Labels("Seerr", seerrSummary)
 				}
 			}
 			item(key = "bazarr") {
-				PageRow(1, 8, SettingsPage.Bazarr, selected, onOpen) {
+				PageRow(1, 9, SettingsPage.Bazarr, selected, onOpen) {
 					IconBadge(R.drawable.ic_closed_caption)
 					Labels("Bazarr", if (bazarr == null) "Not set up" else "Subtitle search")
 				}
 			}
 			item(key = "speechDock") {
-				PageRow(2, 8, SettingsPage.SpeechDock, selected, onOpen) {
+				PageRow(2, 9, SettingsPage.SpeechDock, selected, onOpen) {
 					IconBadge(R.drawable.ic_match_case)
 					Labels("SpeechDock", if (speechDock == null) "Off" else "Spoken subtitle timing")
 				}
 			}
 			item(key = "homeLabber") {
-				PageRow(3, 8, SettingsPage.HomeLabber, selected, onOpen) {
+				PageRow(3, 9, SettingsPage.HomeLabber, selected, onOpen) {
 					IconBadge(R.drawable.ic_speed)
 					Labels(SettingsPage.HomeLabber.title, if (homeLabber == null) "Off" else "On")
 				}
 			}
 			item(key = "tvRemote") {
-				PageRow(4, 8, SettingsPage.TvRemote, selected, onOpen) {
+				PageRow(4, 9, SettingsPage.TvRemote, selected, onOpen) {
 					IconBadge(R.drawable.ic_tv_remote)
 					Labels(SettingsPage.TvRemote.title, if (remote.enabled) "On" else "Off")
 				}
 			}
 			item(key = "bigScreen") {
-				PageRow(5, 8, SettingsPage.BigScreen, selected, onOpen) {
+				PageRow(5, 9, SettingsPage.BigScreen, selected, onOpen) {
 					IconBadge(R.drawable.ic_glasses)
 					Labels(SettingsPage.BigScreen.title, if (container.glasses.prefs.enabled) "On" else "Off")
 				}
 			}
 			item(key = "chromecast") {
-				PageRow(6, 8, SettingsPage.Chromecast, selected, onOpen) {
+				PageRow(6, 9, SettingsPage.Chromecast, selected, onOpen) {
 					IconBadge(R.drawable.ic_cast)
 					Labels("Chromecast", if (container.cast[CastProvider.Chromecast].enabled) "On" else "Off")
 				}
 			}
 			item(key = "airPlay") {
-				PageRow(7, 8, SettingsPage.AirPlay, selected, onOpen) {
+				PageRow(7, 9, SettingsPage.AirPlay, selected, onOpen) {
 					IconBadge(R.drawable.ic_tv)
 					Labels("AirPlay", if (container.cast[CastProvider.AirPlay].enabled) "On" else "Off")
+				}
+			}
+			item(key = "linkedPhones") {
+				PageRow(8, 9, SettingsPage.LinkedPhones, selected, onOpen) {
+					IconBadge(R.drawable.ic_smartphone)
+					Labels(SettingsPage.LinkedPhones.title, linkSummary)
 				}
 			}
 			item(key = "about") { Heading("About") }
@@ -388,6 +397,7 @@ private fun SettingsDetail(
 			SettingsPage.BigScreen -> BigScreenPage(padding.plusInset())
 			SettingsPage.Chromecast -> CastSettingsPage(padding.plusInset(), CastProvider.Chromecast)
 			SettingsPage.AirPlay -> CastSettingsPage(padding.plusInset(), CastProvider.AirPlay)
+			SettingsPage.LinkedPhones -> LinkSettings(padding.plusInset())
 			SettingsPage.Licences -> LicencesPage(padding.plusInset())
 		}
 	}

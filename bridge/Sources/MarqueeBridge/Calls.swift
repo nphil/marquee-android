@@ -112,6 +112,8 @@ final class Methods: Sendable {
             return try await DownloadCalls.handle(method, payload, library: library(for:))
         case _ where RemoteCalls.handles(method):
             return try await RemoteCalls.handle(method, payload)
+        case _ where LinkCalls.handles(method):
+            return try await LinkCalls.handle(method, payload)
         case _ where CastCalls.handles(method):
             return try await CastCalls.handle(method, payload, using: castServices)
         default:

@@ -24,6 +24,7 @@ import com.nphil.marquee.ui.browse.LocalPosterLabels
 import com.nphil.marquee.ui.components.LocalHeaderStyle
 import com.nphil.marquee.ui.components.LocalShowsScrollBars
 import com.nphil.marquee.ui.components.ProvidePlexImages
+import com.nphil.marquee.ui.link.LinkRemoteOverlay
 import com.nphil.marquee.ui.servers.ServerChoiceScreen
 import com.nphil.marquee.ui.shell.Shell
 import com.nphil.marquee.ui.signin.SignInScreen
@@ -88,5 +89,6 @@ fun MarqueeApp(container: AppContainer, choice: ThemeChoice, onTheme: ((ThemeCho
 		TvRemoteOverlay(container.tvRemote)
 		GlassesRemoteOverlay(container)
 		GlassesAskDialog(container.glasses)
+		LinkRemoteOverlay(container.link)
 	}
 }

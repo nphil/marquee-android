@@ -101,6 +101,8 @@ fun MarqueeSidebar(
 	modifier: Modifier = Modifier,
 	onRemote: (() -> Unit)? = null,
 	bigScreen: BigScreenEntry? = null,
+	onLink: (() -> Unit)? = null,
+	linkLabel: String = "Control phone",
 ) {
 	val theme = lucent
 	// Both animations are read only in layout and draw below, so a toggle never recomposes the items. The
@@ -169,6 +171,11 @@ fun MarqueeSidebar(
 			} else if (onRemote != null) {
 				SidebarItem("tv-remote", "TV Remote", false, labelAlpha, { onRemote() }, role = Role.Button) { tint ->
 					Icon(painterResource(R.drawable.ic_tv_remote), contentDescription = null, modifier = Modifier.size(IconSize), tint = tint)
+				}
+			}
+			if (onLink != null) {
+				SidebarItem("link-remote", linkLabel, false, labelAlpha, { onLink() }, role = Role.Button) { tint ->
+					Icon(painterResource(R.drawable.ic_smartphone), contentDescription = null, modifier = Modifier.size(IconSize), tint = tint)
 				}
 			}
 			SidebarItem(SETTINGS_KEY, SettingsLabel, selected == SETTINGS_KEY, labelAlpha, onSelect) {

@@ -50,10 +50,12 @@ import com.nphil.marquee.core.TabBarBehavior
 import com.nphil.marquee.core.TabLayout
 import com.nphil.marquee.diagnostics.DiagScreen
 import com.nphil.marquee.bigscreen.GlassesRemoteButton
+import com.nphil.marquee.link.LinkedPhone
 import com.nphil.marquee.ui.LocalNavigator
 import com.nphil.marquee.ui.downloads.DownloadsScreen
 import com.nphil.marquee.ui.home.HomeScreen
 import com.nphil.marquee.ui.library.LibraryScreen
+import com.nphil.marquee.ui.link.LinkEntryIcon
 import com.nphil.marquee.ui.live.LiveGuideDestination
 import com.nphil.marquee.ui.requests.RequestsDestination
 import com.nphil.marquee.ui.search.SearchScreen
@@ -119,6 +121,8 @@ private fun ShellPages(
 	val wide = maxWidth >= WIDE_WIDTH_DP.dp
 	val remote = container.tvRemote.state.collectAsStateWithLifecycle()
 	val remoteEnabled by remember(remote) { derivedStateOf { remote.value.enabled } }
+	val link = container.link.state.collectAsStateWithLifecycle()
+	val controllable by remember(link) { derivedStateOf { link.value.controllable } }
 	val session by container.session.state.collectAsStateWithLifecycle()
 	val settingsProfile = session.user
 	val glasses = container.glasses
@@ -161,7 +165,7 @@ private fun ShellPages(
 	LaunchedEffect(showing) { DiagScreen.tab(opened?.title ?: if (page == SETTINGS_KEY) "Settings" else Destination.valueOf(page).title) }
 
 	val pages: @Composable (Modifier) -> Unit = { modifier ->
-		Pages(showing, tabs, wide, container, env, place, places, choice, onTheme, settingsProfile, remoteEnabled, onSettings = { select(SETTINGS_KEY) }, onBack = { savedPlace = null }, modifier)
+		Pages(showing, tabs, wide, container, env, place, places, choice, onTheme, settingsProfile, remoteEnabled, controllable, onSettings = { select(SETTINGS_KEY) }, onBack = { savedPlace = null }, modifier)
 	}
 
 	if (!wide) {
@@ -217,6 +221,8 @@ private fun ShellPages(
 			settingsProfile = settingsProfile,
 			onRemote = if (remoteEnabled) container.tvRemote::open else null,
 			bigScreen = bigScreen,
+			onLink = controllable?.let { phone -> { container.link.control(phone.id) } },
+			linkLabel = "Control ${controllable?.name.orEmpty()}",
 		)
 		pages(Modifier.weight(1f).fillMaxHeight().clipToBounds().layout { child, available ->
 			val full = shellWidth - startInsets.getLeft(this, layoutDirection) - startInsets.getRight(this, layoutDirection)
@@ -243,6 +249,7 @@ private fun Pages(
 	onTheme: ((ThemeChoice) -> ThemeChoice) -> Unit,
 	settingsProfile: PlexHomeUser?,
 	remoteEnabled: Boolean,
+	controllable: LinkedPhone?,
 	onSettings: () -> Unit,
 	onBack: () -> Unit,
 	modifier: Modifier,
@@ -269,6 +276,7 @@ private fun Pages(
 					trailing = {
 						if (!wide) {
 							if (container.glasses.isConnected) GlassesRemoteButton(container.glasses) else if (remoteEnabled) RemoteEntryIcon(onClick = container.tvRemote::open)
+							controllable?.let { phone -> LinkEntryIcon(phone.name, onClick = { container.link.control(phone.id) }) }
 							CompactSettingsButton(settingsProfile, onClick = onSettings)
 						}
 					},

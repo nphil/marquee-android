@@ -190,6 +190,11 @@ fun PlayerScreen(
 	val model = viewModel {
 		PlayerModel(container, http, context, ratingKey, titleKey, fromStart, downloadId = downloadId, recordingMediaID = recordingMediaID)
 	}
+	// A linked phone controls this player while it is open.
+	DisposableEffect(model) {
+		container.link.host.attach(model)
+		onDispose { container.link.host.detach(model) }
+	}
 	val playing = model.isPlaying
 	val engine = model.player
 	val cast = container.cast.takeUnless { model.isOffline }

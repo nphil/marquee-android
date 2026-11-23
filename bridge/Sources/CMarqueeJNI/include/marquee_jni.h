@@ -21,9 +21,10 @@ void marquee_transport_cancel(int64_t id);
 
 // Thin POSIX socket adapter for LumaRemoteCore on platforms without Network.framework.
 int marquee_remote_connect(const char *host, uint16_t port, bool datagram);
+int marquee_link_listener(bool loopback, uint16_t *port);
+int marquee_remote_accept(int fd);
 #if !defined(__ANDROID__)
 int marquee_remote_listener(uint16_t *port);
-int marquee_remote_accept(int fd);
 #endif
 ptrdiff_t marquee_remote_read(int fd, uint8_t *bytes, size_t length);
 bool marquee_remote_send(int fd, const uint8_t *bytes, size_t length, bool datagram);

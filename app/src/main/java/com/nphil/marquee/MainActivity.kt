@@ -78,6 +78,17 @@ class MainActivity : ComponentActivity() {
 		}
 	}
 
+	// Linked phones look for each other only while Marquee is in front.
+	override fun onStart() {
+		super.onStart()
+		container.link.setForeground(true)
+	}
+
+	override fun onStop() {
+		container.link.setForeground(false)
+		super.onStop()
+	}
+
 	override fun onDestroy() {
 		container.glasses.detach(this)
 		super.onDestroy()

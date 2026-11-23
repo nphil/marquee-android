@@ -74,13 +74,46 @@ int marquee_remote_listener(uint16_t *port) {
     *port = ntohs(address.sin_port);
     return fd;
 }
+#endif
+
+static int listen_on(int family, const struct sockaddr *address, socklen_t length, uint16_t *port) {
+    int fd = socket(family, SOCK_STREAM, 0);
+    if (fd < 0) return -1;
+    configure(fd, false);
+    int on = 1;
+    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof on);
+    // One IPv6 socket takes IPv4 callers too: the other phone resolves either address.
+    int off = 0;
+    if (family == AF_INET6) setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &off, sizeof off);
+    struct sockaddr_storage bound;
+    socklen_t boundLength = sizeof bound;
+    if (bind(fd, address, length) < 0 || listen(fd, 8) < 0 ||
+        getsockname(fd, (struct sockaddr *)&bound, &boundLength) < 0) {
+        close(fd);
+        return -1;
+    }
+    *port = ntohs(family == AF_INET6 ? ((struct sockaddr_in6 *)&bound)->sin6_port : ((struct sockaddr_in *)&bound)->sin_port);
+    return fd;
+}
+
+/// A TCP listener on a port of the system's choosing: every interface, or only loopback for tests.
+int marquee_link_listener(bool loopback, uint16_t *port) {
+    if (!loopback) {
+        struct sockaddr_in6 any = { .sin6_family = AF_INET6, .sin6_addr = IN6ADDR_ANY_INIT };
+        int fd = listen_on(AF_INET6, (struct sockaddr *)&any, sizeof any, port);
+        if (fd >= 0) return fd;
+    }
+    struct sockaddr_in address = { .sin_family = AF_INET,
+        .sin_addr.s_addr = htonl(loopback ? INADDR_LOOPBACK : INADDR_ANY) };
+    return listen_on(AF_INET, (struct sockaddr *)&address, sizeof address, port);
+}
 
 int marquee_remote_accept(int fd) {
-    int peer = accept(fd, NULL, NULL);
+    int peer;
+    do { peer = accept(fd, NULL, NULL); } while (peer < 0 && (errno == EINTR || errno == ECONNABORTED));
     if (peer >= 0) configure(peer, false);
     return peer;
 }
-#endif
 
 ptrdiff_t marquee_remote_read(int fd, uint8_t *bytes, size_t length) {
     ssize_t received;
