@@ -19,6 +19,13 @@ class ShellTabsTest {
 	}
 
 	@Test
+	fun theSidebarShowsEveryTabAndAPhonesBarWhatItsWidthHolds() {
+		assertEquals(TabLayout.NO_LIMIT, tabLimit(WIDE_WIDTH_DP.toFloat()))
+		assertEquals(5, tabLimit(WIDE_WIDTH_DP - 1f))
+		assertEquals(4, tabLimit(320f))
+	}
+
+	@Test
 	fun placesAreTheAvailableDestinationsOutsideTheTabsInLayoutOrder() {
 		val layout = TabLayout(
 			order = listOf(Destination.Home, Destination.Watchlist, Destination.Requests, Destination.Library, Destination.LiveTv),

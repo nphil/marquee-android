@@ -49,7 +49,8 @@ fun tabNote(destination: Destination, available: Boolean): String {
 /** What the Tab Bar page draws: the layout, what the phone's bar does on scroll, and the destinations that can be tabs now. */
 @Immutable
 data class TabBarUi(val layout: TabLayout, val behavior: TabBarBehavior, val available: Set<Destination>) {
-	val tabs: List<Destination> get() = layout.tabs(available)
+	/** The tabs a bar with room for [limit] of them shows. */
+	fun tabs(limit: Int): List<Destination> = layout.tabs(available, limit)
 }
 
 /** Settings › Tab Bar: each change is saved at once, and the shell follows it. */
@@ -62,7 +63,7 @@ class TabBarModel(
 		TabBarUi(layout, behavior, TabLayout.available(seerr))
 	}.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
-	fun setTab(destination: Destination, on: Boolean) = edit { it.layout.withTab(destination, on, it.available) }
+	fun setTab(destination: Destination, on: Boolean, limit: Int) = edit { it.layout.withTab(destination, on, it.available, limit) }
 
 	fun move(from: Int, to: Int) = edit { it.layout.movedRow(from, to) }
 

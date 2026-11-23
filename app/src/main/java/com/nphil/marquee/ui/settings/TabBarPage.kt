@@ -24,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
@@ -44,6 +45,7 @@ import com.nphil.marquee.browse.tabNote
 import com.nphil.marquee.container
 import com.nphil.marquee.core.Destination
 import com.nphil.marquee.core.TabBarBehavior
+import com.nphil.marquee.core.TabLayout
 import com.nphil.marquee.ui.components.GroupRow
 import com.nphil.marquee.ui.components.ReorderState
 import com.nphil.marquee.ui.components.rememberReorderState
@@ -51,6 +53,7 @@ import com.nphil.marquee.ui.components.reorderContainer
 import com.nphil.marquee.ui.components.reorderHandle
 import com.nphil.marquee.ui.components.reorderRow
 import com.nphil.marquee.ui.shell.icon
+import com.nphil.marquee.ui.shell.tabLimit
 import com.nphil.marquee.ui.shell.title
 import com.nphil.marquee.ui.theme.Radius
 import com.nphil.marquee.ui.theme.Size
@@ -62,14 +65,16 @@ import com.nphil.marquee.ui.theme.lucent
 private val RowHeight = 88.dp
 
 /**
- * Settings › Tab Bar (DESIGN §7, §8.7): which places are tabs, dragged into the bar's order, and what the phone's bar
- * does while a page scrolls. Each place names its way in for when it is not a tab. A change applies at once.
+ * Settings › Tab Bar (DESIGN §7, §8.7): which places are tabs, dragged into the bar's order, and whether the phone's
+ * bar hides while a page scrolls. Each place names its way in for when it is not a tab. A change applies at once. A
+ * phone's bar holds as many tabs as fit its width; a tablet's sidebar shows them all.
  */
 @Composable
 fun TabBarPage(contentPadding: PaddingValues) {
 	val container = LocalContext.current.container
 	val model = viewModel { TabBarModel(container.settings, container.seerr.enabled) }
 	val ui by model.ui.collectAsStateWithLifecycle()
+	val limit = tabLimit(LocalConfiguration.current.screenWidthDp.toFloat())
 	val current = ui
 	if (current == null) {
 		Box(Modifier.fillMaxSize())
@@ -91,15 +96,16 @@ fun TabBarPage(contentPadding: PaddingValues) {
 			TabRow(
 				destination = destination,
 				ui = current,
+				limit = limit,
 				index = index,
 				count = rows.size,
 				reorder = reorder,
-				onTab = { model.setTab(destination, it) },
+				onTab = { model.setTab(destination, it, limit) },
 				onMove = model::move,
 			)
 		}
-		TabRow(Destination.Search, current, index = null, count = rows.size, reorder = reorder, onTab = { model.setTab(Destination.Search, it) })
-		SettingsFootnote("Up to five, in this order. Home stays a tab and Search stays last.", Modifier.padding(top = Space.s2))
+		TabRow(Destination.Search, current, limit, index = null, count = rows.size, reorder = reorder, onTab = { model.setTab(Destination.Search, it, limit) })
+		SettingsFootnote(tabsNote(limit), Modifier.padding(top = Space.s2))
 
 		Heading("On Scroll")
 		TabBarBehavior.entries.forEachIndexed { index, behavior ->
@@ -131,6 +137,12 @@ private val TabBarBehavior.label: String
 		TabBarBehavior.HideOnScroll -> "Hide on scroll"
 	}
 
+private fun tabsNote(limit: Int): String {
+	val fixed = "Home stays a tab and Search stays last."
+	if (limit == TabLayout.NO_LIMIT) return "In this order, all of them in the sidebar. $fixed"
+	return "In this order, up to $limit in the bar at this width. A tablet's sidebar shows them all. $fixed"
+}
+
 /**
  * One destination's switch. A movable one ([index] set) has a drag handle and Move Up and Move Down actions; Search
  * ([index] null) stays below them, last.
@@ -139,6 +151,7 @@ private val TabBarBehavior.label: String
 private fun TabRow(
 	destination: Destination,
 	ui: TabBarUi,
+	limit: Int,
 	index: Int?,
 	count: Int,
 	reorder: ReorderState,
@@ -189,9 +202,9 @@ private fun TabRow(
 			)
 		}
 		Switch(
-			checked = destination in ui.tabs,
+			checked = destination in ui.tabs(limit),
 			onCheckedChange = onTab,
-			enabled = ui.layout.canSwitch(destination, ui.available),
+			enabled = ui.layout.canSwitch(destination, ui.available, limit),
 		)
 		Spacer(Modifier.size(Space.s4))
 	}

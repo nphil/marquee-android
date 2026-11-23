@@ -75,9 +75,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
-/** Windows at least this wide (dp) get the sidebar; narrower ones keep the bottom bar. */
-private const val WIDE_WIDTH_DP = 600
-
 private fun Destination.sidebarEntry() = SidebarDestination(name, title, tabIcon(false), tabIcon(true))
 
 /** What the person chose for the sidebar before; [expanded] is null while they have not chosen. */
@@ -135,7 +132,8 @@ private fun ShellPages(
 	val glasses = container.glasses
 	val bigScreen = if (glasses.isConnected) remember(glasses.remoteTitle, glasses.symbol) { BigScreenEntry(glasses.remoteTitle, glasses.symbol, glasses::showRemote) } else null
 	val available = remember(seerr) { TabLayout.available(seerr) }
-	val tabs = remember(layout, available) { layout.tabs(available) }
+	val limit = tabLimit(maxWidth.value)
+	val tabs = remember(layout, available, limit) { layout.tabs(available, limit) }
 	val others = remember(layout, tabs, available) { placesOutsideTabs(layout, tabs, available) }
 	var savedPage by rememberSaveable { mutableStateOf(Destination.Home.name) }
 	var savedPlace by rememberSaveable { mutableStateOf<String?>(null) }
