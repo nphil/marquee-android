@@ -154,13 +154,42 @@ import Testing
         return capabilities
     }
 
-    private func services(_ server: Server) -> PlayServices {
+    /// HomeLabber's quality map with one title measured at 480p only, for media version `mediaID`; the rest are not scored.
+    private final class QualityMap: PlexTransport, Sendable {
+        private let log = Mutex<[String]>([])
+        let mediaID: Int
+
+        init(mediaID: Int = 7) { self.mediaID = mediaID }
+
+        var requests: [String] { log.withLock { $0 } }
+
+        func send(_ request: PlexRequest) async throws -> PlexHTTPResponse {
+            log.withLock { $0.append(request.url.path) }
+            guard request.url.path.hasSuffix("/items/1") else { return PlexHTTPResponse(status: 404, body: Data()) }
+            let points: [[String: Any]] = [(1050, 80.0), (2000, 90.0), (3000, 95.0)].map {
+                ["height": 480, "kbps": $0.0, "vmaf": $0.1, "vmafPhone": $0.1 + 2]
+            }
+            let body: [String: Any] = [
+                "ratingKey": "1", "mediaId": mediaID, "tiers": ["medium": ["kbps": 2000, "vmaf": 90.0, "height": 480]], "curve": points,
+            ]
+            return PlexHTTPResponse(status: 200, body: try JSONSerialization.data(withJSONObject: body))
+        }
+    }
+
+    private static var homeLabber: [String: Any] {
+        ["address": "https://homelabber.local", "token": "hlmq_" + String(repeating: "t", count: 24)]
+    }
+
+    private func services(_ server: Server, map: (any PlexTransport)? = nil) -> PlayServices {
         let library = PlexLibrary(
             server: Self.plexServer,
             identity: PlexClientIdentity(clientIdentifier: "client-1", version: "1.0", platformVersion: "14", device: "Pad", deviceName: "Pad"),
             transport: server
         )
-        return PlayServices(library: { _ in library }, sessions: PlaySessions(), links: LinkStore(), anime: AnimeLookup())
+        return PlayServices(
+            library: { _ in library }, sessions: PlaySessions(), links: LinkStore(), anime: AnimeLookup(),
+            qualityMaps: QualityMapCache(), homeLabberTransport: map ?? QualityMap()
+        )
     }
 
     private func call(_ method: String, _ services: PlayServices, _ fields: [String: Any]) async throws -> [String: Any] {
@@ -248,6 +277,66 @@ import Testing
         #expect(try route(plan)["kind"] as? String == "directPlay")
         #expect(plan["adapts"] as? Bool == true)
         #expect(plan["quality"] as? Int == 0)
+    }
+
+    @Test func autoOnASlowLinkStreamsAMeasuredTitleAtItsOwnBestStep() async throws {
+        let map = QualityMap()
+        let slow: [String: Any] = [
+            "quality": -1, "homelabber": Self.homeLabber, "screen": "tablet", "probe": ["bytes": 1_000_000, "seconds": 2.0],
+        ]
+        let plan = try await start(services(Server(), map: map), slow)
+
+        // 4 Mbit/s carries a step of 3 Mbit/s with its audio: a 480p picture, the only size the title was measured at.
+        let route = try route(plan)
+        #expect(route["kind"] as? String == "serverTranscode")
+        // The cap is the server's first `maxVideoBitrate` that makes a 480p picture at the step's bitrate, which sits above it.
+        #expect(route["maxVideoBitrateKbps"] as? Int != nil)
+        #expect(route["videoResolution"] as? String == "854x480")
+        let title = try #require(plan["qualityTitle"] as? String)
+        #expect(title.hasSuffix(" Mbps 480p"))
+        #expect(plan["adapts"] as? Bool == true)
+        #expect(map.requests == ["/api/media-quality/v1/servers/machine-1/items/1"])
+    }
+
+    @Test func aFixedQualityAndAnotherVersionOfTheTitleNeverTakeTheMap() async throws {
+        let map = QualityMap()
+        let fixed = try await start(services(Server(), map: map), [
+            "quality": 4000, "homelabber": Self.homeLabber, "probe": ["bytes": 1_000_000, "seconds": 2.0],
+        ])
+        #expect(fixed["qualityTitle"] == nil)
+        #expect(map.requests.isEmpty)
+
+        let other = QualityMap(mediaID: 8)
+        let plan = try await start(services(Server(), map: other), [
+            "quality": -1, "homelabber": Self.homeLabber, "probe": ["bytes": 1_000_000, "seconds": 2.0],
+        ])
+        #expect(other.requests.count == 1)
+        let title = try #require(plan["qualityTitle"] as? String)
+        #expect(!title.hasSuffix("480p"))
+    }
+
+    @Test func aMoveNamesARungByItsPlaceInTheLadderTheBridgeKept() async throws {
+        let services = services(Server())
+        let auto: [String: Any] = ["quality": -1, "view": ["width": 3200, "height": 2136]]
+        let asking = try await start(services, auto)
+        var measured = auto
+        measured["session"] = asking["session"]
+        measured["probe"] = ["bytes": 4_000_000, "seconds": 0.4]
+        let plan = try await start(services, measured)
+        let session = try #require(plan["session"] as? String)
+
+        // A long wait on the network moves down: the answer is a ladder index, and starting there plays that rung.
+        let look = try await call("play.look", services, [
+            "session": session, "now": 110.0, "throughputKbps": 500, "transferSeconds": 2.0, "bufferSeconds": 1.0, "waitingSeconds": 5.0,
+        ])
+        let rung = try #require(look["rung"] as? Int)
+        var moved = auto
+        moved["session"] = session
+        moved["move"] = rung
+        moved["now"] = 111.0
+        let after = try await start(services, moved)
+        #expect(after["session"] as? String == session)
+        #expect(after["qualityTitle"] as? String != plan["qualityTitle"] as? String)
     }
 
     @Test func aPictureSubtitleChosenByHandIsNeverBurnedIn() async throws {

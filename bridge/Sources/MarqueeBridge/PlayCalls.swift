@@ -124,6 +124,8 @@ enum PlayCalls {
             choices: TrackRules.Choices(audio: call.audio, subtitle: call.subtitle?.choice, memory: call.memory)
         )
 
+        // HomeLabber's curve for this version is asked for while the connection is found.
+        async let curve = measuredCurve(call, library: library, media: media, ratingKey: item.ratingKey, services: services)
         let connection = try? await library.connection.connection()
         let reading = call.probe.flatMap { LinkProbe.kbps(bytes: $0.bytes, seconds: $0.seconds) }
         if let reading, let connection {
@@ -132,11 +134,15 @@ enum PlayCalls {
         let linkKbps = connection.flatMap { services.links.recent(to: $0.uri, at: call.now, network: call.network) }
         let dataCap: VideoQuality? = call.savesData && call.metered ? .mbps4 : nil
 
-        let adaptive = await adapting(call, session: session, media: media, linkKbps: linkKbps, dataCap: dataCap, connected: connection != nil)
+        let adaptive = await adapting(
+            call, session: session, media: media, linkKbps: linkKbps, dataCap: dataCap, connected: connection != nil, map: await curve
+        )
         let quality: VideoQuality
+        var target: DownloadTarget?
         switch call.quality {
         case .auto:
-            quality = adaptive?.rung ?? .original
+            quality = adaptive?.rung.quality ?? .original
+            target = adaptive?.rung.target
         case .fixed(let fixed):
             if let dataCap, fixed == .original || fixed.rawValue > dataCap.rawValue { quality = dataCap } else { quality = fixed }
         }
@@ -147,10 +153,10 @@ enum PlayCalls {
         case .force:
             limits = RouteLimits(phoneOnly: true)
         case .disabled:
-            limits = RouteLimits(serverReason: .directPlayOff, quality: quality)
+            limits = RouteLimits(serverReason: .directPlayOff, quality: quality, target: target)
         case .auto:
             limits = RouteLimits(
-                serverReason: call.onDeviceFailed == true ? .onDeviceFailed : nil, quality: quality, reach: reach,
+                serverReason: call.onDeviceFailed == true ? .onDeviceFailed : nil, quality: quality, target: target, reach: reach,
                 linkKbps: adaptive == nil ? linkKbps : nil
             )
         }
@@ -177,7 +183,8 @@ enum PlayCalls {
                 route: RouteWire(route), stream: stream, probe: probe,
                 intro: item.markers(.intro).map(MarkerWire.init), credits: item.markers(.credits).map(MarkerWire.init),
                 chapters: item.chapters.map(ChapterWire.init), tracks: lists, isAnime: picked.isAnime,
-                quality: quality.rawValue, adapts: adaptive != nil, badge: badge, thumbnails: thumbnails
+                quality: quality.rawValue, qualityTitle: adaptive?.rung.title, adapts: adaptive != nil, badge: badge,
+                thumbnails: thumbnails
             )
         }
 
@@ -257,17 +264,37 @@ enum PlayCalls {
     /// Auto's machine for this item: kept across a move so its estimate carries on, made again when the item starts
     /// or a reading of the link arrives. Nil when the quality is fixed, the tablet plays by itself, or no server answers.
     private static func adapting(
-        _ call: StartCall, session: PlaySession, media: PlexMedia, linkKbps: Int?, dataCap: VideoQuality?, connected: Bool
+        _ call: StartCall, session: PlaySession, media: PlexMedia, linkKbps: Int?, dataCap: VideoQuality?, connected: Bool,
+        map: QualityCurve?
     ) async -> AdaptiveQuality? {
         guard case .auto = call.quality, call.directPlay != .force, connected else { return nil }
-        if let move = call.move, call.probe == nil, var kept = await session.adaptive {
-            kept.moved(to: move, at: call.now)
+        if let move = call.move, call.probe == nil, var kept = await session.adaptive, kept.ladder.indices.contains(move) {
+            kept.moved(to: kept.ladder[move], at: call.now)
             return kept
         }
         let source = media.width.flatMap { width in media.height.map { AdaptiveQuality.Picture(width: width, height: $0) } }
         return AdaptiveQuality(
-            mediaKbps: media.bitrate, linkKbps: linkKbps, cap: dataCap, source: source, view: call.view?.picture, now: call.now
+            mediaKbps: media.bitrate, linkKbps: linkKbps, cap: dataCap, map: map, source: source, view: call.view?.picture, now: call.now
         )
+    }
+
+    /// How long the start waits for HomeLabber's answer. A slower one is kept by the cache for the next item.
+    static let curveWait = Duration.seconds(1.5)
+
+    /// HomeLabber's quality curve for the version playing, on this screen. Asked for only while Auto picks the stream:
+    /// a fixed quality is the viewer's own choice, Force Direct Play keeps every file as it is, and a move keeps the
+    /// ladder the item started with.
+    private static func measuredCurve(
+        _ call: StartCall, library: PlexLibrary, media: PlexMedia, ratingKey: String, services: PlayServices
+    ) async -> QualityCurve? {
+        guard case .auto = call.quality, call.directPlay != .force, call.move == nil,
+              let client = call.homelabber?.client(transport: services.homeLabberTransport) else { return nil }
+        let maps = services.qualityMaps
+        let server = library.server.clientIdentifier
+        let answer = await TimeLimit.answer(within: curveWait) {
+            await maps.answer(client, server: server, ratingKey: ratingKey)
+        }
+        return answer?.curve(for: media, screen: call.screen ?? .phone)
     }
 
     /// The route for the tracks picked. This player never asks the server to burn a subtitle in, so a picture
@@ -344,6 +371,21 @@ struct PlayServices: Sendable {
     let sessions: PlaySessions
     let links: LinkStore
     let anime: AnimeLookup
+    /// HomeLabber's answers for the session, and how to reach it.
+    let qualityMaps: QualityMapCache
+    let homeLabberTransport: any PlexTransport
+
+    init(
+        library: @escaping @Sendable (ServerCall) throws -> PlexLibrary, sessions: PlaySessions, links: LinkStore, anime: AnimeLookup,
+        qualityMaps: QualityMapCache = .shared, homeLabberTransport: any PlexTransport = OkHttpTransport.shared
+    ) {
+        self.library = library
+        self.sessions = sessions
+        self.links = links
+        self.anime = anime
+        self.qualityMaps = qualityMaps
+        self.homeLabberTransport = homeLabberTransport
+    }
 
     func session(_ id: String) throws -> PlaySession {
         guard let session = sessions.find(id) else { throw PlayError.noSession }
@@ -524,7 +566,7 @@ actor PlaySession {
         guard var adaptive else { return MoveWire(rung: nil, estimateKbps: nil, belowFloor: false) }
         let move = adaptive.observe(look)
         self.adaptive = adaptive
-        return MoveWire(rung: move?.rawValue, estimateKbps: adaptive.estimateKbps, belowFloor: adaptive.belowFloor)
+        return MoveWire(rung: move.flatMap { adaptive.ladder.firstIndex(of: $0) }, estimateKbps: adaptive.estimateKbps, belowFloor: adaptive.belowFloor)
     }
 
     /// Starts confirming a skip to [target] seconds (`SkipCheck`).

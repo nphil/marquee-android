@@ -2,6 +2,26 @@ import Foundation
 import MarqueeCore
 import Synchronization
 
+/// The saved HomeLabber address and token, handed in with each call that reads the quality map; nothing is kept here.
+struct HomeLabberLink: Decodable {
+    let address: String
+    let token: String
+
+    var config: HomeLabberConfig? {
+        try? HomeLabberConfig.parse(address: address, token: token).get()
+    }
+
+    /// A client for the saved link, or nil when it does not parse; the token goes to that one origin only.
+    func client(transport: any PlexTransport) -> HomeLabberClient? {
+        config.map { HomeLabberClient(config: $0, transport: OriginRestrictedTransport(upstream: transport)) }
+    }
+}
+
+extension QualityMapCache {
+    /// The session's lookups, shared by the Download menu and the player.
+    static let shared = QualityMapCache()
+}
+
 /// The HomeLabber Quality Map plugin's address check and connection test, as the iPhone's HomeLabber page does them.
 enum HomeLabberCalls {
     static func handles(_ name: String) -> Bool { name.hasPrefix("homelabber.") }
@@ -44,6 +64,9 @@ enum HomeLabberCalls {
         var scored: Int?
         var total: Int?
         var running: Bool?
+        /// Seconds since 1970 of HomeLabber's last scoring run.
+        var lastRun: Double?
+        var encoder: String?
         var problem: String?
 
         init(problem: String) { self.problem = problem }
@@ -53,54 +76,8 @@ enum HomeLabberCalls {
             scored = status.scored
             total = status.total
             running = status.running
-        }
-    }
-}
-
-/// HomeLabber's scores for the titles whose Download menu was opened. A title is asked about once: a
-/// title HomeLabber has not scored stays unscored until the address or token changes, and a failed ask
-/// pauses every ask for a minute so an unreachable HomeLabber does not slow each menu.
-final class HomeLabberMaps: Sendable {
-    static let shared = HomeLabberMaps()
-
-    static let quiet: TimeInterval = 60
-
-    private struct State {
-        var config: HomeLabberConfig?
-        var entries: [String: QualityMapEntry] = [:]
-        var unscored: Set<String> = []
-        var quietUntil = Date.distantPast
-    }
-
-    private let state = Mutex(State())
-
-    /// The title's measured tiers; nil without a saved HomeLabber, for an unscored title, and while HomeLabber is unreachable.
-    func entry(
-        config: HomeLabberConfig?, server: String, ratingKey: String, transport: any PlexTransport, now: Date = .now
-    ) async -> QualityMapEntry? {
-        let key = "\(server)/\(ratingKey)"
-        let (known, ask) = state.withLock { state -> (QualityMapEntry?, Bool) in
-            if state.config != config { state = State(config: config) }
-            guard config != nil else { return (nil, false) }
-            if let entry = state.entries[key] { return (entry, false) }
-            return (nil, !state.unscored.contains(key) && state.quietUntil <= now)
-        }
-        guard ask, let config else { return known }
-        do {
-            let client = HomeLabberClient(config: config, transport: OriginRestrictedTransport(upstream: transport))
-            let found = try await client.entry(server: server, ratingKey: ratingKey)
-            state.withLock { state in
-                guard state.config == config else { return }
-                if let found { state.entries[key] = found } else { state.unscored.insert(key) }
-            }
-            return found
-        } catch {
-            if !Task.isCancelled {
-                state.withLock { state in
-                    if state.config == config { state.quietUntil = now.addingTimeInterval(Self.quiet) }
-                }
-            }
-            return nil
+            lastRun = status.lastRun?.timeIntervalSince1970
+            encoder = status.encoder
         }
     }
 }
