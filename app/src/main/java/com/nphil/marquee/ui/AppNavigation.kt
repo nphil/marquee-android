@@ -183,9 +183,10 @@ class Navigator internal constructor(
 		if (stack.size > 1) stack.removeAt(stack.lastIndex)
 	}
 
-	/** Back to the tabs, whatever page is open above them. */
+	/** Back to the tabs, whatever page is open above them; a player that fills the screen goes to its bar and plays on. */
 	internal fun toRoot() {
 		while (stack.size > 1) stack.removeAt(stack.lastIndex)
+		dock.minimise()
 	}
 
 	private fun push(route: Route) {

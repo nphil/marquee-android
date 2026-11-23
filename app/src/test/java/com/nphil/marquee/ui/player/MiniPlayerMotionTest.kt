@@ -89,6 +89,13 @@ class MiniPlayerMotionTest {
 	}
 
 	@Test
+	fun theFrameRestsWhereTheDockSaysAndHasNowhereToGoWhileClosed() {
+		assertEquals(DockRest.Full, DockState.Full.rest())
+		assertEquals(DockRest.Bar, DockState.Bar.rest())
+		assertNull(DockState.Closed.rest())
+	}
+
+	@Test
 	fun aPhoneTheCurrentPlayerHeldOnItsSideTurnsUprightOnMinimise() {
 		val locks = listOf(
 			ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,

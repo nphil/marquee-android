@@ -231,6 +231,9 @@ internal class DockMotion(
 	private val inPip: State<Boolean>,
 ) {
 	private var level by mutableFloatStateOf(if (dock.state == DockState.Bar) 0f else 1f)
+
+	/** The rest the level is at, or on its way to. */
+	private var heading = if (dock.state == DockState.Bar) DockRest.Bar else DockRest.Full
 	private var sway by mutableFloatStateOf(0f)
 	private var levelRunning by mutableStateOf(false)
 	private var swayRunning by mutableStateOf(false)
@@ -298,6 +301,15 @@ internal class DockMotion(
 		settle(1f, 0f)
 	}
 
+	/**
+	 * The dock's state changed. The buttons and gestures move the frame themselves; a change that is not theirs (the
+	 * title opened again from its page, a display asking for Settings) moves it here.
+	 */
+	fun follow(state: DockState) {
+		val rest = state.rest() ?: return
+		if (rest != heading) settle(if (rest == DockRest.Bar) 0f else 1f, 0f)
+	}
+
 	/** Stops what plays and takes the player away. */
 	fun close() {
 		media.stop()
@@ -353,6 +365,7 @@ internal class DockMotion(
 	private fun travel(): Float = barRect().top.takeIf { it > 0f } ?: window.height.toFloat()
 
 	private fun settle(target: Float, velocity: Float) {
+		heading = if (target == 0f) DockRest.Bar else DockRest.Full
 		levelJob?.cancel()
 		val run = ++levelRun
 		levelRunning = true
@@ -443,6 +456,7 @@ internal fun DockFrame(dock: PlayerDock, id: Long, media: DockedMedia, hosted: B
 	}
 
 	TurnUprightWhenMinimised(motion)
+	LaunchedEffect(motion) { snapshotFlow { dock.state }.collect { motion.follow(it) } }
 	val current = dock.session?.id == id
 	// A player that was replaced, or closed some other way, stops at once rather than after its screen has faded.
 	LaunchedEffect(current) { if (!current) media.stop() }

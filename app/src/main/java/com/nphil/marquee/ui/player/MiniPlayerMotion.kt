@@ -100,6 +100,13 @@ internal fun DockState.after(event: DockEvent): DockState = when (event) {
 	DockEvent.Close -> DockState.Closed
 }
 
+/** The rest the frame goes to for a dock in this state, or null while there is no player to move. */
+internal fun DockState.rest(): DockRest? = when (this) {
+	DockState.Full -> DockRest.Full
+	DockState.Bar -> DockRest.Bar
+	DockState.Closed -> null
+}
+
 internal fun isPhone(smallestWidthDp: Int): Boolean = smallestWidthDp < PHONE_BELOW_DP
 
 private val LandscapeLocks = setOf(
