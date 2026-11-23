@@ -18,8 +18,8 @@ import kotlin.math.roundToInt
  * the player on its own screen. The player screen attaches its model while it is open; with none open the status
  * carries no title and the phone is not offered as something to control. Main thread only.
  *
- * Android has no big screen to navigate, so the eyes-free remote's input is not answered here, and no haptic cue
- * goes back.
+ * The eyes-free remote's input is not answered here and no haptic cue goes back, so the status never offers this phone
+ * as one that drives a big screen, even with glasses connected.
  */
 internal class LinkHost(context: Context) {
 	private val volume = Volume(context.getSystemService(AudioManager::class.java))

@@ -153,8 +153,9 @@ Each phase ends with a release installed on the tablet.
      tilt, haptic cues). Per-display answers are remembered; Mirror leaves the system's mirroring alone.
    - Linked phones are built (`link/`, `ui/link/`, Settings › Linked Phones): Core's bridge owns the code, keys,
      handshakes and messages exactly as on the iPhone; Android owns mDNS, the Keystore-sealed saved phones, the
-     player controls it answers as the driving phone, and the remote it shows for a linked phone. Not carried:
-     the eyes-free touch surface (no big screen to navigate) and haptic cues. Untested on two physical phones.
+     player controls it answers as the driving phone, and the remote it shows for a linked phone. Not carried: the
+     iPhone's eyes-free touch surface for a linked phone, and what a phone driving glasses answers it (input, focus,
+     haptic cues), so a linked phone gets arrow buttons. Untested on two physical phones.
    - Plex Live TV uses Core's lineup, schedule, tuner sessions and stream cleanup. The guide uses a pinned
      channel/time grid when the content pane has room, and a Now & Next list at narrower widths or larger
      type sizes. The player has a Quick Guide alongside the picture in wide windows and below it otherwise.
