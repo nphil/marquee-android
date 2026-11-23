@@ -77,7 +77,10 @@ import Testing
                 "ratingKey": key, "key": "/library/metadata/\(key)", "type": "movie", "title": "Movie \(key)",
                 "duration": 7_200_000, "viewOffset": 600_000, "librarySectionID": 1,
                 "Marker": [["type": "intro", "startTimeOffset": 30_000, "endTimeOffset": 90_000]],
-                "Chapter": [["tag": "Opening", "index": 1, "startTimeOffset": 0, "endTimeOffset": 600_000]],
+                "Chapter": [[
+                    "tag": "Opening", "index": 1, "startTimeOffset": 0, "endTimeOffset": 600_000,
+                    "thumb": "/library/media/9/chapterImage/1",
+                ]],
                 "Media": [[
                     "id": 7, "duration": 7_200_000, "bitrate": 20_000, "width": 3840, "height": 2160, "videoCodec": "hevc",
                     "audioCodec": "dca", "container": "mkv",
@@ -208,6 +211,7 @@ import Testing
 
         #expect((plan["intro"] as? [[String: Any]])?.first?["start"] as? Int == 30_000)
         #expect((plan["chapters"] as? [[String: Any]])?.first?["title"] as? String == "Opening")
+        #expect((plan["chapters"] as? [[String: Any]])?.first?["thumb"] as? String == "/library/media/9/chapterImage/1")
     }
 
     @Test func aQualityBelowTheFileStreamsFromTheServerFromTheStart() async throws {

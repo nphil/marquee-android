@@ -96,6 +96,19 @@ internal class OwnFrames<T : Any>(
 		demands.trySend(Unit)
 	}
 
+	override suspend fun load(seconds: Double): T? {
+		if (closed) return null
+		val slot = slotOf(seconds)
+		try {
+			if (!show(slot)) extract(slot, fill = false)
+		} catch (e: CancellationException) {
+			throw e
+		} catch (e: Exception) {
+			stumble("load", e)
+		}
+		return cache.nearest(slot, 0)
+	}
+
 	override fun settle() {
 		scrubbing = false
 		wantedSlot = NONE

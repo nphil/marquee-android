@@ -1201,8 +1201,23 @@ class PlayerModel(
 		go(upcoming)
 	}
 
+	/**
+	 * Plays [episode] of the show in this player's place, from where it was left or, with [restart], from the beginning.
+	 * It plays by the same rules as the next episode: the tracks the profile remembers for the show and the route chosen
+	 * for the device. A download plays only what was saved with it, so it has no episodes to pick.
+	 */
+	fun playEpisode(episode: PlexItem, restart: Boolean) {
+		if (isOffline) return
+		if (episode.ratingKey == ratingKey) {
+			if (restart) seekTo(0.0)
+			return
+		}
+		// A season's listing may omit the show; the tracks are remembered under it.
+		go(if (episode.grandparentRatingKey != null) episode else episode.copy(grandparentRatingKey = titleKey), restart)
+	}
+
 	/** Plays [target] in this player's place: the title stops where it is, and the session and its queue carry on. */
-	private fun go(target: PlexItem) {
+	private fun go(target: PlexItem, restart: Boolean = false) {
 		if (isOffline && localNext == null) return
 		val time = movieMs().toInt()
 		Diag.notice(DiagCategory.Player, "go", "item" to target.ratingKey, "from" to ratingKey, "at" to time / 1000.0)
@@ -1223,7 +1238,7 @@ class PlayerModel(
 		}
 		ratingKey = target.ratingKey
 		titleKey = target.grandparentRatingKey ?: target.ratingKey
-		fromStart = false
+		fromStart = restart
 		recordingMediaID = null
 		plan = null
 		stream = null

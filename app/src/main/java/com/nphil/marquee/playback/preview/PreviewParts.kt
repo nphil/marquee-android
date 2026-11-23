@@ -19,6 +19,13 @@ internal interface Frames<T : Any> {
 	val revision: Int
 	fun frame(seconds: Double): T?
 	fun want(seconds: Double)
+
+	/**
+	 * The picture of exactly [seconds]'s frame, made now and in memory when it returns; null when the stream cannot give
+	 * it. It suspends for as long as that takes, and a scrub's [want] does not cancel it.
+	 */
+	suspend fun load(seconds: Double): T?
+
 	fun settle()
 	fun close()
 }

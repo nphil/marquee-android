@@ -26,6 +26,9 @@ internal class IndexFrames<T : Any>(
 	private val demands = Channel<Unit>(Channel.CONFLATED)
 	private val scrubbed = CompletableDeferred<Unit>()
 
+	/** The index once it is read, or null when the server has none that can be used. */
+	private val ready = CompletableDeferred<Bif?>()
+
 	@Volatile
 	private var index: Bif? = null
 
@@ -51,10 +54,12 @@ internal class IndexFrames<T : Any>(
 			val parsed = bytes?.let { attempt("parse") { withContext(io) { Bif.parse(it) } } }
 			if (parsed == null || bytes == null) {
 				log.event("scrub.index", "ok" to false, "ms" to clock.now() - began)
+				ready.complete(null)
 				gone()
 				return@launch
 			}
 			index = parsed
+			ready.complete(parsed)
 			log.event("scrub.index", "ok" to true, "frames" to parsed.count, "kb" to bytes.size / 1024, "ms" to clock.now() - began)
 			demands.trySend(Unit)
 			serve(parsed)
@@ -73,12 +78,28 @@ internal class IndexFrames<T : Any>(
 		demands.trySend(Unit)
 	}
 
+	override suspend fun load(seconds: Double): T? {
+		if (closed) return null
+		// Whoever wants a picture now does not wait for the delay.
+		scrubbed.complete(Unit)
+		val bif = ready.await() ?: return null
+		val number = bif.indexAt(seconds)
+		cache.nearest(number, 0)?.let { return it }
+		val picture = attempt("decode") {
+			withContext(io) { pictures.decode(bif.data, bif.start(number), bif.length(number)) }
+		} ?: return null
+		cache.put(number, picture)
+		changes.bump()
+		return picture
+	}
+
 	override fun settle() {
 		wanted = Double.NaN
 	}
 
 	override fun close() {
 		closed = true
+		ready.complete(null)
 		index = null
 		cache.clear()
 	}

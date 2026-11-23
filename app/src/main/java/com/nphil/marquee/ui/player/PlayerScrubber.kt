@@ -61,9 +61,11 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
+import com.nphil.marquee.core.Chapter
 import com.nphil.marquee.playback.ScrubPreviews
 import com.nphil.marquee.ui.theme.Radius
 import com.nphil.marquee.ui.theme.Space
@@ -261,11 +263,12 @@ internal val PREVIEW_WIDTH = 224.dp
 private val PREVIEW_GAP = 12.dp
 private val PREVIEW_INSET = 16.dp
 
-/** What the bubble needs above the bar to show a picture as well as the time. */
-private val PREVIEW_ROOM = 196.dp
+/** What the bubble needs above the bar to show a picture as well as the time and the chapter. */
+private val PREVIEW_ROOM = 216.dp
 
 /**
- * The bubble over the thumb while scrubbing: the picture at the playhead when the title has previews, and its time.
+ * The bubble over the thumb while scrubbing: the picture at the playhead when the title has previews, its time, and the
+ * name of the chapter it falls in when the title has two or more. A light tick marks each chapter the thumb crosses.
  * It sits [PREVIEW_GAP] above the thumb and stays [PREVIEW_INSET] inside the safe area. It shows the time alone when
  * there are no previews, none decoded yet, or not enough room above the bar.
  */
@@ -274,6 +277,7 @@ internal fun SeekPreview(
 	scrub: ScrubState,
 	durationMs: Long,
 	previews: ScrubPreviews?,
+	chapters: List<Chapter>,
 	bar: () -> Rect,
 	modifier: Modifier = Modifier,
 ) {
@@ -296,6 +300,17 @@ internal fun SeekPreview(
 		if (found != null) haptic.performHapticFeedback(HapticFeedbackType.SegmentFrequentTick)
 	}
 
+	val ms = (scrub.seconds * 1000.0).toLong()
+	val chapter = previewChapter(chapters, ms)
+	val chapterIndex = if (chapter == null) NO_CHAPTER else chapterAt(chapters, ms)
+	val crossed = remember { intArrayOf(NO_CHAPTER) }
+	LaunchedEffect(chapterIndex) {
+		if (crossed[0] != NO_CHAPTER && chapterIndex != NO_CHAPTER && crossed[0] != chapterIndex) {
+			haptic.performHapticFeedback(HapticFeedbackType.SegmentTick)
+		}
+		crossed[0] = chapterIndex
+	}
+
 	val room = bar().top - origin.value.y - top
 	val withPicture = frame != null && room >= with(density) { PREVIEW_ROOM.toPx() }
 	val gap = with(density) { PREVIEW_GAP.roundToPx() }
@@ -303,7 +318,7 @@ internal fun SeekPreview(
 	val thumbRadius = with(density) { THUMB.toPx() * THUMB_ACTIVE / 2f }
 
 	Layout(
-		content = { PreviewBubble(frame.takeIf { withPicture }, clock((scrub.seconds * 1000.0).toLong()), scrub.pace) },
+		content = { PreviewBubble(frame.takeIf { withPicture }, clock(ms), chapter, scrub.pace) },
 		modifier = modifier.fillMaxSize().onGloballyPositioned { origin.value = it.positionInRoot() },
 	) { measurables, constraints ->
 		val bubble = measurables.first().measure(constraints.copy(minWidth = 0, minHeight = 0))
@@ -323,7 +338,7 @@ internal fun SeekPreview(
 }
 
 @Composable
-private fun PreviewBubble(frame: ImageBitmap?, time: String, pace: ScrubPace) {
+private fun PreviewBubble(frame: ImageBitmap?, time: String, chapter: String?, pace: ScrubPace) {
 	Column(Modifier.width(PREVIEW_WIDTH), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Space.s2)) {
 		if (frame != null) {
 			val shape = RoundedCornerShape(Radius.tile)
@@ -338,6 +353,15 @@ private fun PreviewBubble(frame: ImageBitmap?, time: String, pace: ScrubPace) {
 			Modifier.clip(CircleShape).background(PlayerInk.chip).padding(horizontal = Space.s3, vertical = Space.s1),
 			horizontalAlignment = Alignment.CenterHorizontally,
 		) {
+			chapter?.let {
+				Text(
+					it,
+					style = MaterialTheme.typography.bodySmall,
+					color = PlayerInk.ink2,
+					maxLines = 1,
+					overflow = TextOverflow.Ellipsis,
+				)
+			}
 			Text(
 				time,
 				style = MaterialTheme.typography.labelLarge.copy(fontFeatureSettings = "tnum"),
@@ -348,3 +372,5 @@ private fun PreviewBubble(frame: ImageBitmap?, time: String, pace: ScrubPace) {
 		}
 	}
 }
+
+private const val NO_CHAPTER = Int.MIN_VALUE

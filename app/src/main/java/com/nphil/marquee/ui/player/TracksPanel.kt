@@ -71,6 +71,7 @@ internal enum class TracksPage(val title: String) {
 	Chapters("Chapters"),
 	Sleep("Sleep Timer"),
 	Info("Playback Info"),
+	Episodes("Episodes"),
 }
 
 /**
@@ -105,15 +106,7 @@ internal fun TracksPanel(
 			.padding(Space.s3)
 			.background(lucent.canvas, RoundedCornerShape(Radius.sheet))
 			.padding(Space.s3)
-			// Watches without taking the touch: the rows under it still get it, and nothing falls through to the picture.
-			.pointerInput(onTouch) {
-				awaitPointerEventScope {
-					while (true) {
-						awaitPointerEvent(PointerEventPass.Initial)
-						onTouch()
-					}
-				}
-			},
+			.watchesTouch(onTouch),
 		verticalArrangement = Arrangement.spacedBy(Space.s3),
 	) {
 		Header(page, onBack = if (pages.size > 1) onPop else null, onClose = onClose)
@@ -123,6 +116,11 @@ internal fun TracksPanel(
 			transitionSpec = { fadeIn(fade) togetherWith fadeOut(fade) },
 			label = "panel page",
 		) { shown ->
+			// The episodes are a list that scrolls on its own, which a scrolling column cannot hold.
+			if (shown == TracksPage.Episodes) {
+				EpisodesPage(model, EpisodeLayout.Side, onClose, Modifier.fillMaxSize())
+				return@AnimatedContent
+			}
 			Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Space.s3)) {
 				when (shown) {
 					TracksPage.Subtitles -> SubtitlesPage(model, look, onPush, onClose)
@@ -136,8 +134,19 @@ internal fun TracksPanel(
 					TracksPage.Chapters -> ChaptersPage(model, onClose)
 					TracksPage.Sleep -> SleepPage(model, sleep)
 					TracksPage.Info -> PlaybackInfoPage(model)
+					TracksPage.Episodes -> Unit
 				}
 			}
+		}
+	}
+}
+
+/** Watches the touches on this without taking them: what is under it still gets them, and nothing falls through to the picture. */
+internal fun Modifier.watchesTouch(onTouch: () -> Unit): Modifier = pointerInput(onTouch) {
+	awaitPointerEventScope {
+		while (true) {
+			awaitPointerEvent(PointerEventPass.Initial)
+			onTouch()
 		}
 	}
 }

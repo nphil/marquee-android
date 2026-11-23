@@ -92,6 +92,8 @@ internal class Previews<T : Any>(
 		active()?.want(seconds)
 	}
 
+	override suspend fun load(seconds: Double): T? = index?.takeUnless { fallen }?.load(seconds) ?: own?.load(seconds)
+
 	override fun settle() {
 		scrubbing = false
 		index?.settle()
