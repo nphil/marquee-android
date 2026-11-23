@@ -16,11 +16,24 @@ class TabLayoutTest {
 	private val all = Destination.entries.toSet()
 
 	@Test
-	fun theTabletsBarIsWhatIsBuiltWithSearchLastAndAtMostFive() {
-		val tabs = listOf(Home, Library, LiveTv, Watchlist, Search)
-		assertEquals(tabs, TabLayout.standard.tabs(TabLayout.available(false)))
-		// Requests is still available in Library's Places when the tab bar is full.
-		assertEquals(tabs, TabLayout.standard.tabs(TabLayout.available(true)))
+	fun theSidebarShowsEveryTabSwitchedOnWithSearchLast() {
+		assertEquals(listOf(Home, Library, LiveTv, Watchlist, Search), TabLayout.standard.tabs(TabLayout.available(false)))
+		assertEquals(listOf(Home, Library, LiveTv, Watchlist, Requests, Search), TabLayout.standard.tabs(TabLayout.available(true)))
+	}
+
+	@Test
+	fun aPhonesBarGivesUpTheLastTabsBeforeSearchPastItsLimit() {
+		val seerr = TabLayout.available(true)
+		assertEquals(listOf(Home, Library, LiveTv, Watchlist, Search), TabLayout.standard.tabs(seerr, limit = 5))
+		assertEquals(listOf(Home, Library, Search), TabLayout.standard.tabs(seerr, limit = 3))
+	}
+
+	@Test
+	fun aPhonesBarHoldsOneTabPer72DpFromThreeToFive() {
+		assertEquals(5, TabLayout.phoneLimit(599f))
+		assertEquals(5, TabLayout.phoneLimit(360f))
+		assertEquals(4, TabLayout.phoneLimit(320f))
+		assertEquals(3, TabLayout.phoneLimit(150f))
 	}
 
 	@Test
@@ -32,14 +45,15 @@ class TabLayoutTest {
 	}
 
 	@Test
-	fun aDestinationBecomingAvailablePastTheMaximumGivesWayBeforeSearch() {
+	fun aDestinationBecomingAvailablePastALimitGivesWayBeforeSearch() {
 		val layout = TabLayout(
 			order = listOf(Home, Library, Requests, LiveTv, Watchlist),
 			shown = setOf(Library, Requests, LiveTv, Watchlist, Search),
 		)
 
-		assertEquals(listOf(Home, Library, LiveTv, Watchlist, Search), layout.tabs(all - Requests))
-		assertEquals(listOf(Home, Library, Requests, LiveTv, Search), layout.tabs(all))
+		assertEquals(listOf(Home, Library, LiveTv, Watchlist, Search), layout.tabs(all - Requests, limit = 5))
+		assertEquals(listOf(Home, Library, Requests, LiveTv, Search), layout.tabs(all, limit = 5))
+		assertEquals(listOf(Home, Library, Requests, LiveTv, Watchlist, Search), layout.tabs(all))
 	}
 
 	@Test
@@ -47,15 +61,19 @@ class TabLayoutTest {
 		val built = TabLayout.available(seerrEnabled = true)
 		val roomy = TabLayout(Destination.entries, setOf(Home, Library, Watchlist, Search))
 
-		assertFalse(roomy.canSwitch(Home, built))
-		assertTrue(roomy.canSwitch(LiveTv, built))
-		assertTrue(roomy.canSwitch(Requests, built))
-		assertEquals(listOf(Home, Library, Watchlist, Requests, Search), roomy.withTab(Requests, true, built).tabs(built))
-		// Five tabs fill the bar: an off one cannot come on, an on one can still go off.
-		val full = roomy.withTab(Requests, true, built)
-		assertFalse(full.canSwitch(LiveTv, all))
-		assertTrue(full.canSwitch(Library, all))
-		assertEquals(listOf(Home, Watchlist, Requests, Search), full.withTab(Library, false, built).tabs(built))
+		assertFalse(roomy.canSwitch(Home, built, limit = 5))
+		assertTrue(roomy.canSwitch(LiveTv, built, limit = 5))
+		assertTrue(roomy.canSwitch(Requests, built, limit = 5))
+		assertFalse(roomy.canSwitch(Requests, all - Requests, limit = 5))
+		assertEquals(listOf(Home, Library, Watchlist, Requests, Search), roomy.withTab(Requests, true, built, limit = 5).tabs(built, limit = 5))
+		// Five tabs fill a phone's bar: an off one cannot come on, an on one can still go off.
+		val full = roomy.withTab(Requests, true, built, limit = 5)
+		assertFalse(full.canSwitch(LiveTv, all, limit = 5))
+		assertTrue(full.canSwitch(Library, all, limit = 5))
+		assertEquals(listOf(Home, Watchlist, Requests, Search), full.withTab(Library, false, built, limit = 5).tabs(built, limit = 5))
+		// The sidebar has no bar to fill.
+		assertTrue(full.canSwitch(LiveTv, all))
+		assertEquals(listOf(Home, Library, LiveTv, Watchlist, Requests, Search), full.withTab(LiveTv, true, built).tabs(built))
 	}
 
 	@Test

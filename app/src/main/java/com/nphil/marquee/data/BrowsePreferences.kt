@@ -31,6 +31,11 @@ interface BrowsePreferences {
 
 	suspend fun setSidebarExpanded(expanded: Boolean)
 
+	/** The width in dp the sidebar opens to, as the person last dragged it; null until they drag it. */
+	val sidebarWidth: Flow<Float?>
+
+	suspend fun setSidebarWidth(dp: Float)
+
 	/** The tabs as this device arranged them; [TabLayout.standard] until then. */
 	val tabLayout: Flow<TabLayout>
 

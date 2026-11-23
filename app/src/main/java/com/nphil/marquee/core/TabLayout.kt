@@ -10,8 +10,9 @@ enum class TabBarBehavior { Always, HideOnScroll }
 
 /**
  * The navigation as the iPhone app's TabLayout rules it: every destination in an order, and which are tabs. Home is
- * always a tab, since its profile button opens Settings. Search stays last. At most [MAXIMUM_TABS] tabs: past that,
- * the last before Search give way and keep their other way in.
+ * always a tab, since its profile button opens Settings. Search stays last. A phone's bar holds as many tabs as its
+ * width allows ([phoneLimit]) and the tablet's sidebar has no limit. Past a limit, the last before Search give way
+ * and keep their other way in.
  */
 @Immutable
 class TabLayout(order: List<Destination>, shown: Set<Destination>) {
@@ -27,10 +28,10 @@ class TabLayout(order: List<Destination>, shown: Set<Destination>) {
 	/** The destinations in order, by name. */
 	val savedOrder: List<String> get() = order.map { it.name }
 
-	/** The tabs in order: Home, and each destination switched on that is [available]. */
-	fun tabs(available: Set<Destination>): List<Destination> {
+	/** The tabs in order: Home, and each destination switched on that is [available], at most [limit] of them. */
+	fun tabs(available: Set<Destination>, limit: Int = NO_LIMIT): List<Destination> {
 		val tabs = order.filterTo(ArrayList()) { it == Destination.Home || (it in shown && it in available) }
-		while (tabs.size > MAXIMUM_TABS) {
+		while (tabs.size > limit) {
 			val last = tabs.indexOfLast { it != Destination.Home && it != Destination.Search }
 			if (last < 0) break
 			tabs.removeAt(last)
@@ -38,20 +39,20 @@ class TabLayout(order: List<Destination>, shown: Set<Destination>) {
 		return tabs
 	}
 
-	/** Whether the switch for [destination] can change: never Home's or an unavailable one's, and an off one only while the bar has room. */
-	fun canSwitch(destination: Destination, available: Set<Destination>): Boolean {
+	/** Whether the switch for [destination] can change: never Home's or an unavailable one's, and an off one only while the bar has room for [limit] tabs. */
+	fun canSwitch(destination: Destination, available: Set<Destination>, limit: Int = NO_LIMIT): Boolean {
 		if (destination == Destination.Home || destination !in available) return false
-		val tabs = tabs(available)
-		return destination in tabs || tabs.size < MAXIMUM_TABS
+		val tabs = tabs(available, limit)
+		return destination in tabs || tabs.size < limit
 	}
 
 	/**
 	 * This layout with [destination] switched on or off as a tab, as far as [canSwitch] allows. The edit starts from
 	 * the bar on screen, so a destination switched on while unavailable or crowded out does not return unseen.
 	 */
-	fun withTab(destination: Destination, on: Boolean, available: Set<Destination>): TabLayout {
-		if (!canSwitch(destination, available)) return this
-		val shown = tabs(available).toMutableSet()
+	fun withTab(destination: Destination, on: Boolean, available: Set<Destination>, limit: Int = NO_LIMIT): TabLayout {
+		if (!canSwitch(destination, available, limit)) return this
+		val shown = tabs(available, limit).toMutableSet()
 		if (on) shown.add(destination) else shown.remove(destination)
 		return TabLayout(order, shown)
 	}
@@ -64,9 +65,17 @@ class TabLayout(order: List<Destination>, shown: Set<Destination>) {
 	override fun hashCode(): Int = 31 * order.hashCode() + shown.hashCode()
 
 	companion object {
-		const val MAXIMUM_TABS = 5
+		/** For the sidebar, which shows every tab. */
+		const val NO_LIMIT = Int.MAX_VALUE
 
-		/** Default tabs; Requests stays in Library's Places when the bar is full. */
+		private const val TAB_WIDTH_DP = 72f
+		private const val FEWEST_TABS = 3
+		private const val MOST_TABS = 5
+
+		/** How many tabs a phone's bar holds in a window [widthDp] wide: one for each 72 dp, from three to the iPhone's five. */
+		fun phoneLimit(widthDp: Float): Int = (widthDp / TAB_WIDTH_DP).toInt().coerceIn(FEWEST_TABS, MOST_TABS)
+
+		/** Default tabs; on a phone Requests stays in Library's Places when the bar is full. */
 		val standard = TabLayout(
 			order = Destination.entries,
 			shown = setOf(Destination.Home, Destination.Library, Destination.LiveTv, Destination.Watchlist, Destination.Requests, Destination.Search),
