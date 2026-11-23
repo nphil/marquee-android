@@ -31,7 +31,7 @@ import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 /** A title the big screen asked the phone's player to open. */
-internal class PlayRequest(val ratingKey: String, val titleKey: String, val fromStart: Boolean)
+internal class BigScreenPlay(val ratingKey: String, val titleKey: String, val fromStart: Boolean)
 
 /**
  * The big-screen plugin: XR glasses and TVs (DESIGN §8.9). Glasses such as the Viture Pro, or a TV on USB-C video out
@@ -77,8 +77,8 @@ internal class GlassesCenter(private val container: AppContainer, private val sc
 	var volumeStamp by mutableIntStateOf(0)
 		private set
 
-	private val requests = MutableSharedFlow<PlayRequest>(extraBufferCapacity = 1)
-	val plays: SharedFlow<PlayRequest> = requests.asSharedFlow()
+	private val requests = MutableSharedFlow<BigScreenPlay>(extraBufferCapacity = 1)
+	val plays: SharedFlow<BigScreenPlay> = requests.asSharedFlow()
 
 	private val settingsOpens = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
 
@@ -369,7 +369,7 @@ internal class GlassesCenter(private val container: AppContainer, private val sc
 	// MARK: Playing
 
 	fun play(ratingKey: String, titleKey: String, fromStart: Boolean) {
-		requests.tryEmit(PlayRequest(ratingKey, titleKey, fromStart))
+		requests.tryEmit(BigScreenPlay(ratingKey, titleKey, fromStart))
 	}
 
 	private var pending: Pair<PlayerModel, () -> Unit>? = null
