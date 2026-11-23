@@ -26,7 +26,8 @@ class DetailProfileGenerator {
 
 	@Test
 	fun moviePage() = journey {
-		ProfileTarget.openFromHome(device, By.descContains("Sintel"))
+		// Sintel is also in Continue Watching, where a tap plays it; Charge is only on poster shelves.
+		ProfileTarget.openFromHome(device, By.descContains("Charge"))
 		repeat(4) { ProfileTarget.scroll(device, down = true) }
 		repeat(4) { ProfileTarget.scroll(device, down = false) }
 		device.pressBack()
