@@ -100,7 +100,9 @@ class SoftMpeg2Test {
 		activity.scenario.onActivity {
 			counters.get()?.let {
 				it.ensureUpdated()
-				pictures = it.renderedOutputBufferCount + it.droppedBufferCount + it.skippedOutputBufferCount
+				// Not the skipped count: the decoder reports every second field as -1 there, which keeps the renderer's
+				// count of frames inside the decoder right. A picture is shown or dropped; a drop before decoding is a frame.
+				pictures = it.renderedOutputBufferCount + it.droppedBufferCount - it.droppedInputBufferCount
 				detail = "${it.renderedOutputBufferCount} rendered, ${it.droppedBufferCount} dropped " +
 					"(${it.droppedInputBufferCount} before decoding), ${it.skippedOutputBufferCount} skipped"
 			}
