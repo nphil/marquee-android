@@ -70,7 +70,6 @@ import com.nphil.marquee.ui.search.SearchScreen
 import com.nphil.marquee.ui.settings.SettingsScreen
 import com.nphil.marquee.ui.theme.ThemeChoice
 import com.nphil.marquee.ui.theme.lucent
-import com.nphil.marquee.ui.tvremote.RemoteEntryIcon
 import com.nphil.marquee.ui.watchlist.WatchlistScreen
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -125,8 +124,6 @@ private fun ShellPages(
 	onTheme: ((ThemeChoice) -> ThemeChoice) -> Unit,
 ) = BoxWithConstraints(Modifier.fillMaxSize()) {
 	val wide = maxWidth >= WIDE_WIDTH_DP.dp
-	val remote = container.tvRemote.state.collectAsStateWithLifecycle()
-	val remoteEnabled by remember(remote) { derivedStateOf { remote.value.enabled } }
 	val link = container.link.state.collectAsStateWithLifecycle()
 	val controllable by remember(link) { derivedStateOf { link.value.controllable } }
 	val session by container.session.state.collectAsStateWithLifecycle()
@@ -176,7 +173,7 @@ private fun ShellPages(
 	DisposableEffect(anchor) { onDispose { anchor.pages = null } }
 
 	val pages: @Composable (Modifier) -> Unit = { modifier ->
-		Pages(showing, tabs, wide, container, env, place, places, choice, onTheme, settingsProfile, remoteEnabled, controllable, onSettings = { select(SETTINGS_KEY) }, onBack = { savedPlace = null }, modifier)
+		Pages(showing, tabs, wide, container, env, place, places, choice, onTheme, settingsProfile, controllable, onSettings = { select(SETTINGS_KEY) }, onBack = { savedPlace = null }, modifier)
 	}
 
 	if (!wide) {
@@ -280,7 +277,6 @@ private fun Pages(
 	choice: ThemeChoice,
 	onTheme: ((ThemeChoice) -> ThemeChoice) -> Unit,
 	settingsProfile: PlexHomeUser?,
-	remoteEnabled: Boolean,
 	controllable: LinkedPhone?,
 	onSettings: () -> Unit,
 	onBack: () -> Unit,
@@ -307,7 +303,7 @@ private fun Pages(
 					places = places,
 					trailing = {
 						if (!wide) {
-							if (container.glasses.isConnected) GlassesRemoteButton(container.glasses) else if (remoteEnabled) RemoteEntryIcon(onClick = container.tvRemote::open)
+							if (container.glasses.isConnected) GlassesRemoteButton(container.glasses)
 							controllable?.let { phone -> LinkEntryIcon(phone.name, onClick = { container.link.control(phone.id) }) }
 							CompactSettingsButton(settingsProfile, onClick = onSettings)
 						}

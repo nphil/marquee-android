@@ -5,40 +5,43 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.os.SystemClock
 import android.view.Surface
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.nphil.marquee.R
 import com.nphil.marquee.tvremote.RemoteRequest
@@ -48,82 +51,106 @@ import com.nphil.marquee.ui.theme.lucent
 import kotlin.math.hypot
 import kotlin.math.sqrt
 
+/**
+ * A touchpad for the TV's pointer: one finger moves it, a tap clicks, a tap and a drag drags, two fingers scroll and a
+ * quick two-finger tap is Back. The gesture rules live in [TouchpadSession]; this only reads the fingers and runs its
+ * frame loop. The corner keys re-centre the pointer, lock a drag, and switch to the phone's tilt as the mouse.
+ */
 @Composable
-internal fun RemotePointerPad(input: (RemoteRequest) -> Unit) {
+internal fun TouchSurface(ready: Boolean, input: (RemoteRequest) -> Unit, modifier: Modifier = Modifier) {
 	val context = LocalContext.current
+	val density = LocalDensity.current.density
 	val sensors = remember(context) { context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager }
 	val gyro = remember(sensors) { sensors?.getDefaultSensor(Sensor.TYPE_GYROSCOPE) }
 	val gravity = remember(sensors) { sensors?.getDefaultSensor(Sensor.TYPE_GRAVITY) }
 	val rotation = LocalView.current.display?.rotation ?: Surface.ROTATION_0
 	val canPoint = gyro != null && gravity != null
 	val emit by rememberUpdatedState(input)
+	val session = remember { TouchpadSession { emit(it) } }
+	var lock by remember { mutableStateOf(false) }
 	var air by remember { mutableStateOf(false) }
-	var engaged by remember { mutableStateOf(false) }
-	var drag by remember { mutableStateOf(false) }
+	var touching by remember { mutableStateOf(false) }
+	var busy by remember { mutableStateOf(false) }
+	var finger by remember { mutableStateOf<Offset?>(null) }
+
+	DisposableEffect(session) { onDispose { session.stop() } }
+	// The glide, the pacing and the release after the last touch all run per frame, and only while there is something to run.
+	LaunchedEffect(busy) {
+		if (!busy) return@LaunchedEffect
+		while (true) {
+			withFrameNanos { session.tick(SystemClock.uptimeMillis()) }
+			if (!session.busy) {
+				busy = false
+				return@LaunchedEffect
+			}
+		}
+	}
+
 	val shape = RoundedCornerShape(Radius.card)
-	Column(Modifier.widthIn(max = 184.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Space.s2)) {
-		Box(Modifier.size(width = 176.dp, height = 144.dp).clip(shape)
-			.background(if (engaged) lucent.glassRaised else lucent.canvas)
-			.border(1.dp, if (engaged) lucent.edgeRaised else lucent.edge, shape)
+	val fill by animateColorAsState(if (touching) lucent.glassRaised else lucent.glass, tween(150), label = "touchpadFill")
+	val ring = lucent.accent.copy(alpha = 0.22f)
+	Box(
+		modifier.clip(shape).background(fill).border(1.dp, if (touching) lucent.edgeRaised else lucent.edge, shape)
+			.testTag("tv-touchpad")
 			.semantics {
 				contentDescription = if (air) "Air mouse" else "TV touchpad"
-				onClick(label = "Click TV pointer") { emit(RemoteRequest(pointer = "click")); true }
+				onClick("Click TV pointer") {
+					emit(RemoteRequest(pointer = "click"))
+					true
+				}
 			}
-			.pointerInput(air, drag) {
+			.pointerInput(ready) {
+				if (!ready) return@pointerInput
 				awaitEachGesture {
 					val down = awaitFirstDown()
 					down.consume()
-					engaged = true
-					emit(RemoteRequest(pointer = "begin"))
-					if (drag) emit(RemoteRequest(pointer = "down"))
-					var fingers = 1
-					var total = Offset.Zero
-					var moved = false
-					var up = down.uptimeMillis
+					var last = down.position
+					touching = true
+					finger = last
+					session.touch(1, last.x / density, last.y / density, down.uptimeMillis)
+					busy = true
 					try {
 						do {
 							val event = awaitPointerEvent()
-							val pressed = event.changes.count { it.pressed }
-							fingers = maxOf(fingers, pressed)
-							var delta = Offset.Zero
-							var moving = 0
-							for (change in event.changes) {
-								up = maxOf(up, change.uptimeMillis)
-								if (change.pressed && change.previousPressed) { delta += change.positionChange(); moving++ }
-								change.consume()
-							}
-							if (moving > 0) {
-								delta /= moving.toFloat()
-								total += delta
-								moved = moved || total.getDistance() >= viewConfiguration.touchSlop
-								if (moved && !air) {
-									val scroll = fingers > 1
-									val gain = (if (scroll) -1.5 else 4.0) / density
-									emit(RemoteRequest(pointer = if (scroll) "scroll" else "move", x = delta.x * gain, y = delta.y * gain))
-								}
-							}
-						} while (pressed > 0)
-						if (!drag && !moved && up - down.uptimeMillis < viewConfiguration.longPressTimeoutMillis) {
-							if (fingers == 1) emit(RemoteRequest(pointer = "click"))
-							else if (fingers == 2) emit(RemoteRequest(key = "back"))
-						}
+							val pressed = event.changes.filter { it.pressed }
+							if (pressed.isNotEmpty()) last = pressed.fold(Offset.Zero) { sum, change -> sum + change.position } / pressed.size.toFloat()
+							session.touch(pressed.size, last.x / density, last.y / density, event.changes.maxOf { it.uptimeMillis })
+							finger = if (pressed.isEmpty()) null else last
+							event.changes.forEach { it.consume() }
+						} while (pressed.isNotEmpty())
 					} finally {
-						if (drag) emit(RemoteRequest(pointer = "up"))
-						emit(RemoteRequest(pointer = "end"))
-						engaged = false
+						// A cancelled gesture still lifts the fingers, so a held button and the pointer are let go.
+						if (session.touching) session.touch(0, last.x / density, last.y / density, SystemClock.uptimeMillis())
+						touching = false
+						finger = null
+						busy = session.busy
 					}
 				}
-			}, contentAlignment = Alignment.Center) {
-			Text(if (air) "Hold here and tilt" else "Touchpad", Modifier.padding(Space.s2),
-				color = lucent.ink2, style = MaterialTheme.typography.labelLarge, textAlign = TextAlign.Center)
-		}
-		FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.s1, Alignment.CenterHorizontally)) {
+			}
+			.drawBehind { finger?.let { drawCircle(ring, 28.dp.toPx(), it) } },
+		contentAlignment = Alignment.Center,
+	) {
+		Icon(painterResource(R.drawable.ic_touchpad), null, Modifier.size(40.dp).graphicsLayer { alpha = 0.5f }, tint = lucent.ink3)
+		Box(Modifier.align(Alignment.TopStart).padding(Space.s2)) {
 			RemoteGlyph("Centre TV pointer", R.drawable.ic_contrast, onClick = { emit(RemoteRequest(pointer = "centre")) })
-			RemoteButton("Drag", onClick = { drag = !drag }, emphasized = drag)
-			if (canPoint) RemoteButton(if (air) "Touchpad" else "Air mouse", onClick = { air = !air })
+		}
+		Box(Modifier.align(Alignment.BottomEnd).padding(Space.s2)) {
+			RemoteGlyph("Drag lock", R.drawable.ic_drag_handle, emphasized = lock, onClick = {
+				lock = !lock
+				session.lock = lock
+			})
+		}
+		if (canPoint) {
+			Box(Modifier.align(Alignment.TopEnd).padding(Space.s2)) {
+				RemoteGlyph(if (air) "Touchpad" else "Air mouse", R.drawable.ic_smartphone, emphasized = air, onClick = {
+					air = !air
+					session.air = air
+				})
+			}
 		}
 	}
-	if (air && engaged && sensors != null && gyro != null && gravity != null) {
+
+	if (air && touching && sensors != null && gyro != null && gravity != null) {
 		DisposableEffect(sensors, rotation) {
 			val listener = object : SensorEventListener {
 				var time = 0L
