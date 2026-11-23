@@ -20,7 +20,7 @@ class PlayCoreTest {
 			 "stream":{"kind":"file","url":"http://192.0.2.10:32400/library/parts/9/1/file.mkv","headers":{"X-Plex-Token":"t"},"offset":0},
 			 "intro":[{"start":30000,"end":90000,"isFinal":false}],"credits":[],
 			 "chapters":[{"title":"Opening","start":0,"end":60000}],
-			 "isAnime":false,"quality":0,"adapts":false,"badge":{"resolution":"4K","range":"dolbyVision","sound":"atmos"},
+			 "isAnime":false,"quality":-1,"qualityTitle":"3.2 Mbps 480p","adapts":true,"badge":{"resolution":"4K","range":"dolbyVision","sound":"atmos"},
 			 "thumbnails":{"url":"http://192.0.2.10:32400/library/parts/9/indexes/sd","headers":{"X-Plex-Token":"t"}}}
 		""".trimIndent()
 
@@ -36,6 +36,7 @@ class PlayCoreTest {
 		assertNull(plan.probe)
 		assertEquals("4K, Dolby Vision, Dolby Atmos", plan.badge.spoken)
 		assertEquals("t", plan.thumbnails?.headers?.get("X-Plex-Token"))
+		assertEquals("3.2 Mbps 480p", plan.qualityTitle)
 	}
 
 	@Test
@@ -51,6 +52,7 @@ class PlayCoreTest {
 		assertNull(plan.stream)
 		assertEquals(4_194_304, plan.probe?.maxBytes)
 		assertNull(plan.thumbnails)
+		assertNull("a plan from before the quality map names no step", plan.qualityTitle)
 		assertEquals(RouteKind.ServerTranscode, plan.route.kind)
 	}
 
@@ -79,6 +81,19 @@ class PlayCoreTest {
 		assertEquals("mkv", json.getValue("capabilities").jsonObject.getValue("directContainers").toString().trim('[', ']', '"'))
 		assertFalse("a start that has not been tried on the server says nothing of it", "onDeviceFailed" in json)
 		assertFalse("session" in json)
+		assertFalse("the quality map is only asked once its plugin is on", "homelabber" in json)
+		assertFalse("screen" in json)
+
+		val mapped = request.copy(homelabber = HomeLabberLink("https://homelabber.local", "hlmq_" + "t".repeat(24)), screen = ScreenClass.Tablet)
+		val wire = CoreJson.encodeToJsonElement(StartRequest.serializer(), mapped).jsonObject
+		assertEquals("https://homelabber.local", wire.getValue("homelabber").jsonObject.getValue("address").jsonPrimitive.content)
+		assertEquals("tablet", wire.getValue("screen").jsonPrimitive.content)
+	}
+
+	@Test
+	fun aScreenIsATabletFromTheWidthTheDiagnosticsUse() {
+		assertEquals(ScreenClass.Phone, ScreenClass.of(411))
+		assertEquals(ScreenClass.Tablet, ScreenClass.of(600))
 	}
 
 	@Test

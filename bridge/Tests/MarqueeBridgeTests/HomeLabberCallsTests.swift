@@ -6,7 +6,9 @@ import Testing
 @testable import MarqueeBridge
 
 @Suite struct HomeLabberCallsTests {
-    private static let token = String(repeating: "t", count: 24)
+    private static let token = HomeLabberConfig.tokenPrefix + String(repeating: "t", count: 24)
+
+    private enum TestFailure: Error { case notScored }
 
     private final class Server: PlexTransport, Sendable {
         private let log = Mutex<[PlexRequest]>([])
@@ -24,7 +26,7 @@ import Testing
             log.withLock { $0.append(request) }
             guard reachable else { throw NetworkFailure.offline }
             if request.url.path.hasSuffix("/status") {
-                return Self.json(["enabled": true, "scored": 120, "total": 239, "running": true])
+                return Self.json(["enabled": true, "scored": 120, "total": 239, "running": true, "lastRun": 1_763_000_000, "encoder": "h264_vaapi"])
             }
             guard scored else { return PlexHTTPResponse(status: 404, body: Data()) }
             return Self.json([
@@ -47,13 +49,18 @@ import Testing
         let server = Server()
         let plain = try await call("homelabber.address", ["address": "http://homelabber.example.test", "token": Self.token], on: server)
         #expect(plain["problem"] as? String == "plaintext")
-        let short = try await call("homelabber.address", ["address": "https://homelabber.local", "token": "short"], on: server)
+        let short = try await call("homelabber.address", ["address": "https://homelabber.local", "token": "hlmq_short"], on: server)
         #expect(short["problem"] as? String == "token")
+        let foreign = try await call(
+            "homelabber.address", ["address": "https://homelabber.local", "token": String(repeating: "t", count: 24)], on: server
+        )
+        #expect(foreign["problem"] as? String == "token")
         let valid = try await call("homelabber.address", ["address": "https://homelabber.local/hl", "token": Self.token], on: server)
         #expect(valid["address"] as? String == "https://homelabber.local/hl")
 
         let status = try await call("homelabber.status", ["address": "https://homelabber.local/hl", "token": Self.token], on: server)
         #expect(status["scored"] as? Int == 120 && status["total"] as? Int == 239 && status["running"] as? Bool == true)
+        #expect(status["lastRun"] as? Double == 1_763_000_000 && status["encoder"] as? String == "h264_vaapi")
         let request = try #require(server.requests.first)
         #expect(request.url.path == "/hl/api/media-quality/v1/status")
         #expect(request.headers["Authorization"] == "Bearer \(Self.token)")
@@ -63,31 +70,25 @@ import Testing
         #expect(down["problem"] as? String == "unreachable")
     }
 
-    @Test func aTitleIsAskedAboutOnceAndAFailurePausesTheAsking() async throws {
-        let config = try #require(try? HomeLabberConfig.parse(address: "https://homelabber.local", token: Self.token).get())
-        let maps = HomeLabberMaps()
+    @Test func theSharedCacheAsksOnceWithTheSavedTokenAndAnswersWithTheTitlesTiers() async throws {
+        let link = try JSONDecoder().decode(
+            HomeLabberLink.self, from: JSONSerialization.data(withJSONObject: ["address": "https://homelabber.local", "token": Self.token])
+        )
+        let cache = QualityMapCache()
         let server = Server()
-        let first = await maps.entry(config: config, server: "machine-1", ratingKey: "301", transport: server)
-        let again = await maps.entry(config: config, server: "machine-1", ratingKey: "301", transport: server)
-        #expect(first?.mediaID == "1" && again == first)
+        let client = try #require(link.client(transport: server))
+        let first = await cache.answer(client, server: "machine-1", ratingKey: "301")
+        let again = await cache.answer(client, server: "machine-1", ratingKey: "301")
+        guard case .scored(let entry) = first else { throw TestFailure.notScored }
+        #expect(entry.mediaID == "1" && again == first)
         #expect(server.requests.count == 1)
         #expect(server.requests.first?.url.path == "/api/media-quality/v1/servers/machine-1/items/301")
-        let none = await maps.entry(config: nil, server: "machine-1", ratingKey: "301", transport: server)
-        #expect(none == nil && server.requests.count == 1)
+        #expect(server.requests.first?.restrictToOrigin == true)
+        #expect(await cache.answer(nil, server: "machine-1", ratingKey: "301") == .unscored)
 
-        let unscored = Server(scored: false)
-        let other = HomeLabberMaps()
-        _ = await other.entry(config: config, server: "machine-1", ratingKey: "9", transport: unscored)
-        _ = await other.entry(config: config, server: "machine-1", ratingKey: "9", transport: unscored)
-        #expect(unscored.requests.count == 1)
-
-        let down = Server(reachable: false)
-        let quiet = HomeLabberMaps()
-        let now = Date(timeIntervalSince1970: 1_000)
-        _ = await quiet.entry(config: config, server: "machine-1", ratingKey: "1", transport: down, now: now)
-        _ = await quiet.entry(config: config, server: "machine-1", ratingKey: "2", transport: down, now: now.addingTimeInterval(30))
-        #expect(down.requests.count == 1)
-        _ = await quiet.entry(config: config, server: "machine-1", ratingKey: "2", transport: down, now: now.addingTimeInterval(61))
-        #expect(down.requests.count == 2)
+        let bad = try JSONDecoder().decode(
+            HomeLabberLink.self, from: JSONSerialization.data(withJSONObject: ["address": "https://homelabber.local", "token": "x"])
+        )
+        #expect(bad.client(transport: server) == nil)
     }
 }

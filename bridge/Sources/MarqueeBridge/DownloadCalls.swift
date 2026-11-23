@@ -5,7 +5,7 @@ import MarqueeCore
 enum DownloadCalls {
     static func handle(
         _ method: String, _ payload: Data, library makeLibrary: (ServerCall) throws -> PlexLibrary,
-        qualityMaps: HomeLabberMaps = .shared, transport: any PlexTransport = OkHttpTransport.shared
+        qualityMaps: QualityMapCache = .shared, transport: any PlexTransport = OkHttpTransport.shared
     ) async throws -> Data {
         if method == "download.watch.update" {
             let request = try decode(WatchUpdate.self, payload)
@@ -35,15 +35,14 @@ enum DownloadCalls {
             let show = if let show = item.grandparentRatingKey, item.type == .episode {
                 try? await library.metadata(show)
             } else { nil as PlexMetadata? }
-            // HomeLabber's measured tiers, when its plugin is set up and has scored this title.
-            let map = await qualityMaps.entry(
-                config: request.homelabber?.config, server: library.server.clientIdentifier, ratingKey: item.ratingKey,
-                transport: transport
+            // HomeLabber's word on this title, when its plugin is set up.
+            let answer = await qualityMaps.answer(
+                request.homelabber?.client(transport: transport), server: library.server.clientIdentifier, ratingKey: item.ratingKey
             )
             // The queue's MP4 profile offers H.264, not the streamed HEVC option on iPhone.
             let plan = DownloadQualityPlan(
                 media: media, animated: DownloadQualityPlan.isAnimated(genres: show?.genres ?? item.genres),
-                hevc: false, originalPlays: refusal == nil, map: map
+                hevc: false, originalPlays: refusal == nil, answer: answer, screen: request.screen ?? .phone
             )
             let tier = DownloadTier(rawValue: request.quality)
             return try Reply.ok(ChoicesWire(
@@ -195,16 +194,8 @@ enum DownloadCalls {
         let quality: String
         let capabilities: CapabilitiesWire
         let homelabber: HomeLabberLink?
-    }
-
-    /// The saved HomeLabber address and token, handed in with each call; nothing is kept here.
-    private struct HomeLabberLink: Decodable {
-        let address: String
-        let token: String
-
-        var config: HomeLabberConfig? {
-            try? HomeLabberConfig.parse(address: address, token: token).get()
-        }
+        /// The device's class, for HomeLabber's phone or tablet scores; a phone when the app does not say.
+        let screen: ScreenClass?
     }
 
     private struct Episodes: Decodable {

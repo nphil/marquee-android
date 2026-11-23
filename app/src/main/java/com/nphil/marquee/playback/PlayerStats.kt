@@ -195,7 +195,7 @@ internal fun streamLines(plan: PlayPlan, fallback: String?, reading: EngineReadi
 	if (route.reasons.isNotEmpty()) add(StatLine("Why", route.reasons.joinToString(", ")))
 	fallback?.let { add(StatLine("Fallback", it)) }
 	if (plan.adapts) {
-		add(StatLine("Auto", QualityPreset.title(plan.quality)))
+		add(StatLine("Auto", plan.qualityTitle ?: QualityPreset.title(plan.quality)))
 	} else if (plan.quality != QualityPreset.ORIGINAL) {
 		add(StatLine("Quality", QualityPreset.title(plan.quality)))
 	}

@@ -31,8 +31,13 @@ struct StartCall: Decodable {
     let view: PictureWire?
     /// The tablet's player failed on this item, so the server converts it.
     let onDeviceFailed: Bool?
-    /// Auto moved to this rung: a restart after `play.look` named it.
-    let move: VideoQuality?
+    /// Auto moved to this rung: a restart after `play.look` named it. An index into Auto's ladder, which the bridge keeps
+    /// (the rungs of a measured title are not presets).
+    let move: Int?
+    /// The saved HomeLabber link; nil while its plugin is off. A measured title's curve sets what Auto streams at.
+    let homelabber: HomeLabberLink?
+    /// The device's class, for HomeLabber's phone or tablet scores; a phone when the app does not say.
+    let screen: ScreenClass?
     /// The read `probe` asked for; nil when the plan has not asked.
     let probe: ReadingWire?
     /// Hand picks: an audio stream, the subtitles menu's choice, and what the profile remembers for the item.
@@ -193,6 +198,9 @@ struct PlanWire: Encodable {
     let isAnime: Bool
     /// The quality the route was decided at: kbit/s, 0 for Original.
     let quality: Int
+    /// What Auto streams at, worded for the screen: a preset's name, or a step of the title's measured curve such as
+    /// "3.2 Mbps 720p". Nil unless Auto adapts the stream.
+    var qualityTitle: String? = nil
     /// Auto adapts the quality on this stream.
     let adapts: Bool
     /// What the first-start badge shows for the stream that plays.
@@ -409,6 +417,7 @@ struct TookWire: Encodable {
 
 /// Auto's answer to a look: the rung to move to, if any, and what it knows of the link.
 struct MoveWire: Encodable {
+    /// An index into Auto's ladder, to hand back as `StartCall.move`.
     let rung: Int?
     let estimateKbps: Int?
     let belowFloor: Bool

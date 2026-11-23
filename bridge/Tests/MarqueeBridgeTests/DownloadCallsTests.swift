@@ -1,5 +1,6 @@
 import Foundation
 import MarqueeCore
+import Synchronization
 import Testing
 
 @testable import MarqueeBridge
@@ -45,6 +46,99 @@ import Testing
         #expect(saved["delivery"] as? String == "sidecar")
         #expect(captions.first { $0["id"] as? Int == 73 }?["delivery"] as? String == "inStream")
         #expect(!captions.contains { $0["id"] as? Int == 99 })
+    }
+
+    /// A Plex server with one 1080p H.264 film (version 12, 6 Mbit/s) and, beside it, HomeLabber's answer for it.
+    private final class Servers: PlexTransport, Sendable {
+        private let log = Mutex<[String]>([])
+        private let homeLabber: PlexHTTPResponse
+
+        init(homeLabber: PlexHTTPResponse) { self.homeLabber = homeLabber }
+
+        var asked: [String] { log.withLock { $0 } }
+
+        func send(_ request: PlexRequest) async throws -> PlexHTTPResponse {
+            switch request.url.path {
+            case "/identity":
+                return Self.plex(["machineIdentifier": "machine-1"])
+            case "/library/metadata/11":
+                return Self.plex(["Metadata": [[
+                    "ratingKey": "11", "type": "movie", "title": "Film", "duration": 3_600_000,
+                    "Media": [[
+                        "id": 12, "container": "mp4", "bitrate": 6000, "width": 1920, "height": 1080, "videoCodec": "h264", "audioCodec": "aac",
+                        "Part": [["id": 13, "container": "mp4", "Stream": [
+                            ["id": 3, "streamType": 1, "codec": "h264", "width": 1920, "height": 1080, "bitrate": 5800],
+                            ["id": 4, "streamType": 2, "codec": "aac", "languageCode": "eng", "channels": 2],
+                        ]]],
+                    ]],
+                ]]])
+            default:
+                log.withLock { $0.append(request.url.path) }
+                return homeLabber
+            }
+        }
+
+        static func plex(_ fields: [String: Any]) -> PlexHTTPResponse {
+            PlexHTTPResponse(status: 200, body: try! JSONSerialization.data(withJSONObject: ["MediaContainer": fields]))
+        }
+
+        static func json(_ status: Int, _ fields: [String: Any]) -> PlexHTTPResponse {
+            PlexHTTPResponse(status: status, body: try! JSONSerialization.data(withJSONObject: fields))
+        }
+    }
+
+    private func choices(_ servers: Servers, screen: String?) async throws -> [[String: Any]] {
+        let server = PlexServer(
+            name: "Home", clientIdentifier: "machine-1", accessToken: "token",
+            connections: [PlexConnection(uri: URL(string: "http://192.0.2.10:32400")!, isLocal: true)]
+        )
+        let library = PlexLibrary(
+            server: server,
+            identity: PlexClientIdentity(clientIdentifier: "client-1", version: "1.0", platformVersion: "14", device: "Pad", deviceName: "Pad"),
+            transport: servers
+        )
+        var payload: [String: Any] = [
+            "server": try JSONSerialization.jsonObject(with: JSONEncoder().encode(server)),
+            "ratingKey": "11", "mediaIndex": 0, "quality": "medium",
+            "homelabber": ["address": "https://homelabber.local", "token": HomeLabberConfig.tokenPrefix + String(repeating: "t", count: 24)],
+            "capabilities": [
+                "hevc": false, "hevcMain10": false, "av1": false, "hdrDisplay": false, "dolbyVisionProfiles": [],
+                "nativeAudioCodecs": ["aac"], "directContainers": ["mp4"],
+            ],
+        ]
+        if let screen { payload["screen"] = screen }
+        let reply = try await DownloadCalls.handle(
+            "download.choices", JSONSerialization.data(withJSONObject: payload), library: { _ in library },
+            qualityMaps: QualityMapCache(), transport: servers
+        )
+        let wire = try #require((JSONSerialization.jsonObject(with: reply) as? [String: Any])?["ok"] as? [String: Any])
+        return try #require(wire["options"] as? [[String: Any]])
+    }
+
+    @Test func aPhoneAsksForThePhoneScoresAndATabletForTheGeneralOnes() async throws {
+        let scored = Servers.json(200, [
+            "ratingKey": "11", "mediaId": 12,
+            "tiers": ["medium": ["kbps": 2000, "vmaf": 90.0, "height": 480]],
+            "phoneTiers": ["medium": ["kbps": 1100, "vmaf": 90.0, "height": 480]],
+        ])
+        func medium(_ options: [[String: Any]]) throws -> [String: Any] {
+            try #require(options.first { $0["label"] as? String == "Medium" })
+        }
+        let phone = try medium(try await choices(Servers(homeLabber: scored), screen: "phone"))
+        #expect(phone["basis"] as? String == "measured")
+        #expect((phone["target"] as? [String: Any])?["videoKbps"] as? Int == 1100)
+        let tablet = try medium(try await choices(Servers(homeLabber: scored), screen: "tablet"))
+        #expect((tablet["target"] as? [String: Any])?["videoKbps"] as? Int == 2000)
+        // The app that does not say is a phone.
+        let unsaid = try medium(try await choices(Servers(homeLabber: scored), screen: nil))
+        #expect((unsaid["target"] as? [String: Any])?["videoKbps"] as? Int == 1100)
+    }
+
+    @Test func aFileSmallerThanAnyConversionIsOriginalOnly() async throws {
+        let servers = Servers(homeLabber: Servers.json(404, ["error": "Smaller than any transcode", "useOriginal": true, "sourceKbps": 6000]))
+        let options = try await choices(servers, screen: "phone")
+        #expect(options.map { $0["label"] as? String } == ["Original"])
+        #expect(servers.asked == ["/api/media-quality/v1/servers/machine-1/items/11"])
     }
 
     @Test func finishingOfflineIsPersistedWithoutPlexCredentials() async throws {
