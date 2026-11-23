@@ -29,7 +29,7 @@ import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.DpRect
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
-import androidx.test.ext.junit4.runners.AndroidJUnit4
+import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.nphil.marquee.testing.Device
 import com.nphil.marquee.testing.DeviceWindow
 import com.nphil.marquee.testing.SignedInToFake
