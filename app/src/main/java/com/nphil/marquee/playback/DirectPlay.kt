@@ -2,11 +2,13 @@ package com.nphil.marquee.playback
 
 import android.media.MediaCodecList
 import androidx.annotation.OptIn
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.decoder.ffmpeg.FfmpegLibrary
 import com.nphil.marquee.core.PlexMedia
 import com.nphil.marquee.core.PlexPart
 import com.nphil.marquee.core.StreamKind
+import com.nphil.marquee.ffmpeg.FfmpegVideoRenderer
 import java.util.Locale
 
 /** Whether this tablet has a decoder for a MIME type. */
@@ -15,12 +17,19 @@ fun interface Decoders {
 }
 
 /**
- * The decoders in this tablet: the codec list, and the audio decoders of the app's own FFmpeg build (the :ffmpeg
- * module), which ExoPlayer falls back to for audio the list lacks. Software decoders count: a trailer is small.
+ * The decoders in this tablet: the codec list, and what the app's own FFmpeg build (the :ffmpeg module) adds to it:
+ * the audio ExoPlayer falls back to for audio the list lacks, and MPEG-2 video for a tablet with no MPEG-2 decoder.
+ * Software decoders count: a trailer is small.
  */
 class DeviceDecoders internal constructor(private val types: Set<String>, private val ffmpeg: Decoders) : Decoders {
 	// FFmpeg is asked with the MIME type as given: it matches Media3's constants exactly, and one has a capital.
-	override fun canDecode(mime: String): Boolean = mime.lowercase(Locale.ROOT) in types || ffmpeg.canDecode(mime)
+	override fun canDecode(mime: String): Boolean = !platformLacks(mime) || ffmpeg.canDecode(mime)
+
+	/**
+	 * Whether the codec list has no decoder for [mime]. FFmpeg's MPEG-2 video decoder is used only then, so a decoder
+	 * the tablet has (hardware, mostly) is never passed over for software.
+	 */
+	fun platformLacks(mime: String): Boolean = mime.lowercase(Locale.ROOT) !in types
 
 	companion object {
 		/** The codec list takes tens of milliseconds to build and never changes while the app runs; ask off the main thread. */
@@ -30,16 +39,22 @@ class DeviceDecoders internal constructor(private val types: Set<String>, privat
 			MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos
 				.filter { !it.isEncoder }
 				.flatMapTo(HashSet()) { info -> info.supportedTypes.map { it.lowercase(Locale.ROOT) } },
-			FfmpegAudio,
+			FfmpegDecoders,
 		)
 	}
 }
 
-/** The audio FFmpeg decodes: none when the app was built without the libraries (ffmpeg/build.sh), which then still runs. */
+/**
+ * The audio and the MPEG-2 video FFmpeg decodes: none when the app was built without the libraries
+ * (ffmpeg/build.sh), which then still runs.
+ */
 @OptIn(UnstableApi::class)
-private object FfmpegAudio : Decoders {
-	override fun canDecode(mime: String): Boolean =
-		mime.startsWith("audio/") && FfmpegLibrary.isAvailable() && FfmpegLibrary.supportsFormat(mime)
+private object FfmpegDecoders : Decoders {
+	override fun canDecode(mime: String): Boolean = when {
+		mime.startsWith("audio/") -> FfmpegLibrary.isAvailable() && FfmpegLibrary.supportsFormat(mime)
+		mime.equals(MimeTypes.VIDEO_MPEG2, ignoreCase = true) -> FfmpegVideoRenderer.isAvailable()
+		else -> false
+	}
 }
 
 /**

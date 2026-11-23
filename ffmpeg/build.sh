@@ -16,9 +16,10 @@
 #
 # Derived from Media3's libraries/decoder_ffmpeg/src/main/jni/build_ffmpeg.sh and CMakeLists.txt. Changed: FFmpeg is
 # downloaded at a pinned version and checksum, built as shared libraries from an out-of-tree copy for the ABIs the app
-# ships, and the JNI library is compiled here.
+# ships, and the JNI library is compiled here, together with Marquee's own MPEG-2 video code (src/main/jni/softvideo).
 #
-# Builds FFmpeg's audio decoders, LGPL only, as shared libraries, and the JNI library Media3 loads them through:
+# Builds FFmpeg's audio decoders and its MPEG-2 video decoder, LGPL only, as shared libraries, and the JNI library
+# Media3 loads them through:
 #
 #   ffmpeg/build.sh arm64-v8a x86_64
 #
@@ -28,7 +29,8 @@
 #
 # The LGPL lets FFmpeg's part be replaced by a rebuilt one, so FFmpeg is linked as shared libraries (libavcodec.so,
 # libavutil.so, libswresample.so) and not into libffmpegJNI.so. Nothing here passes --enable-gpl, --enable-version3 or
-# --enable-nonfree, and the script stops unless configure reports "LGPL version 2.1 or later".
+# --enable-nonfree, and the script stops unless configure reports "LGPL version 2.1 or later". That rules out FFmpeg's
+# yadif and bwdif deinterlacers, which are GPL: softvideo/deinterlace.c is Marquee's own.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -37,10 +39,12 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Media3's FfmpegLibrary reaches ac3, eac3, dca, truehd, flac, opus, vorbis, alac, pcm_alaw and pcm_mulaw by MIME
 # type. The rest (mlp and the other PCM formats) are built too, though no MIME type of Media3's reaches them yet.
+# mpeg2video is opened by name from softvideo/soft_decoder.c, for the tablets whose codec list has no MPEG-2 decoder.
 decoders=(
   ac3 eac3 dca truehd mlp flac opus vorbis alac
   pcm_s16le pcm_s16be pcm_s24le pcm_s24be pcm_s32le pcm_s32be pcm_f32le pcm_f64le pcm_u8
   pcm_alaw pcm_mulaw pcm_bluray pcm_dvd
+  mpeg2video
 )
 
 die() {
@@ -96,6 +100,14 @@ check() {
     die "$abi: libffmpegJNI.so does not export JNI_OnLoad"
   [ "$("$toolchain/llvm-nm" -D --defined-only "$dest/libavcodec.so" | grep -c ' ff_' || true)" = 0 ] ||
     die "$abi: libavcodec.so exports FFmpeg's internals"
+  # Every native method FfmpegVideoDecoder declares must be in the library, or the first MPEG-2 picture would crash.
+  local native natives
+  natives="$(sed -n 's/^.*static native [A-Za-z]* \(native[A-Za-z]*\)(.*$/\1/p' "$here/src/main/java/com/nphil/marquee/ffmpeg/FfmpegVideoDecoder.java")"
+  [ -n "$natives" ] || die "found no native methods in FfmpegVideoDecoder.java"
+  for native in $natives; do
+    "$toolchain/llvm-nm" -D --defined-only "$dest/libffmpegJNI.so" | grep -q " Java_com_nphil_marquee_ffmpeg_FfmpegVideoDecoder_$native\$" ||
+      die "$abi: libffmpegJNI.so does not export the native method $native"
+  done
 }
 
 build() {
@@ -146,6 +158,8 @@ build() {
   built="$(sed -n 's/^#define CONFIG_\([A-Z0-9_]*\)_DECODER 1$/\1/p' "$out/config_components.h" | tr 'A-Z' 'a-z' | sort | paste -sd' ')"
   wanted="$(printf '%s\n' "${decoders[@]}" | sort | paste -sd' ')"
   [ "$built" = "$wanted" ] || die "$abi: the decoders built differ from the list in build.sh: $built"
+  # Without threads FFmpeg decodes MPEG-2 on one core, which a 1080i channel is too much for.
+  grep -qx '#define HAVE_THREADS 1' "$out/config.h" || die "$abi: FFmpeg was configured without threads"
 
   make -C "$out" -j"$(nproc)"
   make -C "$out" install-libs install-headers >"$out/install.log" || {
@@ -154,10 +168,22 @@ build() {
   }
 
   # The JNI code uses nothing from the C++ library, so none is linked; the NDK's default, libc++_shared.so, would have
-  # to ship with the app.
-  "$cxx" -shared -fPIC -std=c++11 -O2 -Wall -fvisibility=hidden -fvisibility-inlines-hidden -fno-exceptions -fno-rtti \
-    -nostdlib++ -I"$prefix/include" "$here/src/main/jni/ffmpeg_jni.cc" -o "$out/libffmpegJNI.so" \
-    -L"$prefix/lib" -lavcodec -lswresample -lavutil -llog \
+  # to ship with the app. The MPEG-2 code is C built -O3, so clang vectorizes the deinterlacer's loops (NEON on arm64).
+  local jni="$here/src/main/jni" objects="$out/jni" file object
+  local -a flags=(-fPIC -Wall -Wextra -fvisibility=hidden -I"$prefix/include" -I"$jni/softvideo") linked=()
+  mkdir -p "$objects"
+  for file in "$jni"/softvideo/*.c; do
+    object="$objects/$(basename "$file" .c).o"
+    "$cc" -c -std=c11 -O3 "${flags[@]}" "$file" -o "$object"
+    linked+=("$object")
+  done
+  for file in "$jni/ffmpeg_jni.cc" "$jni/softvideo/video_jni.cc"; do
+    object="$objects/$(basename "$file" .cc).o"
+    "$cxx" -c -std=c++11 -O2 "${flags[@]}" -fvisibility-inlines-hidden -fno-exceptions -fno-rtti "$file" -o "$object"
+    linked+=("$object")
+  done
+  "$cxx" -shared -nostdlib++ "${linked[@]}" -o "$out/libffmpegJNI.so" \
+    -L"$prefix/lib" -lavcodec -lswresample -lavutil -llog -landroid -lEGL -lGLESv2 -lm \
     -Wl,-soname,libffmpegJNI.so -Wl,--no-undefined -Wl,-z,max-page-size=16384 -Wl,-z,relro -Wl,-z,now
 
   local dest="$here/src/main/jniLibs/$abi"

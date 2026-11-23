@@ -5,6 +5,7 @@ import androidx.media3.common.C
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.Tracks
 import com.nphil.marquee.playback.Decoders
+import com.nphil.marquee.playback.DeviceDecoders
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
@@ -56,10 +57,10 @@ internal fun Tracks.describe(type: Int): String = formats(type).joinToString(", 
 	).joinToString(" ")
 }.ifEmpty { "none" }
 
-/** The codec list's decoders for [mime], by name, for the log. */
+/** The decoders for [mime], by name, for the log: the codec list's, else "ffmpeg" when the app's own build decodes it. */
 internal fun decoderNames(mime: String): String = MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos
 	.filter { !it.isEncoder && it.supportedTypes.any { type -> type.equals(mime, ignoreCase = true) } }
-	.joinToString("+") { it.name }.ifEmpty { "none" }
+	.joinToString("+") { it.name }.ifEmpty { if (DeviceDecoders.installed.canDecode(mime)) "ffmpeg" else "none" }
 
 private fun Tracks.formats(type: Int) = groups.filter { it.type == type }
 	.flatMap { group -> (0 until group.length).map { group.getTrackFormat(it) to group.getTrackSupport(it) } }

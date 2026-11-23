@@ -69,6 +69,9 @@ fun VideoPlaybackPage(contentPadding: PaddingValues) {
 	val decodesMpeg2 by produceState(true) {
 		value = withContext(Dispatchers.Default) { DeviceDecoders.installed.canDecode(MimeTypes.VIDEO_MPEG2) }
 	}
+	val softMpeg2 by produceState(false) {
+		value = withContext(Dispatchers.Default) { DeviceDecoders.installed.platformLacks(MimeTypes.VIDEO_MPEG2) }
+	}
 	val profile by remember(container) {
 		container.session.state.map { it.user?.uuid }.distinctUntilChanged()
 	}.collectAsStateWithLifecycle(null)
@@ -205,6 +208,9 @@ fun VideoPlaybackPage(contentPadding: PaddingValues) {
 					"Allow local network access so Marquee can reach the nearby tuner. Until then, Live TV uses Plex where available."
 				else if (prefs.readsTunerDirectly && !decodesMpeg2)
 					"This tablet can't decode MPEG-2, the video of most antenna channels, so Live TV plays through Plex."
+				else if (prefs.readsTunerDirectly && softMpeg2)
+					"Live TV can play straight from a nearby tuner at home. This tablet has no MPEG-2 decoder, the video of " +
+						"most antenna channels, so Marquee decodes it in software, which uses more power. Away from home, it uses Plex."
 				else "Live TV can play straight from a nearby tuner at home. Away from home, it uses Plex.",
 			)
 		}

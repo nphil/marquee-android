@@ -1,6 +1,7 @@
 package com.nphil.marquee.live
 
 import com.nphil.marquee.playback.Decoders
+import com.nphil.marquee.playback.DeviceDecoders
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -18,6 +19,13 @@ class TunerCodecsTest {
 		assertEquals("audio/ac3", codecs.audio)
 		assertEquals(listOf("video/mpeg2"), codecs.missing(withoutMpeg2))
 		assertEquals(emptyList<String>(), codecs.missing { true })
+	}
+
+	@Test
+	fun aLumaChannelStaysDirectWhenFfmpegDecodesTheMpeg2TheCodecListLacks() {
+		val codecs = tunerCodecs(entry(), isLuma = true)
+		assertEquals(emptyList<String>(), codecs.missing(DeviceDecoders(setOf("audio/ac3"), Decoders { it == "video/mpeg2" })))
+		assertEquals(listOf("video/mpeg2"), codecs.missing(DeviceDecoders(setOf("audio/ac3"), Decoders { false })))
 	}
 
 	@Test

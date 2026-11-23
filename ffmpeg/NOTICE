@@ -1,8 +1,9 @@
-Marquee's FFmpeg audio decoding: what is in this directory and where it comes from.
+Marquee's FFmpeg decoding (audio, and MPEG-2 video): what is in this directory and where it comes from.
 
 FFmpeg (https://ffmpeg.org), LGPL 2.1 or later.
   No FFmpeg source is kept here. build.sh downloads the release named in versions.properties, checks its SHA-256,
-  and builds the audio decoders it lists, without --enable-gpl, --enable-version3 or --enable-nonfree, as the shared
+  and builds the decoders it lists (the audio ones and mpeg2video), without --enable-gpl, --enable-version3 or
+  --enable-nonfree, as the shared
   libraries libavcodec.so, libavutil.so and libswresample.so. Replacing them with libraries rebuilt from the same
   source changes the decoders without touching the rest of the app. The licence text, from that release, is
   src/main/assets/licences/FFmpeg-LGPL-2.1.txt; the app shows it under Settings > Licences.
@@ -13,3 +14,9 @@ Media3's FFmpeg extension, Apache License 2.0 (LICENSE.Apache-2.0.txt).
   (it decodes no video), and src/main/jni/ffmpeg_jni.cc. build.sh replaces Media3's build_ffmpeg.sh and
   CMakeLists.txt. To move to another Media3 release, copy the same files from its tag and set MEDIA3_VERSION in
   versions.properties.
+
+Marquee's own MPEG-2 video code.
+  src/main/java/com/nphil/marquee/ffmpeg (FfmpegVideoRenderer, FfmpegVideoDecoder) and src/main/jni/softvideo (the
+  libavcodec wrapper, the deinterlacer and the OpenGL ES painter) are written for Marquee. The Java follows the design
+  of Media3's SimpleDecoder and its decoder_vp9 video renderer (Apache License 2.0) and copies none of their code.
+  The deinterlacer is Marquee's own because FFmpeg's, yadif and bwdif, are GPL, which build.sh forbids.

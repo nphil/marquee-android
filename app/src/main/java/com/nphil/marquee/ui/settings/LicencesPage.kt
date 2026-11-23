@@ -32,7 +32,8 @@ import kotlinx.coroutines.withContext
 
 private const val FFMPEG_NOTICE =
 	"Marquee decodes audio the tablet cannot (AC3, E-AC3, DTS, TrueHD and a few more) with FFmpeg, through Media3's " +
-		"FFmpeg extension (Apache License 2.0). The FFmpeg source is unmodified and built with only its LGPL parts, " +
+		"FFmpeg extension (Apache License 2.0). On a tablet with no MPEG-2 decoder it decodes that video with FFmpeg too, " +
+		"through Marquee's own player code. The FFmpeg source is unmodified and built with only its LGPL parts, " +
 		"as separate libraries (libavcodec, libavutil, libswresample) that a copy rebuilt from the same source can replace."
 
 /**

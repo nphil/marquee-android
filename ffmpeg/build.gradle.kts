@@ -4,8 +4,9 @@ plugins {
 	id("com.android.library")
 }
 
-// Media3's FFmpeg extension (Java and JNI, copied unmodified into src/main) over the libraries build.sh makes. The
-// file below holds the versions both use.
+// Media3's FFmpeg extension (Java and JNI, copied unmodified into src/main) and Marquee's own MPEG-2 video decoder and
+// renderer (com/nphil/marquee/ffmpeg and jni/softvideo), over the libraries build.sh makes. The file below holds the
+// versions they use.
 val versions = Properties().apply { file("versions.properties").inputStream().use { load(it) } }
 
 // The copied Java runs on the app's Media3 artifacts, so the two must be the same release.
