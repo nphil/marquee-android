@@ -18,6 +18,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -179,6 +180,23 @@ internal fun rememberPictureInPicture(
 		onDispose { activity.unregisterReceiver(receiver) }
 	}
 	return pip
+}
+
+/**
+ * Whether the app is in the small floating window, as the system reports it. The dock reads it to lay the picture out
+ * across the window; it needs no player, so it works from the bar as well as from the full screen.
+ */
+@Composable
+internal fun rememberPictureInPictureMode(): State<Boolean> {
+	val activity = LocalActivity.current as? ComponentActivity
+	val inPictureInPicture = remember { mutableStateOf(activity?.isInPictureInPictureMode == true) }
+	DisposableEffect(activity) {
+		val changed = Consumer<PictureInPictureModeChangedInfo> { inPictureInPicture.value = it.isInPictureInPictureMode }
+		activity?.addOnPictureInPictureModeChangedListener(changed)
+		inPictureInPicture.value = activity?.isInPictureInPictureMode == true
+		onDispose { activity?.removeOnPictureInPictureModeChangedListener(changed) }
+	}
+	return inPictureInPicture
 }
 
 private fun params(activity: ComponentActivity, state: WindowState): PictureInPictureParams {

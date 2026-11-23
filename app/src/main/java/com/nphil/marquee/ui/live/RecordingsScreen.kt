@@ -53,6 +53,7 @@ import com.nphil.marquee.ui.components.EmptyState
 import com.nphil.marquee.ui.components.PlexArt
 import com.nphil.marquee.ui.components.RetryButton
 import com.nphil.marquee.ui.components.TextAction
+import com.nphil.marquee.ui.player.LocalDockRoom
 import com.nphil.marquee.ui.theme.Radius
 import com.nphil.marquee.ui.theme.Size
 import com.nphil.marquee.ui.theme.Space
@@ -67,13 +68,15 @@ internal fun RecordingsDestination(container: AppContainer, route: Recordings, b
 	val guide by container.live.guide.collectAsStateWithLifecycle()
 	val model = guide?.takeIf { it.key == route.scope }?.dvr
 	val navigator = LocalNavigator.current
+	// The player's bar, while it shows, sits above the navigation bar and takes the room under the page.
+	val room = LocalDockRoom.current
 	BrowseScaffold(topBar = {
 		TopAppBar(title = { Text("Recordings", Modifier.semantics { heading() }) }, navigationIcon = { BackArrow(back) })
 	}) { padding ->
 		if (model == null) {
-			EmptyState(R.drawable.ic_tv, "Recordings unavailable", "Open Live TV on the active profile.", Modifier.fillMaxSize().padding(padding))
+			EmptyState(R.drawable.ic_tv, "Recordings unavailable", "Open Live TV on the active profile.", Modifier.fillMaxSize().padding(padding).padding(bottom = room))
 		} else {
-			RecordingsScreen(model, Modifier.fillMaxSize().padding(padding)) { item ->
+			RecordingsScreen(model, Modifier.fillMaxSize().padding(padding).padding(bottom = room)) { item ->
 				navigator?.openRecording(item.ratingKey, item.titleKey, item.mediaID)
 			}
 		}

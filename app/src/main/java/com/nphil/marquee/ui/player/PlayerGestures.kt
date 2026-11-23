@@ -6,8 +6,11 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.runtime.Stable
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.changedToUp
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -27,10 +30,17 @@ internal fun zoneSpan(zone: Zone, width: Float): ClosedFloatingPointRange<Float>
 	Zone.End -> width * 2f / 3f..width
 }
 
-/** What a vertical swipe changes: the left half of the picture sets the brightness, the right half the volume. */
-internal enum class SwipeKind { Brightness, Volume }
+/**
+ * What a vertical swipe does, by the third of the picture it begins in: the left third sets the brightness, the right
+ * third the volume, and in the middle it pulls the player down into the bar.
+ */
+internal enum class SwipeKind { Brightness, Volume, Minimise }
 
-internal fun swipeKind(x: Float, width: Float): SwipeKind = if (x < width / 2f) SwipeKind.Brightness else SwipeKind.Volume
+internal fun swipeKind(x: Float, width: Float): SwipeKind = when (zoneOf(x, width)) {
+	Zone.Start -> SwipeKind.Brightness
+	Zone.Middle -> SwipeKind.Minimise
+	Zone.End -> SwipeKind.Volume
+}
 
 /** Sweeping this share of the picture's height takes a level from nothing to full. */
 private const val SWEEP = 0.75f
@@ -99,6 +109,11 @@ internal class PictureActions(
 	val hold: (on: Boolean) -> Unit,
 	val swipeBegan: (SwipeKind) -> Unit,
 	val swiped: (kind: SwipeKind, dy: Float, height: Float) -> Unit,
+	val minimiseBegan: () -> Unit,
+	/** [dy] is how far the finger has gone down since the pull began, up being negative. */
+	val minimised: (dy: Float) -> Unit,
+	/** [velocityY] is in pixels per second, positive down. */
+	val minimiseEnded: (velocityY: Float) -> Unit,
 	val scrubBegan: () -> Unit,
 	val scrubbed: (dx: Float, width: Float) -> Unit,
 	val scrubEnded: () -> Unit,
@@ -109,8 +124,9 @@ private enum class Mode { Undecided, Idle, Hold, Swipe, Scrub, Pinch }
 
 /**
  * Tells what a touch on the picture is. Up and let go quickly is a tap, and Core decides what a tap does. Held in place
- * is the hold for double speed. Moved up or down is a brightness or volume swipe by the half it began in; moved
- * across is a scrub. A second finger makes it a pinch. A locked screen answers only a tap.
+ * is the hold for double speed. Moved up or down is a brightness or volume swipe by the third it began in, and in the
+ * middle third it pulls the player down into the bar; moved across is a scrub. A second finger makes it a pinch. A
+ * locked screen answers only a tap.
  */
 internal suspend fun PointerInputScope.detectPictureGestures(actions: PictureActions) {
 	val slop = viewConfiguration.touchSlop
@@ -132,6 +148,8 @@ internal suspend fun PointerInputScope.detectPictureGestures(actions: PictureAct
 		var last = down.position
 		var zoom = 1f
 		var pinchSent = false
+		var pulled = 0f
+		var tracker: VelocityTracker? = null
 		try {
 			while (true) {
 				val event = if (mode == Mode.Undecided) {
@@ -156,7 +174,15 @@ internal suspend fun PointerInputScope.detectPictureGestures(actions: PictureAct
 						if (abs(moved.y) > abs(moved.x)) {
 							mode = Mode.Swipe
 							kind = swipeKind(down.position.x, width)
-							actions.swipeBegan(kind)
+							if (kind == SwipeKind.Minimise) {
+								// The picture moves with the finger, and so do its coordinates: the pull is summed from the
+								// changes. This move is added with the rest, so the slop is not lost.
+								pulled = moved.y - primary.positionChange().y
+								tracker = VelocityTracker().also { it.addPosition(down.uptimeMillis, Offset.Zero) }
+								actions.minimiseBegan()
+							} else {
+								actions.swipeBegan(kind)
+							}
 						} else {
 							mode = Mode.Scrub
 							actions.scrubBegan()
@@ -173,7 +199,13 @@ internal suspend fun PointerInputScope.detectPictureGestures(actions: PictureAct
 						event.changes.forEach { it.consume() }
 					}
 					Mode.Swipe -> if (primary != null && primary.pressed) {
-						actions.swiped(kind, primary.position.y - down.position.y, height)
+						if (kind == SwipeKind.Minimise) {
+							pulled += primary.positionChange().y
+							tracker?.addPosition(primary.uptimeMillis, Offset(0f, pulled))
+							actions.minimised(pulled)
+						} else {
+							actions.swiped(kind, primary.position.y - down.position.y, height)
+						}
 						primary.consume()
 					} else {
 						break
@@ -193,6 +225,7 @@ internal suspend fun PointerInputScope.detectPictureGestures(actions: PictureAct
 		} finally {
 			when (mode) {
 				Mode.Hold -> actions.hold(false)
+				Mode.Swipe -> if (kind == SwipeKind.Minimise) actions.minimiseEnded(tracker?.calculateVelocity()?.y ?: 0f)
 				Mode.Scrub -> actions.scrubEnded()
 				else -> Unit
 			}

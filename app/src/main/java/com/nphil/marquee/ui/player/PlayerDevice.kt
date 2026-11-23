@@ -24,6 +24,22 @@ internal class Brightness(private val window: Window?, private val resolver: Con
 
 	fun restore() = put(original)
 
+	private var held: Float? = null
+
+	/** Gives the window back to the system's level while the player is not full screen, keeping the player's own. */
+	fun release() {
+		if (held != null) return
+		held = window?.attributes?.screenBrightness ?: WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+		restore()
+	}
+
+	/** Takes the player's own level up again after [release]. */
+	fun reclaim() {
+		val level = held ?: return
+		held = null
+		put(level)
+	}
+
 	private fun put(value: Float) {
 		val target = window ?: return
 		target.attributes = target.attributes.also { it.screenBrightness = value }

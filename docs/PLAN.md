@@ -134,9 +134,15 @@ Each phase ends with a release installed on the tablet.
    chosen tracks, stalls, the server's own account of a conversion; never URLs or tokens). Small-player modes:
    - **Picture in Picture** outside the app: resizable by the system; Android draws its controls, so the
      app adds remote actions (play/pause, back and forward 10 s, Skip Intro, Next Episode) up to the
-     device's limit.
-   - **In-app mini player** while browsing (not built yet): drawn by the app with the full controls and seek
-     bar in the theme, dragged to any corner, resized, swiped away, tapped to expand.
+     device's limit. Home enters it from the full screen or from the mini bar, and coming back restores
+     the same form.
+   - **In-app mini player** while browsing: a slim bar above the tab bar (at the foot of the content beside
+     the sidebar on tablets) with the live picture, the title (season and episode for a show), play and
+     pause, close and a thin progress line in the theme's accent. Swiping the player down, or its minimise
+     button, docks it; tapping the bar or swiping it up expands it with no reload, as one player and one
+     picture serve both. Swiping the bar sideways stops it. Live TV minimises the same way. A phone
+     held on its side by the player turns upright on minimise. The player is one session above the back
+     stack, so pages open over it; a trailer hides the bar and pauses the title.
    - **Free-form window** on tablets: the whole player, controls and menus included, in a resizable
      floating window (`resizeableActivity`, layouts that hold at small window sizes).
 4. **The rest.** Downloads, Live TV (guide, DVR, direct from tuner), casting, linked phones, the

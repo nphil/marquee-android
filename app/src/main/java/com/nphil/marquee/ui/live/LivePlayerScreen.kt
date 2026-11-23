@@ -40,6 +40,7 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -51,9 +52,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.boundsInWindow
-import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.platform.LocalAccessibilityManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -64,6 +65,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
@@ -84,7 +86,12 @@ import com.nphil.marquee.live.LivePlayerPhase
 import com.nphil.marquee.live.liveChannels
 import com.nphil.marquee.playback.HideSystemBars
 import com.nphil.marquee.playback.LocalPlaybackHttp
-import com.nphil.marquee.ui.WatchLive
+import com.nphil.marquee.ui.player.DockFrame
+import com.nphil.marquee.ui.player.DockMotion
+import com.nphil.marquee.ui.player.DockSession
+import com.nphil.marquee.ui.player.DockedMedia
+import com.nphil.marquee.ui.player.PlayRequest
+import com.nphil.marquee.ui.player.PlayerDock
 import com.nphil.marquee.ui.player.PlayerAspect
 import com.nphil.marquee.ui.player.GlassButton
 import com.nphil.marquee.ui.player.GlassDisc
@@ -94,6 +101,7 @@ import com.nphil.marquee.ui.player.PlayerInk
 import com.nphil.marquee.ui.player.WindowAction
 import com.nphil.marquee.ui.player.rememberPictureInPicture
 import com.nphil.marquee.ui.player.rememberPlayerAccent
+import com.nphil.marquee.ui.player.reportPicture
 import com.nphil.marquee.ui.player.shadowed
 import com.nphil.marquee.ui.theme.Radius
 import com.nphil.marquee.ui.theme.Size
@@ -104,33 +112,61 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 
+/**
+ * A channel in the player dock, as the full screen or the bar. It waits for the guide of the server and profile it was
+ * opened for, and closes if they have changed.
+ */
 @Composable
-internal fun LivePlayerDestination(container: AppContainer, route: WatchLive, back: () -> Unit) {
+internal fun LiveSession(container: AppContainer, dock: PlayerDock, session: DockSession, request: PlayRequest.Channel, hosted: Boolean) {
 	val place by container.browse.source.place.collectAsStateWithLifecycle()
 	val active by container.live.guide.collectAsStateWithLifecycle()
-	val guide = active?.takeIf { it.place == place && it.key == route.scope }
+	val guide = active?.takeIf { it.place == place && it.key == request.scope }
 	val context = LocalContext.current
 	val http = LocalPlaybackHttp.current ?: container.http
 	if (guide == null) {
-		// The saved route is scoped to the previous server and profile. Never reuse it after a profile change.
-		LaunchedEffect(active, place) { if (active != null && active?.place == place) back() }
+		// The saved request is scoped to the previous server and profile. Never reuse it after a profile change.
+		LaunchedEffect(active, place) { if (active != null && active?.place == place) dock.close(session.id) }
+		BackHandler { dock.close(session.id) }
 		Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
 			CircularProgressIndicator(Modifier.semantics { contentDescription = "Loading Live TV" })
 		}
 		return
 	}
-	val model: LivePlayerModel = viewModel { LivePlayerModel(container, context, http, guide, route.channel) }
+	val model: LivePlayerModel = viewModel { LivePlayerModel(container, context, http, guide, request.channel) }
 	val preferences by remember(guide) { container.settings.playback(guide.place.profile) }
 		.collectAsStateWithLifecycle(PlaybackPrefs())
-	val close = { model.close(); back() }
-	LivePlayer(model, preferences, close)
+	val media = remember(model) { LiveMedia(model) }
+	DockFrame(dock, session.id, media, hosted) { motion -> LivePlayer(model, preferences, motion) }
+}
+
+/** What the bar says of a channel: its name, the programme on and how far through that is. */
+private class LiveMedia(private val model: LivePlayerModel) : DockedMedia {
+	// Where the viewer is: behind the live edge after a pause or a rewind.
+	private val at get() = model.guide.now - model.position.behind / 1000.0
+	private val airing get() = model.channel?.let { model.guide.guide?.programmes(it.id, at)?.first }
+	override val title get() = model.channel?.label ?: "Live TV"
+	override val subtitle get() = airing?.title
+	override val playing get() = model.playing
+	override val busy get() = model.phase == LivePlayerPhase.Tuning || model.phase == LivePlayerPhase.Buffering
+	override val casting get() = false
+
+	override fun progress() = airing?.progress(at)
+
+	override fun toggle() {
+		model.toggle()
+	}
+
+	override fun stop() {
+		model.close()
+	}
 }
 
 @OptIn(UnstableApi::class)
 @kotlin.OptIn(ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
-private fun LivePlayer(model: LivePlayerModel, preferences: PlaybackPrefs, close: () -> Unit) {
-	HideSystemBars()
+private fun LivePlayer(model: LivePlayerModel, preferences: PlaybackPrefs, dock: DockMotion) {
+	val full = dock.full
+	if (full) HideSystemBars()
 	KeepLiveGuideCurrent(model.guide)
 	val player = model.player
 	val pip = rememberPictureInPicture(player, model.phase == LivePlayerPhase.Ready, model.playing, false, preferences.skipInterval) {
@@ -162,23 +198,44 @@ private fun LivePlayer(model: LivePlayerModel, preferences: PlaybackPrefs, close
 			showControls = false
 		}
 	}
-	BackHandler {
-		if (showGuide) { showGuide = false; showControls = true; action++ } else close()
+	if (full) BackHandler {
+		if (showGuide) { showGuide = false; showControls = true; action++ } else dock.close()
+	}
+	// Minimising puts the guide and a programme's page away; expanding shows the controls for a moment.
+	LaunchedEffect(full) {
+		if (full) {
+			showControls = true
+			action++
+		} else {
+			showGuide = false
+			details = null
+		}
 	}
 	val schedule = model.guide.guide
-	val quick = showGuide && schedule != null && !pip.active
-	val controls = !pip.active && !quick && (showControls || model.status != null || !model.playing || notice != LivePlayerPhase.Ready)
+	val quick = showGuide && schedule != null && !pip.active && full
+	val controls = !pip.active && !quick && full && (showControls || model.status != null || !model.playing || notice != LivePlayerPhase.Ready)
 	val at = model.guide.now - model.position.behind / 1000.0
 	val airing = model.channel?.let { schedule?.programmes(it.id, at)?.first }
 	val fontScale = LocalDensity.current.fontScale
-	BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black).windowInsetsPadding(WindowInsets.displayCutout)) {
+	// The picture is a layer of its own, framed by the dock, under the controls. The guide's panel takes the end or the
+	// foot of the window and the picture keeps what is left; only the controls' layer knows the window's size in dp, so
+	// it tells the picture how much.
+	var taken by remember { mutableStateOf(DpSize.Zero) }
+	if (player != null) {
+		LiveVideo(
+			model, if (fits) PlayerAspect.Fit else PlayerAspect.Fill, model.playing && full,
+			dock.pictureFrame(Modifier).padding(end = taken.width, bottom = taken.height).reportPicture(pip, dock),
+		)
+	}
+	BoxWithConstraints(dock.overlayFrame(Modifier).windowInsetsPadding(WindowInsets.displayCutout)) {
 		// A trailing guide leaves the whole height of the picture on a tablet. Short or narrow windows keep a lower panel.
 		val side = quick && maxWidth >= 680.dp && (maxHeight < 520.dp || fontScale < 1.3f)
 		val panelWidth = if (side) minOf(420.dp, maxWidth * .48f) else maxWidth
 		val panelHeight = if (side) maxHeight else minOf(maxHeight * .78f, maxOf(300.dp, maxHeight * .60f))
-		Box(Modifier.fillMaxSize().padding(end = if (side) panelWidth else 0.dp, bottom = if (quick && !side) panelHeight else 0.dp)) {
-			if (player != null) LiveVideo(model, pip, if (fits) PlayerAspect.Fit else PlayerAspect.Fill)
-			if (!pip.active) {
+		val room = DpSize(if (side) panelWidth else 0.dp, if (quick && !side) panelHeight else 0.dp)
+		SideEffect { taken = room }
+		Box(Modifier.fillMaxSize().padding(end = room.width, bottom = room.height)) {
+			if (!pip.active && full) {
 				Box(Modifier.fillMaxSize().combinedClickable(
 					onClickLabel = if (quick) "Close guide" else if (showControls) "Hide controls" else "Show controls",
 					onClick = {
@@ -186,24 +243,20 @@ private fun LivePlayer(model: LivePlayerModel, preferences: PlaybackPrefs, close
 						action++
 					},
 					onDoubleClick = { if (!quick) fits = !fits },
-				).pointerInput(quick, schedule != null, model) {
+				).pointerInput(quick, schedule != null, model, dock) {
 					if (quick) return@pointerInput
-					var travelled = Offset.Zero
-					detectDragGestures(onDragStart = { travelled = Offset.Zero }, onDragEnd = {
-						when {
-							abs(travelled.x) > abs(travelled.y) && abs(travelled.x) > 56.dp.toPx() -> {
-								val steps = (travelled.x / 110.dp.toPx()).roundToInt()
-								model.step(if (steps != 0) -steps else if (travelled.x > 0) -1 else 1)
-								showControls = true
-								action++
-							}
-							travelled.y < -60.dp.toPx() && schedule != null -> showGuide = true
-							travelled.y > 140.dp.toPx() -> close()
-						}
-					}) { _, delta -> travelled += delta }
+					detectLiveDrags(
+						dock, canOpenGuide = schedule != null,
+						step = { steps ->
+							model.step(steps)
+							showControls = true
+							action++
+						},
+						openGuide = { showGuide = true },
+					)
 				})
 				if (controls) {
-					LiveChrome(model, airing, at, preferences.skipInterval, pip, close, { showGuide = true }, { action++ })
+					LiveChrome(model, airing, at, preferences.skipInterval, pip, dock::close, dock::minimise, { showGuide = true }, { action++ })
 				}
 			}
 		}
@@ -231,7 +284,7 @@ private fun LivePlayer(model: LivePlayerModel, preferences: PlaybackPrefs, close
 
 @OptIn(UnstableApi::class)
 @Composable
-private fun LiveVideo(model: LivePlayerModel, pip: PictureInPicture, aspect: PlayerAspect) {
+private fun LiveVideo(model: LivePlayerModel, aspect: PlayerAspect, keepScreenOn: Boolean, modifier: Modifier) {
 	AndroidView(
 		factory = { context -> PlayerView(context).apply {
 			layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
@@ -240,19 +293,78 @@ private fun LiveVideo(model: LivePlayerModel, pip: PictureInPicture, aspect: Pla
 		} },
 		update = {
 			it.player = model.player
-			it.keepScreenOn = model.playing
+			it.keepScreenOn = keepScreenOn
 			it.resizeMode = aspect.resizeMode
 		},
 		onRelease = { it.player = null },
-		modifier = Modifier.fillMaxSize().onGloballyPositioned { pip.videoBounds(it.boundsInWindow()) },
+		modifier = modifier,
 	)
+}
+
+/** How far into a drag it is told apart: a pull down into the bar from a swipe across or up. */
+private val PULL_DECIDES = 6.dp
+
+/**
+ * What a drag across the live picture does. Mostly down pulls the player into the bar, which follows the finger;
+ * across changes channel, by several steps for a long swipe; up opens the guide when there is one.
+ */
+private suspend fun PointerInputScope.detectLiveDrags(
+	dock: DockMotion,
+	canOpenGuide: Boolean,
+	step: (Int) -> Unit,
+	openGuide: () -> Unit,
+) {
+	var travelled = Offset.Zero
+	var decided = false
+	var pulling = false
+	val tracker = VelocityTracker()
+	fun letGo(velocity: Float) {
+		if (!pulling) return
+		pulling = false
+		dock.dragEnded(velocity)
+	}
+	try {
+		detectDragGestures(
+			onDragStart = {
+				travelled = Offset.Zero
+				decided = false
+				tracker.resetTracking()
+			},
+			onDragEnd = {
+				if (pulling) {
+					letGo(tracker.calculateVelocity().y)
+				} else when {
+					abs(travelled.x) > abs(travelled.y) && abs(travelled.x) > 56.dp.toPx() -> {
+						val steps = (travelled.x / 110.dp.toPx()).roundToInt()
+						step(if (steps != 0) -steps else if (travelled.x > 0) -1 else 1)
+					}
+					travelled.y < -60.dp.toPx() && canOpenGuide -> openGuide()
+				}
+			},
+			onDragCancel = { letGo(0f) },
+		) { change, delta ->
+			travelled += delta
+			tracker.addPosition(change.uptimeMillis, travelled)
+			// Told apart once: a swipe across that sags is not a pull, and a pull that wanders is still one.
+			if (!decided && travelled.getDistance() > PULL_DECIDES.toPx()) {
+				decided = true
+				if (travelled.y > 0f && travelled.y > 2f * abs(travelled.x)) {
+					pulling = true
+					dock.dragBegan()
+				}
+			}
+			if (pulling) dock.dragTo(travelled.y)
+		}
+	} finally {
+		letGo(0f)
+	}
 }
 
 @kotlin.OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun LiveChrome(
 	model: LivePlayerModel, airing: GuideProgramme?, at: Double, seconds: Int, pip: PictureInPicture,
-	close: () -> Unit, guide: () -> Unit, used: () -> Unit,
+	close: () -> Unit, minimise: () -> Unit, guide: () -> Unit, used: () -> Unit,
 ) {
 	val accent = rememberPlayerAccent()
 	Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
@@ -260,6 +372,7 @@ private fun LiveChrome(
 			Modifier.fillMaxWidth().background(PlayerInk.topScrim).padding(Space.s3),
 			verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.s3),
 		) {
+			GlassButton(R.drawable.ic_expand_more, "Minimise", minimise)
 			GlassButton(R.drawable.ic_close, "Close player", close)
 			Column(Modifier.weight(1f)) {
 				Text(model.channel?.label ?: "Live TV", style = shadowed(MaterialTheme.typography.titleMedium),

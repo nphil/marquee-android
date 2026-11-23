@@ -109,6 +109,8 @@ internal class ChromeActions(
 	val next: () -> Unit,
 	val remaining: () -> Unit,
 	val cast: (() -> Unit)? = null,
+	/** Brings the picture down into the bar; null where the player cannot dock. */
+	val minimise: (() -> Unit)? = null,
 )
 
 /** A playback speed as the controls write it: 1.5×, 0.75×, 2×. */
@@ -157,7 +159,9 @@ private fun TopBar(state: ChromeState, actions: ChromeActions, accent: Color, wi
 		verticalAlignment = Alignment.CenterVertically,
 		horizontalArrangement = Arrangement.spacedBy(Space.s2),
 	) {
-		GlassButton(R.drawable.ic_arrow_back, "Back", actions.back)
+		// A narrow top bar has no room for both: the system's Back already closes the player, so the chevron stands in for the arrow.
+		if (wide || actions.minimise == null) GlassButton(R.drawable.ic_arrow_back, "Back", actions.back)
+		actions.minimise?.let { GlassButton(R.drawable.ic_expand_more, "Minimise", it) }
 		Column(Modifier.weight(1f).padding(horizontal = Space.s2)) {
 			Text(
 				state.title,

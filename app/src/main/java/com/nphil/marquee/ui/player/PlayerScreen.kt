@@ -54,8 +54,6 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.boundsInWindow
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextAlign
@@ -63,7 +61,6 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.text.Cue
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
@@ -76,7 +73,6 @@ import com.nphil.marquee.core.Marker
 import com.nphil.marquee.core.QualityPreset
 import com.nphil.marquee.data.SubtitleLook
 import com.nphil.marquee.playback.HideSystemBars
-import com.nphil.marquee.playback.LocalPlaybackHttp
 import com.nphil.marquee.playback.PlayerModel
 import com.nphil.marquee.playback.PlayerPhase
 import com.nphil.marquee.cast.CastProvider
@@ -170,26 +166,21 @@ internal fun cutEdges(chapters: List<Chapter>, spans: List<Marker>): List<Long> 
 internal fun markRanges(spans: List<Marker>): List<LongRange> = spans.map { it.start.toLong()..it.end.toLong() }
 
 /**
- * The full-screen player: the picture, and over it the controls, which a tap shows and which hide 3 s after the last
+ * The player's screen: the picture, and over it the controls, which a tap shows and which hide 3 s after the last
  * touch while it plays. They stay up while it is paused, loading or has failed, while the bar is scrubbed and while a
- * menu is open. Leaving stops the title and tells the server.
+ * menu is open. Closing stops the title and tells the server. [dock] moves the screen between the full screen and the
+ * mini bar; the controls, the system bars, the keys and Back belong to the full screen only.
  */
 @OptIn(UnstableApi::class)
 @Composable
-fun PlayerScreen(
-	ratingKey: String,
-	titleKey: String,
-	fromStart: Boolean,
-	downloadId: String?,
-	recordingMediaID: Int?,
+internal fun PlayerScreen(
+	model: PlayerModel,
+	dock: DockMotion,
 	onClose: () -> Unit,
 ) {
 	val context = LocalContext.current
 	val container = context.container
-	val http = LocalPlaybackHttp.current ?: container.http
-	val model = viewModel {
-		PlayerModel(container, http, context, ratingKey, titleKey, fromStart, downloadId = downloadId, recordingMediaID = recordingMediaID)
-	}
+	val full = dock.full
 	// A linked phone controls this player while it is open.
 	DisposableEffect(model) {
 		container.link.host.attach(model)
@@ -209,7 +200,7 @@ fun PlayerScreen(
 		else -> "Paused on ${receiver.name}"
 	}
 	val pip = rememberPictureInPicture(model)
-	if (cast != null) LookForCastDevices(cast, visible = !pip.active)
+	if (cast != null) LookForCastDevices(cast, visible = !pip.active && full)
 	var choosingCast by rememberSaveable { mutableStateOf(false) }
 	val haptics = LocalHapticFeedback.current
 	val accent = rememberPlayerAccent()
@@ -292,7 +283,7 @@ fun PlayerScreen(
 	}
 
 	fun onKey(event: KeyEvent): Boolean {
-		if (event.type != KeyEventType.KeyDown) return false
+		if (event.type != KeyEventType.KeyDown || !full) return false
 		if (event.key == Key.Escape) {
 			if (!back()) onClose()
 			return true
@@ -356,7 +347,7 @@ fun PlayerScreen(
 	}
 
 	// The picture's gestures. Only stable things are captured, so one instance serves for as long as the model does.
-	val picture = remember(model, scrub) {
+	val picture = remember(model, scrub, dock) {
 		PictureActions(
 			locked = { locked },
 			canHold = { model.player != null && model.isPlaying && !scrub.active },
@@ -385,6 +376,9 @@ fun PlayerScreen(
 					volumeMeter.show(volume.level())
 				}
 			},
+			minimiseBegan = dock::dragBegan,
+			minimised = dock::dragTo,
+			minimiseEnded = dock::dragEnded,
 			scrubBegan = { if (model.durationMs > 0L) scrub.begin(model.movieMs() / 1000.0) },
 			scrubbed = { dx, width ->
 				val duration = model.durationMs / 1000.0
@@ -404,8 +398,10 @@ fun PlayerScreen(
 		val audio = if (playing) container.playback.holdAudio() else null
 		onDispose { audio?.release() }
 	}
-	// The window's brightness and the double-speed hold are the player's only while it is open.
+	// The window's brightness is the player's only while it is full screen; the bar and closing give it back. The
+	// double-speed hold is the player's only while it is open.
 	DisposableEffect(brightness) { onDispose { brightness.restore() } }
+	LaunchedEffect(brightness, full) { if (full) brightness.reclaim() else brightness.release() }
 	DisposableEffect(model) { onDispose { if (held) model.setSpeed(heldSpeed) } }
 	BackgroundPlaybackEffect(model, pip)
 	// While a display shows Marquee's own screen, it draws the picture and the remote drives this player.
@@ -421,9 +417,17 @@ fun PlayerScreen(
 	LaunchedEffect(cast?.connectionProblem) {
 		if (!choosingCast) cast?.connectionProblem?.let { container.toasts.show(it) }
 	}
-	LaunchedEffect(menuOpen) {
+	LaunchedEffect(menuOpen, full) {
 		model.menusOpen = menuOpen
-		if (!menuOpen) focus.requestFocus()
+		if (!menuOpen && full) focus.requestFocus()
+	}
+	// Minimising puts the controls, the side panel and the cast list away; expanding shows the controls for a moment.
+	LaunchedEffect(full) {
+		shown = full
+		if (!full) {
+			pages = emptyList()
+			choosingCast = false
+		}
 	}
 	LaunchedEffect(engine, muted) { engine?.volume = if (muted) 0f else 1f }
 	LaunchedEffect(model.skipping) { if (model.skipping != null) hold.release() }
@@ -463,7 +467,7 @@ fun PlayerScreen(
 		}
 		pages = emptyList()
 	}
-	val chromeOn = (shown || scrub.active) && !locked && !pip.active
+	val chromeOn = (shown || scrub.active) && !locked && !pip.active && full
 	// The bar's position is read from the player only while the bar is on screen.
 	LaunchedEffect(model, chromeOn) {
 		if (!chromeOn) return@LaunchedEffect
@@ -476,21 +480,25 @@ fun PlayerScreen(
 			delay(POSITION_POLL_MS)
 		}
 	}
-	BackHandler(enabled = menuOpen || locked) { back() }
-	HideSystemBars()
+	// From the full screen Back works the player: a menu, then the lock, then it closes. From the bar it is the page's.
+	if (full) {
+		BackHandler { if (!back()) onClose() }
+		HideSystemBars()
+	}
 
-	// A video's letterbox is black on every theme; the theme's canvas would frame it in light on a light one.
+	// The picture is a layer of its own, framed by the dock: a thumbnail's width in the bar, the whole window at the
+	// full screen. Everything over it is laid out at the window's size and cut by the frame, so the controls never
+	// squeeze. A video's letterbox is black on every theme (the frame paints it): the theme's canvas would frame it in
+	// light on a light one.
+	if (engine != null && !container.glasses.drawsPicture) Video(engine, aspect, keepScreenOn = playing && full, pip = pip, dock = dock)
 	Box(
-		Modifier
-			.fillMaxSize()
-			.background(Color.Black)
+		dock.overlayFrame(Modifier)
 			.focusRequester(focus)
 			.onFocusChanged { rootFocused = it.isFocused }
-			.focusable()
+			.focusable(enabled = full)
 			.onKeyEvent { onKey(it) },
 	) {
 		if (engine != null) {
-			if (!container.glasses.drawsPicture) Video(engine, aspect, keepScreenOn = playing, pip = pip)
 			// The subtitle lines are the app's own, over the picture and under the controls and the tap that brings them up.
 			CaptionView(
 				cues = if (pages.lastOrNull() == TracksPage.Style && model.tracks.cues.isEmpty()) sample else model.tracks.cues,
@@ -498,10 +506,10 @@ fun PlayerScreen(
 				controlsUp = chromeOn,
 				modifier = Modifier.fillMaxSize(),
 			)
-			if (!pip.active) {
+			if (!pip.active && full) {
 				Box(Modifier.fillMaxSize().pointerInput(picture) { detectPictureGestures(picture) })
 			}
-		} else if (receiver != null && !pip.active) {
+		} else if (receiver != null && !pip.active && full) {
 			Box(Modifier.fillMaxSize().pointerInput(model) {
 				detectTapGestures { point ->
 					if (locked) unlockStamp++ else model.tap(point.x, size.width.toFloat())
@@ -517,7 +525,7 @@ fun PlayerScreen(
 		if (model.canControl && !pip.active) SkipRipple(model.skipping, Modifier.fillMaxSize())
 		if (!pip.active) {
 			val motion = MaterialTheme.motionScheme
-			when (val phase = model.phase) {
+			if (full) when (val phase = model.phase) {
 				PlayerPhase.Starting -> LoadingIndicator(Modifier.align(Alignment.Center), color = accent)
 				is PlayerPhase.Failed -> Failure(phase.message, accent, onRetry = model::retry, onClose = onClose, modifier = Modifier.align(Alignment.Center))
 				PlayerPhase.Playing -> if (model.isBuffering && !chromeOn) LoadingIndicator(Modifier.align(Alignment.Center), color = accent)
@@ -591,12 +599,13 @@ fun PlayerScreen(
 					cast = if (cast?.enabled == true && (model.canControl || receiver != null || pendingReceiver != null)) {
 						{ pages = emptyList(); choosingCast = true }
 					} else null,
+					minimise = dock::minimise,
 				)
 				PlayerChrome(state, actions, scrub, model.previews)
 			}
 			OfferOverlay(
 				model = model,
-				visible = offerShown && !menuOpen && !locked,
+				visible = offerShown && !menuOpen && !locked && full,
 				modifier = Modifier.align(Alignment.BottomEnd).safeDrawingPadding().padding(end = Space.s4, bottom = OFFER_LIFT),
 			)
 			StatsOverlay(model, Modifier.align(Alignment.TopStart))
@@ -662,7 +671,7 @@ fun PlayerScreen(
 
 @Composable
 @OptIn(UnstableApi::class)
-private fun Video(engine: ExoPlayer, aspect: PlayerAspect, keepScreenOn: Boolean, pip: PictureInPicture) {
+private fun Video(engine: ExoPlayer, aspect: PlayerAspect, keepScreenOn: Boolean, pip: PictureInPicture, dock: DockMotion) {
 	AndroidView(
 		factory = { context ->
 			PlayerView(context).apply {
@@ -671,14 +680,14 @@ private fun Video(engine: ExoPlayer, aspect: PlayerAspect, keepScreenOn: Boolean
 				subtitleView?.visibility = View.GONE
 			}
 		},
-		// The screen stays on while the video plays, and times out when it is paused.
+		// The screen stays on while the video plays full screen, and times out when it is paused or minimised.
 		update = {
 			it.player = engine
 			it.resizeMode = aspect.resizeMode
 			it.keepScreenOn = keepScreenOn
 		},
 		onRelease = { it.player = null },
-		modifier = Modifier.fillMaxSize().onGloballyPositioned { pip.videoBounds(it.boundsInWindow()) },
+		modifier = dock.pictureFrame(Modifier).reportPicture(pip, dock),
 	)
 }
 

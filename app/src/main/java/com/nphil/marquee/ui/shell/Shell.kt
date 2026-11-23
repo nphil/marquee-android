@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBars
@@ -23,6 +24,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
@@ -37,7 +39,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -57,6 +62,8 @@ import com.nphil.marquee.ui.home.HomeScreen
 import com.nphil.marquee.ui.library.LibraryScreen
 import com.nphil.marquee.ui.link.LinkEntryIcon
 import com.nphil.marquee.ui.live.LiveGuideDestination
+import com.nphil.marquee.ui.player.LocalDockAnchor
+import com.nphil.marquee.ui.player.LocalDockRoom
 import com.nphil.marquee.ui.requests.RequestsDestination
 import com.nphil.marquee.ui.search.SearchScreen
 import com.nphil.marquee.ui.settings.SettingsScreen
@@ -163,6 +170,10 @@ private fun ShellPages(
 	BackHandler(enabled = opened != null) { savedPlace = null }
 	val showing = Showing(page, opened)
 	LaunchedEffect(showing) { DiagScreen.tab(opened?.title ?: if (page == SETTINGS_KEY) "Settings" else Destination.valueOf(page).title) }
+	// The player's bar sits right under the pages, so the pages say where they end, and leave room at their foot while it shows.
+	val anchor = LocalDockAnchor.current
+	val room = LocalDockRoom.current
+	DisposableEffect(anchor) { onDispose { anchor.pages = null } }
 
 	val pages: @Composable (Modifier) -> Unit = { modifier ->
 		Pages(showing, tabs, wide, container, env, place, places, choice, onTheme, settingsProfile, remoteEnabled, controllable, onSettings = { select(SETTINGS_KEY) }, onBack = { savedPlace = null }, modifier)
@@ -173,6 +184,9 @@ private fun ShellPages(
 		val scroll = remember { BarScroll(settle) }
 		val hide = behavior == TabBarBehavior.HideOnScroll
 		SideEffect { scroll.enabled = hide }
+		// The bar rides with the tab bar as it slides away, but stops above the system's navigation bar.
+		val navigation = WindowInsets.navigationBars.getBottom(LocalDensity.current)
+		SideEffect { anchor.hidden = { scroll.hidden.coerceAtMost(scroll.limit - navigation).coerceAtLeast(0f) } }
 		// A page that arrives, and a bar that must stay put, always find the bar shown.
 		LaunchedEffect(showing, hide) { scroll.show() }
 		Scaffold(
@@ -199,7 +213,12 @@ private fun ShellPages(
 			containerColor = lucent.canvas,
 			contentWindowInsets = WindowInsets(0, 0, 0, 0),
 		) { padding ->
-			pages(Modifier.padding(padding).consumeWindowInsets(padding).nestedScroll(scroll))
+			// Where the pages end is kept with the tab bar up; the bar adds the slide itself, so it keeps pace with no lag.
+			pages(
+				Modifier.padding(padding).padding(bottom = room).fillMaxSize()
+					.onGloballyPositioned { anchor.pages = it.boundsInWindow().translate(0f, -scroll.hidden) }
+					.consumeWindowInsets(padding).nestedScroll(scroll),
+			)
 		}
 		return@BoxWithConstraints
 	}
@@ -208,6 +227,11 @@ private fun ShellPages(
 	val scope = rememberCoroutineScope()
 	val startInsets = WindowInsets.systemBars.union(WindowInsets.displayCutout).only(WindowInsetsSides.Start)
 	val shellWidth = constraints.maxWidth
+	// While the player shows, the page ends above the navigation bar, where the player's bar goes, and leaves it to the bar.
+	val docked = room > 0.dp
+	val navigation = WindowInsets.navigationBars.only(WindowInsetsSides.Bottom)
+	val foot = if (docked) room + with(LocalDensity.current) { navigation.getBottom(this).toDp() } else 0.dp
+	SideEffect { anchor.hidden = { 0f } }
 	Row(Modifier.fillMaxSize().background(lucent.canvas)) {
 		MarqueeSidebar(
 			destinations = tabs.map { it.sidebarEntry() },
@@ -224,7 +248,7 @@ private fun ShellPages(
 			onLink = controllable?.let { phone -> { container.link.control(phone.id) } },
 			linkLabel = "Control ${controllable?.name.orEmpty()}",
 		)
-		pages(Modifier.weight(1f).fillMaxHeight().clipToBounds().layout { child, available ->
+		pages(Modifier.weight(1f).fillMaxHeight().padding(bottom = foot).onGloballyPositioned { anchor.pages = it.boundsInWindow() }.clipToBounds().layout { child, available ->
 			val full = shellWidth - startInsets.getLeft(this, layoutDirection) - startInsets.getRight(this, layoutDirection)
 			// Slide the wide page behind the trailing clip. Reflow posters once, not at each spring step.
 			val narrow = (full - ExpandedWidth.roundToPx()).coerceAtLeast(0)
@@ -232,7 +256,7 @@ private fun ShellPages(
 				else (full - CollapsedWidth.roundToPx()).coerceAtLeast(available.maxWidth)
 			val page = child.measure(available.copy(minWidth = width, maxWidth = width))
 			layout(available.maxWidth, page.height) { page.placeRelative(0, 0) }
-		}.consumeWindowInsets(startInsets))
+		}.consumeWindowInsets(startInsets).then(if (docked) Modifier.consumeWindowInsets(navigation) else Modifier))
 	}
 }
 

@@ -1,5 +1,6 @@
 package com.nphil.marquee.ui
 
+import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
@@ -34,6 +35,8 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.lifecycle.createSavedStateHandle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
 import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.NavKey
@@ -56,9 +59,16 @@ import com.nphil.marquee.ui.detail.DeletionFollowUpDialog
 import com.nphil.marquee.ui.detail.DetailScreen
 import com.nphil.marquee.ui.detail.ExtraScreen
 import com.nphil.marquee.ui.detail.PersonScreen
-import com.nphil.marquee.ui.live.LivePlayerDestination
+import com.nphil.marquee.ui.live.LiveSession
 import com.nphil.marquee.ui.live.RecordingsDestination
-import com.nphil.marquee.ui.player.PlayerScreen
+import com.nphil.marquee.ui.player.DockAnchor
+import com.nphil.marquee.ui.player.DockState
+import com.nphil.marquee.ui.player.LocalDockAnchor
+import com.nphil.marquee.ui.player.LocalDockRoom
+import com.nphil.marquee.ui.player.MiniBarHeight
+import com.nphil.marquee.ui.player.PlayRequest
+import com.nphil.marquee.ui.player.PlayerDock
+import com.nphil.marquee.ui.player.PlayerDockLayer
 import com.nphil.marquee.ui.theme.Radius
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -90,23 +100,6 @@ data class Person(val id: String, val name: String) : Route
 @Serializable
 data class Extra(val item: PlexItem) : Route
 
-/**
- * A title playing full screen. [fromStart] plays from the beginning instead of resuming. [titleKey] files the audio and
- * subtitle choices: the show's key for an episode, and the title's own when null.
- */
-@Serializable
-data class Play(
-	val ratingKey: String,
-	val fromStart: Boolean = false,
-	val titleKey: String? = null,
-	val downloadId: String? = null,
-	val recordingMediaID: Int? = null,
-) : Route
-
-/** A Plex channel; only the lineup key and the account scope are saved with the navigation stack. */
-@Serializable
-internal data class WatchLive(val scope: String, val channel: String) : Route
-
 @Serializable
 internal data class Recordings(val scope: String) : Route
 
@@ -116,6 +109,7 @@ class Navigator internal constructor(
 	private val stack: NavBackStack<NavKey>,
 	private val container: AppContainer,
 	private val scope: CoroutineScope,
+	private val dock: PlayerDock,
 ) {
 	/** The title whose poster was tapped last. Only that poster joins the zoom to its page, so a title that two shelves list never shares a key twice. */
 	var origin: String? by mutableStateOf(null)
@@ -168,21 +162,22 @@ class Navigator internal constructor(
 
 	/** Plays [item] full screen: where the server says it was left, or from the start. */
 	fun openPlayer(item: PlexItem, fromStart: Boolean = false) =
-		push(Play(item.ratingKey, fromStart, item.grandparentRatingKey ?: item.ratingKey))
+		dock.open(PlayRequest.Title(item.ratingKey, fromStart, item.grandparentRatingKey ?: item.ratingKey))
 
-	internal fun openDownload(entry: DownloadEntry) = push(Play(
+	internal fun openDownload(entry: DownloadEntry) = dock.open(PlayRequest.Title(
 		entry.title.ratingKey, titleKey = entry.title.showKey ?: entry.title.ratingKey, downloadId = entry.id,
 	))
 
-	internal fun openLive(scope: String, channel: String) = push(WatchLive(scope, channel))
+	internal fun openLive(scope: String, channel: String) = dock.open(PlayRequest.Channel(scope, channel))
 
 	internal fun openRecordings(scope: String) = push(Recordings(scope))
 
 	internal fun openRecording(ratingKey: String, titleKey: String, mediaID: Int) =
-		push(Play(ratingKey, titleKey = titleKey, recordingMediaID = mediaID))
+		dock.open(PlayRequest.Title(ratingKey, titleKey = titleKey, recordingMediaID = mediaID))
 
 	/** A title the big screen chose: the phone's player opens it, and its picture goes to the display. */
-	internal fun openPlay(ratingKey: String, titleKey: String, fromStart: Boolean) = push(Play(ratingKey, fromStart, titleKey))
+	internal fun openPlay(ratingKey: String, titleKey: String, fromStart: Boolean) =
+		dock.open(PlayRequest.Title(ratingKey, fromStart, titleKey))
 
 	fun back() {
 		if (stack.size > 1) stack.removeAt(stack.lastIndex)
@@ -291,8 +286,6 @@ private val BackStack = SavedStateConfiguration {
 			subclass(Detail::class)
 			subclass(Person::class)
 			subclass(Extra::class)
-			subclass(Play::class)
-			subclass(WatchLive::class)
 			subclass(Recordings::class)
 		}
 	}
@@ -307,47 +300,52 @@ private val BackStack = SavedStateConfiguration {
 fun AppNavigation(container: AppContainer, shell: @Composable (Navigator) -> Unit) {
 	val stack = rememberNavBackStack(BackStack, Root)
 	val scope = rememberCoroutineScope()
-	val navigator = remember(stack, container, scope) { Navigator(stack, container, scope) }
+	val dock: PlayerDock = viewModel { PlayerDock(createSavedStateHandle()) }
+	val navigator = remember(stack, container, scope, dock) { Navigator(stack, container, scope, dock) }
 	LaunchedEffect(navigator, container) {
 		container.glasses.plays.collect { navigator.openPlay(it.ratingKey, it.titleKey, it.fromStart) }
 	}
+	val activity = LocalActivity.current
+	// Signing out takes the player away with the app; a turn of the screen does not.
+	DisposableEffect(dock) { onDispose { if (activity?.isChangingConfigurations != true) dock.close() } }
 	// A message that offers Undo does its work when the app stops, as the iPhone's does.
 	LifecycleEventEffect(Lifecycle.Event.ON_STOP) { container.toasts.finish() }
-	Box(Modifier.fillMaxSize()) {
-		SharedTransitionLayout {
-			CompositionLocalProvider(LocalNavigator provides navigator, LocalSharedTransitionScope provides this) {
-				NavDisplay(
-					backStack = stack,
-					onBack = navigator::back,
-					entryDecorators = listOf(
-						rememberSaveableStateHolderNavEntryDecorator<NavKey>(),
-						rememberViewModelStoreNavEntryDecorator<NavKey>(),
-					),
-					sharedTransitionScope = this,
-					transitionSpec = { NavMotion.open },
-					popTransitionSpec = { NavMotion.close },
-					predictivePopTransitionSpec = { NavMotion.close },
-					entryProvider = entryProvider {
-						entry<Root> { Visible { shell(navigator) } }
-						entry<Detail> { route -> Visible { DetailScreen(container, route, navigator) } }
-						entry<Person> { route -> Visible { PersonScreen(container, route, navigator) } }
-						entry<Extra> { route -> Visible { ExtraScreen(route.item, navigator) } }
-						entry<Play> { route ->
-							Visible {
-								PlayerScreen(
-									route.ratingKey, route.titleKey ?: route.ratingKey, route.fromStart,
-									downloadId = route.downloadId, recordingMediaID = route.recordingMediaID, onClose = navigator::back,
-								)
-							}
-						}
-						entry<WatchLive> { route -> Visible { LivePlayerDestination(container, route, navigator::back) } }
-						entry<Recordings> { route -> Visible { RecordingsDestination(container, route, navigator::back) } }
-					},
-				)
+	val top = stack.lastOrNull()
+	val onTabs = top is Root
+	// While a player is open the pages leave the bar's height free at their foot; a trailer covers the bar, so it leaves none.
+	val room = if (dock.state != DockState.Closed && top !is Extra) MiniBarHeight else 0.dp
+	val anchor = remember { DockAnchor() }
+	CompositionLocalProvider(LocalDockAnchor provides anchor, LocalDockRoom provides room) {
+		Box(Modifier.fillMaxSize()) {
+			SharedTransitionLayout {
+				CompositionLocalProvider(LocalNavigator provides navigator, LocalSharedTransitionScope provides this) {
+					NavDisplay(
+						backStack = stack,
+						onBack = navigator::back,
+						entryDecorators = listOf(
+							rememberSaveableStateHolderNavEntryDecorator<NavKey>(),
+							rememberViewModelStoreNavEntryDecorator<NavKey>(),
+						),
+						sharedTransitionScope = this,
+						transitionSpec = { NavMotion.open },
+						popTransitionSpec = { NavMotion.close },
+						predictivePopTransitionSpec = { NavMotion.close },
+						entryProvider = entryProvider {
+							entry<Root> { Visible { shell(navigator) } }
+							entry<Detail> { route -> Visible { DetailScreen(container, route, navigator) } }
+							entry<Person> { route -> Visible { PersonScreen(container, route, navigator) } }
+							entry<Extra> { route -> Visible { ExtraScreen(route.item, navigator) } }
+							entry<Recordings> { route -> Visible { RecordingsDestination(container, route, navigator::back) } }
+						},
+					)
+				}
 			}
+			PlayerDockLayer(dock, hidden = top is Extra, hosted = onTabs) { session, request ->
+				LiveSession(container, dock, session, request, onTabs)
+			}
+			ToastHost(container.toasts, Modifier.align(Alignment.BottomCenter))
+			DeletionFollowUpDialog(container.deletions)
 		}
-		ToastHost(container.toasts, Modifier.align(Alignment.BottomCenter))
-		DeletionFollowUpDialog(container.deletions)
 	}
 }
 

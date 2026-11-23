@@ -12,6 +12,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
@@ -23,6 +24,7 @@ import com.nphil.marquee.testing.DeviceWindow
 import com.nphil.marquee.testing.SignedInToFake
 import com.nphil.marquee.ui.AppNavigation
 import com.nphil.marquee.ui.Navigator
+import com.nphil.marquee.ui.player.DOCK_TAG
 import com.nphil.marquee.ui.theme.LucentTheme
 import com.nphil.marquee.ui.theme.MarqueeTheme
 import com.nphil.marquee.ui.theme.ThemeMode
@@ -38,8 +40,8 @@ import java.nio.ByteOrder
  * core/UITests/FakePlex, Media3 reading a clip from the fake over HTTP, and the player's reports. The fake serves 4 s of
  * silence as Elephants Dream's file: with a video clip here the CI emulator stopped answering within minutes in three of
  * four runs, and Core's route, Media3's read and the reports are the same for audio. The film plays when the server has
- * been told it is playing; it ends when the server has been told it is watched and the page is back; and the player's
- * last word is a stop.
+ * been told it is playing; it ends when the server has been told it is watched and the player has closed over the page;
+ * and the player's last word is a stop.
  *
  * The screen is not what is checked while it plays: the controls hide on their own timer, which the test clock runs
  * ahead of real time. The server's log is the witness.
@@ -66,7 +68,7 @@ class PlayerStartTest {
 
 		await("a report that the film is playing") { reports().any { "state=playing" in it } }
 		await("the film marked watched when it ended") { app.fake.requestsTo("/:/scrobble").any { "key=$ElephantsDreamKey" in it } }
-		await("the title's page back after the film ended") { rule.onAllNodes(play).fetchSemanticsNodes().isNotEmpty() }
+		await("the player closed after the film ended") { rule.onAllNodesWithTag(DOCK_TAG).fetchSemanticsNodes().isEmpty() }
 		await("the stop report") { reports().any { "state=stopped" in it } }
 	}
 

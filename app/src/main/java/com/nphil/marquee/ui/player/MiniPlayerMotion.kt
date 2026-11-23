@@ -116,3 +116,21 @@ private val LandscapeLocks = setOf(
  */
 internal fun orientationOnMinimise(requested: Int, phone: Boolean): Int? =
 	if (phone && requested in LandscapeLocks) ActivityInfo.SCREEN_ORIENTATION_PORTRAIT else null
+
+/** The expansion at which the player's controls and captions start to show, and at which they are fully in. */
+private const val OVERLAY_FROM = 0.55f
+private const val OVERLAY_TO = 0.95f
+
+/** The expansion by which the bar's own text and buttons have faded away. */
+private const val BAR_FADES_BY = 0.4f
+
+private fun smoothstep(from: Float, to: Float, x: Float): Float {
+	val t = ((x - from) / (to - from)).coerceIn(0f, 1f)
+	return t * t * (3f - 2f * t)
+}
+
+/** How much of the player's controls and captions show at [expansion]: none near the bar, all at the full screen. */
+internal fun overlayAlpha(expansion: Float): Float = smoothstep(OVERLAY_FROM, OVERLAY_TO, expansion)
+
+/** How much of the bar's text and buttons show at [expansion]: all in the bar, none a short way up. */
+internal fun barAlpha(expansion: Float): Float = 1f - smoothstep(0f, BAR_FADES_BY, expansion)

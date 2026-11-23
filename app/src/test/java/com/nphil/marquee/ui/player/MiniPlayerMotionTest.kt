@@ -113,4 +113,23 @@ class MiniPlayerMotionTest {
 		assertTrue(isPhone(599))
 		assertFalse(isPhone(600))
 	}
+
+	@Test
+	fun theControlsFadeInOverTheTopOfTheWayUpAndTheBarsTextOutOverTheFirstOfIt() {
+		assertEquals(0f, overlayAlpha(0f), 0f)
+		assertEquals(0f, overlayAlpha(0.55f), 0f)
+		assertEquals(1f, overlayAlpha(0.95f), 0f)
+		assertEquals(1f, overlayAlpha(1f), 0f)
+		assertEquals(1f, barAlpha(0f), 0f)
+		assertEquals(0f, barAlpha(0.4f), 0f)
+		assertEquals(0f, barAlpha(1f), 0f)
+	}
+
+	@Test
+	fun theControlsAndTheBarsTextNeverShowTogetherOnTheWay() {
+		for (step in 0..100) {
+			val expansion = step / 100f
+			assertTrue("at $expansion", overlayAlpha(expansion) == 0f || barAlpha(expansion) == 0f)
+		}
+	}
 }

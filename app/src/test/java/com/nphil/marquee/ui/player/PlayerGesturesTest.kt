@@ -43,11 +43,13 @@ class PlayerGesturesTest {
 	}
 
 	@Test
-	fun theLeftHalfSetsBrightnessAndTheRightHalfVolume() {
-		assertEquals(SwipeKind.Brightness, swipeKind(0f, 1000f))
-		assertEquals(SwipeKind.Brightness, swipeKind(499f, 1000f))
-		assertEquals(SwipeKind.Volume, swipeKind(500f, 1000f))
-		assertEquals(SwipeKind.Volume, swipeKind(1000f, 1000f))
+	fun theOuterThirdsSetBrightnessAndVolumeAndTheMiddleMinimises() {
+		assertEquals(SwipeKind.Brightness, swipeKind(0f, 900f))
+		assertEquals(SwipeKind.Brightness, swipeKind(299f, 900f))
+		assertEquals(SwipeKind.Minimise, swipeKind(300f, 900f))
+		assertEquals(SwipeKind.Minimise, swipeKind(599f, 900f))
+		assertEquals(SwipeKind.Volume, swipeKind(600f, 900f))
+		assertEquals(SwipeKind.Volume, swipeKind(900f, 900f))
 	}
 
 	@Test

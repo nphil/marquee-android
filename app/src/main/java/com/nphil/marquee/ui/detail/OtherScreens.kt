@@ -35,6 +35,7 @@ import com.nphil.marquee.ui.components.BackArrow
 import com.nphil.marquee.ui.components.BrowseScaffold
 import com.nphil.marquee.ui.components.EmptyState
 import com.nphil.marquee.ui.components.pageScroll
+import com.nphil.marquee.ui.player.LocalDockRoom
 import com.nphil.marquee.ui.theme.Space
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -74,9 +75,12 @@ fun PersonScreen(container: AppContainer, route: Person, navigator: Navigator) {
 	val titles = state.titles?.let(changes::shown)
 	val failure = state.failure
 	val grid = rememberLazyGridState()
+	// The player's bar, while it shows, sits above the navigation bar and takes the room under the page.
+	val room = LocalDockRoom.current
 	BrowseScaffold(topBar = {
 		TopAppBar(title = { Text(route.name) }, navigationIcon = { BackArrow(navigator::back) })
 	}) { padding ->
+		val bottom = padding.calculateBottomPadding() + room
 		when {
 			titles != null && titles.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
 				EmptyState(R.drawable.ic_person, "Nothing on this server", "${route.name} isn't in any title here.")
@@ -87,9 +91,9 @@ fun PersonScreen(container: AppContainer, route: Person, navigator: Navigator) {
 				val width = (maxWidth - Space.inset * 2 - gap * (columns - 1)) / columns
 				LazyVerticalGrid(
 					columns = GridCells.Fixed(columns),
-					modifier = Modifier.fillMaxSize().pageScroll(grid, top = padding.calculateTopPadding(), bottom = padding.calculateBottomPadding()),
+					modifier = Modifier.fillMaxSize().pageScroll(grid, top = padding.calculateTopPadding(), bottom = bottom),
 					state = grid,
-					contentPadding = PaddingValues(start = Space.inset, end = Space.inset, top = padding.calculateTopPadding() + Space.s3, bottom = padding.calculateBottomPadding() + Space.s8),
+					contentPadding = PaddingValues(start = Space.inset, end = Space.inset, top = padding.calculateTopPadding() + Space.s3, bottom = bottom + Space.s8),
 					horizontalArrangement = Arrangement.spacedBy(gap),
 					verticalArrangement = Arrangement.spacedBy(Space.s4),
 				) {

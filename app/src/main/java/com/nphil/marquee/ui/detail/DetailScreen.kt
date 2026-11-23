@@ -97,6 +97,7 @@ import com.nphil.marquee.ui.components.cardHeight
 import com.nphil.marquee.ui.downloads.DownloadAction
 import com.nphil.marquee.ui.downloads.downloadAction
 import com.nphil.marquee.ui.heroSharedElement
+import com.nphil.marquee.ui.player.LocalDockRoom
 import com.nphil.marquee.ui.theme.Radius
 import com.nphil.marquee.ui.theme.Size
 import com.nphil.marquee.ui.theme.Space
@@ -202,7 +203,8 @@ private fun DetailPage(
 	BoxWithConstraints(Modifier.fillMaxSize()) {
 		val wide = maxWidth >= WideBreakpoint
 		val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-		val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+		// The player's bar, while it shows, sits above the navigation bar and takes the room under the page.
+		val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + LocalDockRoom.current
 		var version by rememberSaveable { mutableIntStateOf(0) }
 		val versionIndex = version.coerceIn(0, maxOf(0, (item?.media?.size ?: 1) - 1))
 		var tracksOpen by rememberSaveable { mutableStateOf(false) }
