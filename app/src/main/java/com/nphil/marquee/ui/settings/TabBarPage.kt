@@ -107,7 +107,7 @@ fun TabBarPage(contentPadding: PaddingValues) {
 		TabRow(Destination.Search, current, limit, index = null, count = rows.size, reorder = reorder, onTab = { model.setTab(Destination.Search, it, limit) })
 		SettingsFootnote(tabsNote(limit), Modifier.padding(top = Space.s2))
 
-		Heading("On Scroll")
+		Heading("Tab Bar While Scrolling")
 		TabBarBehavior.entries.forEachIndexed { index, behavior ->
 			GroupRow(
 				index = index,
@@ -125,7 +125,7 @@ fun TabBarPage(contentPadding: PaddingValues) {
 			}
 		}
 		SettingsFootnote(
-			"Hide on scroll slides the phone's bar away while a page scrolls down and brings it back on the way up. The tablet's sidebar always stays.",
+			"Hide slides the phone's bar away while a page scrolls down and brings it back on the way up. The tablet's sidebar always stays.",
 			Modifier.padding(top = Space.s2),
 		)
 	}
@@ -134,7 +134,7 @@ fun TabBarPage(contentPadding: PaddingValues) {
 private val TabBarBehavior.label: String
 	get() = when (this) {
 		TabBarBehavior.Always -> "Always show"
-		TabBarBehavior.HideOnScroll -> "Hide on scroll"
+		TabBarBehavior.HideOnScroll -> "Hide"
 	}
 
 private fun tabsNote(limit: Int): String {

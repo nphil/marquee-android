@@ -7,7 +7,7 @@ Compose.
 
 Plan and status: [docs/PLAN.md](docs/PLAN.md).
 
-Settings offers Soft, Hard and Blur headers, and an option to hide scroll bars without
+Settings offers Soft, Hard and Blur headers, and an option to hide scroll indicators without
 hiding the Library’s A–Z rail. Under Posters sets the title, details and library sort
 value separately for each Plex profile.
 

@@ -208,7 +208,7 @@ private fun SettingsList(
 				}
 			}
 			item(key = "scrollBars") {
-				AppearanceSwitch(3, 4, "Show Scroll Bars", "The Library’s A–Z rail still shows", choice.showsScrollBars) { on ->
+				AppearanceSwitch(3, 4, "Scroll Indicators", "A thin bar beside a page while it scrolls. The Library’s A–Z rail still shows", choice.showsScrollBars) { on ->
 					onTheme { it.copy(showsScrollBars = on) }
 				}
 			}
