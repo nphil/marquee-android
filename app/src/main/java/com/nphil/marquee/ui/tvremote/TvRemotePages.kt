@@ -39,18 +39,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.semantics.LiveRegionMode
-import androidx.compose.ui.semantics.liveRegion
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LifecycleStartEffect
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import com.nphil.marquee.R
@@ -60,6 +54,7 @@ import com.nphil.marquee.tvremote.SavedTv
 import com.nphil.marquee.tvremote.TvAdvertisement
 import com.nphil.marquee.tvremote.TvListItem
 import com.nphil.marquee.tvremote.TvRemote
+import com.nphil.marquee.tvremote.TvStatus
 import com.nphil.marquee.ui.theme.Radius
 import com.nphil.marquee.ui.theme.Space
 import com.nphil.marquee.ui.theme.lucent
@@ -68,17 +63,25 @@ import kotlinx.coroutines.CancellationException
 private enum class View { Face, Televisions, Pairing, More, Apps, Channels, Cameras, Keyboard }
 private const val RemoteLabel = "TV Remote"
 
-@Composable
-internal fun RemoteEntryIcon(onClick: () -> Unit) {
-	IconButton(onClick = onClick, modifier = Modifier.testTag("tv-remote-entry")) {
-		Icon(painterResource(R.drawable.ic_tv_remote), RemoteLabel, tint = lucent.accentText)
-	}
-}
+/** What the panel around a page needs: the heading, whether the page is the face, and what the header's buttons do. */
+internal class RemoteChrome(
+	val title: String,
+	val face: Boolean,
+	val backIcon: Boolean,
+	val busy: Boolean,
+	val notice: String?,
+	val tv: SavedTv?,
+	val status: TvStatus?,
+	val onBack: () -> Unit,
+	val actions: RemoteFaceActions,
+)
 
+/**
+ * The remote's pages: the face, pairing, the TV list, more controls, lists and the keyboard. [frame] draws the panel they
+ * sit in; on the face it draws the controls itself and ignores the content it is given.
+ */
 @Composable
-internal fun TvRemoteOverlay(remote: TvRemote) {
-	val state by remote.state.collectAsStateWithLifecycle()
-	if (!state.opened) return
+internal fun TvRemotePages(remote: TvRemote, state: TvRemote.State, frame: @Composable (RemoteChrome, @Composable () -> Unit) -> Unit) {
 	val context = LocalContext.current
 	fun hasNetwork() = Build.VERSION.SDK_INT < 37 ||
 		ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_LOCAL_NETWORK) == PackageManager.PERMISSION_GRANTED
@@ -93,9 +96,11 @@ internal fun TvRemoteOverlay(remote: TvRemote) {
 			remote.networkAvailable(false)
 		}
 	}
-	LaunchedEffect(foreground, networkAllowed) { remote.networkAvailable(foreground && networkAllowed) }
+	// The panel stays composed while it closes, so the session follows the state rather than the composition.
+	LaunchedEffect(foreground, networkAllowed, state.opened) { remote.networkAvailable(foreground && networkAllowed && state.opened) }
 
 	var view by rememberSaveable { mutableStateOf(View.Face) }
+	var listFrom by remember { mutableStateOf(View.More) }
 	var choosing by remember { mutableStateOf<TvAdvertisement?>(null) }
 	var forgetting by remember { mutableStateOf<SavedTv?>(null) }
 	val invite = state.invite
@@ -126,7 +131,7 @@ internal fun TvRemoteOverlay(remote: TvRemote) {
 			when {
 				invite != null -> { remote.dismissInvite(); view = View.Face }
 				choosing != null -> choosing = null
-				page in listOf(View.Apps, View.Channels, View.Cameras) -> view = View.More
+				page in listOf(View.Apps, View.Channels, View.Cameras) -> view = listFrom
 				page == View.Pairing && current == null -> remote.close()
 				view != View.Face -> view = View.Face
 				else -> remote.close()
@@ -147,25 +152,25 @@ internal fun TvRemoteOverlay(remote: TvRemote) {
 		View.Keyboard -> "TV keyboard"
 	}
 	val canGoBack = view != View.Face || invite != null || choosing != null
-	RemotePanel(title, back, backIcon = canGoBack, busy = state.busy) {
-		val notice = state.notice
-		if (notice != null) {
-			Text(notice, Modifier.semantics { liveRegion = LiveRegionMode.Polite }, color = lucent.danger,
-				style = MaterialTheme.typography.bodyMedium)
-		}
+	val actions = RemoteFaceActions(
+		onTvs = { view = View.Televisions }, onPair = { view = View.Pairing }, onPower = remote::power,
+		onReconnect = remote::reconnect, onKeyboard = { view = View.Keyboard },
+		onApps = { listFrom = View.Face; view = View.Apps }, onMore = { view = View.More },
+	)
+	val chrome = RemoteChrome(title, page == View.Face && networkAllowed && state.loaded, canGoBack, state.busy, state.notice,
+		current, status, back, actions)
+	frame(chrome) {
 		if (!networkAllowed) {
 			Text("Allow local network access to find and control a LumaTV.", color = lucent.ink2)
 			RemoteButton("Allow local network", onClick = { access.launch(Manifest.permission.ACCESS_LOCAL_NETWORK) }, emphasized = true)
-			return@RemotePanel
+			return@frame
 		}
 		if (!state.loaded) {
 			CircularProgressIndicator(Modifier.size(Space.s6), color = lucent.accent)
-			return@RemotePanel
+			return@frame
 		}
 		when (page) {
-			View.Face -> RemoteFace(current, status, remote::input, remote::power,
-				onTvs = { view = View.Televisions }, onPair = { view = View.Pairing },
-				onKeyboard = { view = View.Keyboard }, onMore = { view = View.More }, onReconnect = remote::reconnect)
+			View.Face -> Unit
 			View.Pairing -> {
 				if (invite != null) {
 					PairForm("Pair with the TV at ${invite.host}", state.phoneName, state.busy, typedCode = false) { _, name ->
@@ -196,6 +201,7 @@ internal fun TvRemoteOverlay(remote: TvRemote) {
 			}
 			View.Keyboard -> if (status != null) RemoteKeyboard(status, remote::input)
 			View.More -> RemoteMore(status, remote::input, { kind ->
+				listFrom = View.More
 				view = when (kind) { "apps" -> View.Apps; "channels" -> View.Channels; else -> View.Cameras }
 			}) { action ->
 				remote.perform(action) { if (action.action != "volume") view = View.Face }
@@ -223,13 +229,7 @@ internal fun TvRemoteOverlay(remote: TvRemote) {
 	}
 }
 
-@Composable
-private fun RemotePanel(title: String, onBack: () -> Unit, backIcon: Boolean, busy: Boolean, content: @Composable () -> Unit) {
-	Dialog(onDismissRequest = onBack, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-		RemotePanelBody(title, onBack, backIcon, busy, content)
-	}
-}
-
+/** The dialog body that the Link screens share. */
 @Composable
 internal fun RemotePanelBody(title: String, onBack: () -> Unit, backIcon: Boolean = false, busy: Boolean = false, content: @Composable () -> Unit) {
 	Surface(

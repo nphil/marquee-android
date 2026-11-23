@@ -165,8 +165,11 @@ Each phase ends with a release installed on the tablet.
      requires local-network permission. Direct streams do not have a rewind buffer on Android; Plex
      playback can rewind within the server's live window. DVR rules and scheduled airings use Plex's
      recording templates; Recorded opens the completed DVR version in the normal player.
-   - LumaTV Remote is opt-in. A TV can pair by QR link or a code on the local network. The sidebar
-     keeps the remote just above Settings; narrow windows use Home’s toolbar instead. Pairing and
+   - LumaTV Remote is opt-in. A TV can pair by QR link or a code on the local network. The remote is a
+     floating button: it can be dragged anywhere, docks beside the profile button in the sidebar's footer
+     and follows the sidebar's width, and can be pulled out again. It opens as a panel that zooms out of
+     the button, can be moved and resized, and lays its controls out for the shape. Holding an empty part
+     of the panel edits which controls show. The pad is a D-pad, a joystick or a touchpad. Pairing and
      encrypted commands use the same LumaRemoteCore as iOS.
    - Chromecast and AirPlay are separate per-device opt-ins under Integrations. The player has one receiver chooser.
      A failed handoff leaves local playback running; returning from a receiver opens the title paused at its last position.
