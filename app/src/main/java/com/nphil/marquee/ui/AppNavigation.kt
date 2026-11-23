@@ -17,6 +17,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.Stable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -29,6 +30,8 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
@@ -65,12 +68,14 @@ import com.nphil.marquee.ui.player.DockAnchor
 import com.nphil.marquee.ui.player.DockState
 import com.nphil.marquee.ui.player.LocalDockAnchor
 import com.nphil.marquee.ui.player.LocalDockRoom
-import com.nphil.marquee.ui.player.MiniBarHeight
+import com.nphil.marquee.ui.player.LocalMiniBarSize
+import com.nphil.marquee.ui.player.MiniBarSize
 import com.nphil.marquee.ui.player.PlayRequest
 import com.nphil.marquee.ui.player.PlayerDock
 import com.nphil.marquee.ui.player.PlayerDockLayer
 import com.nphil.marquee.ui.theme.Radius
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.modules.SerializersModule
@@ -313,11 +318,15 @@ fun AppNavigation(container: AppContainer, shell: @Composable (Navigator) -> Uni
 	LifecycleEventEffect(Lifecycle.Event.ON_STOP) { container.toasts.finish() }
 	val top = stack.lastOrNull()
 	val onTabs = top is Root
-	// While a player is open the pages leave the bar's height free at their foot; a trailer covers the bar, so it leaves none.
-	val room = if (dock.state != DockState.Closed && top !is Extra) MiniBarHeight else 0.dp
+	// While a player is open the pages leave the bar's height, as the person made it, free at their foot; a trailer covers the bar, so it leaves none.
+	val barSize = remember(container, scope) { MiniBarSize { dp -> scope.launch { container.settings.setMiniBarHeight(dp) } } }
+	LaunchedEffect(barSize) { barSize.restore(container.settings.miniBarHeight.first()) }
+	val barRoom by remember(barSize) { derivedStateOf { barSize.room } }
+	val room = if (dock.state != DockState.Closed && top !is Extra) barRoom else 0.dp
 	val anchor = remember { DockAnchor() }
-	CompositionLocalProvider(LocalDockAnchor provides anchor, LocalDockRoom provides room) {
-		Box(Modifier.fillMaxSize()) {
+	val density = LocalDensity.current.density
+	CompositionLocalProvider(LocalDockAnchor provides anchor, LocalDockRoom provides room, LocalMiniBarSize provides barSize) {
+		Box(Modifier.fillMaxSize().onSizeChanged { barSize.fit(it.width / density, it.height / density) }) {
 			SharedTransitionLayout {
 				CompositionLocalProvider(LocalNavigator provides navigator, LocalSharedTransitionScope provides this) {
 					NavDisplay(

@@ -11,6 +11,7 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
@@ -19,7 +20,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.displayCutout
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -28,7 +28,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.union
-import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LoadingIndicator
@@ -89,9 +88,12 @@ import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.nphil.marquee.R
 import com.nphil.marquee.container
+import com.nphil.marquee.diagnostics.Diag
+import com.nphil.marquee.diagnostics.DiagCategory
 import com.nphil.marquee.playback.LocalPlaybackHttp
 import com.nphil.marquee.playback.PlayerModel
 import com.nphil.marquee.playback.PlayerPhase
+import com.nphil.marquee.ui.components.ResizeHandle
 import com.nphil.marquee.ui.theme.Space
 import com.nphil.marquee.ui.theme.lucent
 import kotlinx.coroutines.CoroutineScope
@@ -105,8 +107,9 @@ import kotlin.math.roundToInt
 /** The tag of the player's frame for tests: it is there for as long as a title or channel is open. */
 internal const val DOCK_TAG = "player-dock"
 
-/** The picture's width in the bar: 16:9 at the bar's height, rounded up to leave the text a margin. */
-private val MiniThumbWidth = 100.dp
+/** The resize handle's grip, centred on the bar's top edge: wide enough to hold while its pill grows, and short so the bar's own swipes keep the rest. */
+private val HandleWidth = 96.dp
+private val HandleHeight = Space.s5
 
 /** The bar's progress line. It is also the edge that parts the bar from the page above. */
 private val MiniLine = 2.dp
@@ -250,8 +253,13 @@ internal class DockMotion(
 	var window = IntSize.Zero
 
 	var density = 1f
-	var thumbWidth = 0f
 	var spatial: FiniteAnimationSpec<Float> = spring()
+
+	/** The bar's height in pixels as the person has it. The layer sets it; it is read in layout and draw only. */
+	var barHeight: () -> Float = { 0f }
+
+	/** The picture's width in the bar, which follows the bar's height. */
+	val thumbWidth: Float get() = miniThumbWidth(barHeight())
 
 	/** The player is, or is on its way to, the full screen: its controls and the system bars belong to it. */
 	val full: Boolean get() = dock.state != DockState.Bar
@@ -412,9 +420,11 @@ internal fun Modifier.reportPicture(pip: PictureInPicture, dock: DockMotion): Mo
  * frame is short of the full screen. It sits in the window like a page, but is laid out as a rectangle that [DockMotion]
  * moves between the bar's place and the whole window, clipped to it.
  *
- * Panel care: the bar is 56 dp tall and as wide as the page it sits under, on the theme's sheet colour, with a 2 dp
- * accent line along its top. Its thumbnail is the moving picture; its text and buttons stay put while the title plays
- * and the bar rides with the tab bar when that slides away on scroll. A swipe along it sends it off.
+ * Panel care: the bar is 56 dp tall until the person drags it taller (at most 160 dp) and as wide as the page it sits
+ * under, on the theme's sheet colour, with a 2 dp accent line along its top and, centred under that, a 4 dp by 40 dp
+ * handle: ink3 at half strength at rest, the accent only while held or hovered, and never moving on its own. Its
+ * thumbnail is the moving picture; its text and buttons stay put while the title plays and the bar rides with the tab
+ * bar when that slides away on scroll. A swipe along it sends it off.
  */
 @Composable
 internal fun DockFrame(dock: PlayerDock, id: Long, media: DockedMedia, hosted: Boolean, content: @Composable (DockMotion) -> Unit) {
@@ -428,9 +438,10 @@ internal fun DockFrame(dock: PlayerDock, id: Long, media: DockedMedia, hosted: B
 	val sides = WindowInsets.systemBars.union(WindowInsets.displayCutout)
 	val navigation = WindowInsets.navigationBars
 	val sheet = lucent.sheet
+	val barSize = LocalMiniBarSize.current
 	motion.density = density.density
-	motion.thumbWidth = with(density) { MiniThumbWidth.toPx() }
 	motion.spatial = spatial
+	motion.barHeight = { barSize.height * motion.density }
 
 	// The bar sits under the tabs' pages while they are the page on the stack, above the system bars otherwise. When
 	// that changes it glides from where it was instead of jumping.
@@ -441,11 +452,11 @@ internal fun DockFrame(dock: PlayerDock, id: Long, media: DockedMedia, hosted: B
 	val glide = remember(underTabs) { Animatable(0f) }
 	LaunchedEffect(glide) { glide.animateTo(1f, spatial) }
 	motion.barRect = {
-		val height = with(density) { MiniBarHeight.toPx() }
+		val height = motion.barHeight()
 		val pages = anchor.pages
 		val target = if (underTabs && pages != null) {
-			val lift = anchor.hidden()
-			Rect(pages.left, pages.bottom + lift, pages.right, pages.bottom + lift + height)
+			val bottom = pages.bottom + anchor.hidden()
+			Rect(pages.left, bottom - height, pages.right, bottom)
 		} else {
 			val bottom = motion.window.height - navigation.getBottom(density).toFloat()
 			Rect(sides.getLeft(density, direction).toFloat(), bottom - height, motion.window.width - sides.getRight(density, direction).toFloat(), bottom)
@@ -506,11 +517,13 @@ private fun TurnUprightWhenMinimised(motion: DockMotion) {
 
 /**
  * The bar: a thumbnail's room (the picture itself shows through), the title with the episode or programme under it,
- * play and pause, and close. A tap or a swipe up expands it; a swipe along it stops the player.
+ * play and pause, and close. A tap or a swipe up expands it; a swipe along it stops the player. The handle on its top
+ * edge drags it taller or shorter, and the picture with it.
  */
 @Composable
 private fun MiniBar(media: DockedMedia, motion: DockMotion) {
 	val theme = lucent
+	val barSize = LocalMiniBarSize.current
 	val progress = remember { mutableStateOf<Float?>(null) }
 	LaunchedEffect(media) {
 		while (true) {
@@ -536,7 +549,7 @@ private fun MiniBar(media: DockedMedia, motion: DockMotion) {
 			},
 	) {
 		Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
-			Box(Modifier.width(MiniThumbWidth).fillMaxHeight(), contentAlignment = Alignment.Center) {
+			Box(Modifier.pictureRoom(motion), contentAlignment = Alignment.Center) {
 				if (media.casting) Icon(painterResource(R.drawable.ic_cast_connected), null, tint = PlayerInk.ink2)
 			}
 			Column(Modifier.weight(1f).padding(horizontal = Space.s3), verticalArrangement = Arrangement.Center) {
@@ -564,6 +577,24 @@ private fun MiniBar(media: DockedMedia, motion: DockMotion) {
 				progress.value?.let { drawRect(theme.accent, size = Size(size.width * it, size.height)) }
 			},
 		)
+		ResizeHandle(
+			orientation = Orientation.Vertical,
+			label = "Resize player bar",
+			value = { barSize.height },
+			range = { barSize.range },
+			onAdjust = { dp ->
+				barSize.adjustTo(dp)
+				Diag.info(DiagCategory.Ui, "miniBar.resize", "dp" to barSize.height.roundToInt())
+			},
+			onStart = barSize::dragStarted,
+			onDrag = { travelled -> barSize.dragBy(-travelled / motion.density) },
+			onEnd = {
+				barSize.dragEnded()
+				Diag.info(DiagCategory.Ui, "miniBar.resize", "dp" to barSize.height.roundToInt())
+			},
+			modifier = Modifier.align(Alignment.TopCenter).size(HandleWidth, HandleHeight),
+			atEnd = false,
+		)
 	}
 }
 
@@ -574,6 +605,13 @@ private fun Modifier.pinnedToBar(motion: DockMotion): Modifier = layout { measur
 	val height = bar.height.roundToInt().coerceIn(0, constraints.maxHeight)
 	val placeable = measurable.measure(Constraints.fixed(width, height))
 	layout(constraints.maxWidth, constraints.maxHeight) { placeable.place(0, 0) }
+}
+
+/** The picture's room at the bar's start, which grows with the bar's height. */
+private fun Modifier.pictureRoom(motion: DockMotion): Modifier = layout { measurable, constraints ->
+	val width = motion.thumbWidth.roundToInt().coerceIn(0, constraints.maxWidth)
+	val placeable = measurable.measure(Constraints.fixed(width, constraints.maxHeight))
+	layout(width, constraints.maxHeight) { placeable.place(0, 0) }
 }
 
 /**

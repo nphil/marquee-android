@@ -36,6 +36,11 @@ interface BrowsePreferences {
 
 	suspend fun setSidebarWidth(dp: Float)
 
+	/** How tall the minimised player's bar is in dp, as the person last dragged it; null until they drag it. */
+	val miniBarHeight: Flow<Float?>
+
+	suspend fun setMiniBarHeight(dp: Float)
+
 	/** The tabs as this device arranged them; [TabLayout.standard] until then. */
 	val tabLayout: Flow<TabLayout>
 

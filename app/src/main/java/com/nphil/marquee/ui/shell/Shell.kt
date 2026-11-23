@@ -170,7 +170,7 @@ private fun ShellPages(
 	BackHandler(enabled = opened != null) { savedPlace = null }
 	val showing = Showing(page, opened)
 	LaunchedEffect(showing) { DiagScreen.tab(opened?.title ?: if (page == SETTINGS_KEY) "Settings" else Destination.valueOf(page).title) }
-	// The player's bar sits right under the pages, so the pages say where they end, and leave room at their foot while it shows.
+	// The player's bar sits right under the pages, so the pages say where they and their room for it end, and leave that room at their foot while it shows.
 	val anchor = LocalDockAnchor.current
 	val room = LocalDockRoom.current
 	DisposableEffect(anchor) { onDispose { anchor.pages = null } }
@@ -213,10 +213,11 @@ private fun ShellPages(
 			containerColor = lucent.canvas,
 			contentWindowInsets = WindowInsets(0, 0, 0, 0),
 		) { padding ->
-			// Where the pages end is kept with the tab bar up; the bar adds the slide itself, so it keeps pace with no lag.
+			// Where the pages and their room end is kept with the tab bar up; the bar adds the slide itself, so it keeps pace with no lag.
 			pages(
-				Modifier.padding(padding).padding(bottom = room).fillMaxSize()
+				Modifier.padding(padding).fillMaxSize()
 					.onGloballyPositioned { anchor.pages = it.boundsInWindow().translate(0f, -scroll.hidden) }
+					.padding(bottom = room)
 					.consumeWindowInsets(padding).nestedScroll(scroll),
 			)
 		}
@@ -231,10 +232,10 @@ private fun ShellPages(
 	val shellWidth = constraints.maxWidth
 	val startInset = startInsets.getLeft(density, direction) + startInsets.getRight(density, direction)
 	SideEffect { sizing.fit(shellWidth, density.density, startInset.toFloat()) }
-	// While the player shows, the page ends above the navigation bar, where the player's bar goes, and leaves it to the bar.
+	// While the player shows, the page ends above the navigation bar, where the player's bar goes, and leaves room for the bar.
 	val docked = room > 0.dp
 	val navigation = WindowInsets.navigationBars.only(WindowInsetsSides.Bottom)
-	val foot = if (docked) room + with(LocalDensity.current) { navigation.getBottom(this).toDp() } else 0.dp
+	val clear = if (docked) with(density) { navigation.getBottom(this).toDp() } else 0.dp
 	SideEffect { anchor.hidden = { 0f } }
 	Row(Modifier.fillMaxSize().background(lucent.canvas)) {
 		MarqueeSidebar(
@@ -253,7 +254,7 @@ private fun ShellPages(
 			onLink = controllable?.let { phone -> { container.link.control(phone.id) } },
 			linkLabel = "Control ${controllable?.name.orEmpty()}",
 		)
-		pages(Modifier.weight(1f).fillMaxHeight().padding(bottom = foot).onGloballyPositioned { anchor.pages = it.boundsInWindow() }.clipToBounds().layout { child, available ->
+		pages(Modifier.weight(1f).fillMaxHeight().padding(bottom = clear).onGloballyPositioned { anchor.pages = it.boundsInWindow() }.padding(bottom = room).clipToBounds().layout { child, available ->
 			// Slide the wide page behind the trailing clip. Reflow posters once, when the sidebar lands, not at each step.
 			val width = if (sizing.moving) {
 				val full = shellWidth - startInsets.getLeft(this, layoutDirection) - startInsets.getRight(this, layoutDirection)

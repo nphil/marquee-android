@@ -182,6 +182,12 @@ class AppSettings(context: Context) : BrowsePreferences {
 		store.edit { it[SIDEBAR_WIDTH] = dp }
 	}
 
+	override val miniBarHeight: Flow<Float?> = store.data.map { it[MINI_BAR_HEIGHT] }.distinctUntilChanged()
+
+	override suspend fun setMiniBarHeight(dp: Float) {
+		store.edit { it[MINI_BAR_HEIGHT] = dp }
+	}
+
 	override val tabLayout: Flow<TabLayout> = store.data.map { prefs ->
 		prefs[TAB_ORDER]?.let { order -> TabLayout.saved(order.split(','), prefs[TAB_SHOWN].orEmpty().split(',')) } ?: TabLayout.standard
 	}.distinctUntilChanged()
@@ -263,6 +269,7 @@ class AppSettings(context: Context) : BrowsePreferences {
 		val addressSerializer = MapSerializer(String.serializer(), String.serializer())
 		val SIDEBAR_EXPANDED = booleanPreferencesKey("shell.sidebarExpanded")
 		val SIDEBAR_WIDTH = floatPreferencesKey("shell.sidebarWidth")
+		val MINI_BAR_HEIGHT = floatPreferencesKey("player.miniBarHeight")
 		val TAB_ORDER = stringPreferencesKey("shell.tabOrder")
 		val TAB_SHOWN = stringPreferencesKey("shell.tabsShown")
 		val TAB_BAR = stringPreferencesKey("shell.tabBarBehavior")
