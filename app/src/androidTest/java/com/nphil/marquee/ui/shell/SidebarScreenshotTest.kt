@@ -17,7 +17,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -33,11 +35,15 @@ import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.center
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipe
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.width
@@ -75,7 +81,8 @@ class SidebarScreenshotTest {
 	@get:Rule
 	val rule = createComposeRule()
 
-	private val expanded = mutableStateOf(false)
+	private var sizing = SidebarSize(expanded = false, open = OPEN_DP)
+	private var resized: Pair<Boolean, Float>? = null
 	private val selected = mutableStateOf("library")
 	private val profile = mutableStateOf(
 		PlexHomeUser(1, "jordan", "Jordan", isAdmin = true, isProtected = false, isRestricted = false, isGuest = false),
@@ -115,7 +122,7 @@ class SidebarScreenshotTest {
 
 	@Test
 	fun lightTheme() {
-		expanded.value = true
+		sizing = SidebarSize(expanded = true, open = OPEN_DP)
 		show(LucentTheme.DEFAULT_LIGHT, ThemeMode.Light)
 		rule.onNodeWithTag(Shell).saveScreenshot("sidebar-tablet-open-light")
 	}
@@ -133,13 +140,45 @@ class SidebarScreenshotTest {
 
 		brand().performClick()
 		rule.waitForIdle()
-		assertTrue(expanded.value)
+		assertTrue(sizing.expanded)
 		brand().assert(hasClickLabel("Collapse sidebar"))
 
 		brand().performClick()
 		rule.waitForIdle()
-		assertFalse(expanded.value)
+		assertFalse(sizing.expanded)
 		brand().assert(hasClickLabel("Expand sidebar"))
+	}
+
+	@Test
+	fun draggingTheHandleSetsTheWidthAndReportsIt() {
+		sizing = SidebarSize(expanded = true, open = OPEN_DP)
+		show()
+		handle().performTouchInput { swipe(center, center + Offset(60.dp.toPx(), 0f)) }
+		rule.waitForIdle()
+		assertEquals(OPEN_DP + 60f, sizing.open, 0.5f)
+		assertEquals(true to sizing.open, resized)
+		rule.onNodeWithTag(Shell).saveScreenshot("sidebar-tablet-resized")
+	}
+
+	@Test
+	fun draggingTheHandleNarrowSnapsToTheRailAndKeepsTheOpenWidth() {
+		sizing = SidebarSize(expanded = true, open = OPEN_DP)
+		show()
+		handle().performTouchInput { swipe(center, center - Offset(200.dp.toPx(), 0f)) }
+		rule.waitForIdle()
+		assertFalse(sizing.expanded)
+		assertEquals(RAIL_DP, sizing.width, 0.5f)
+		assertEquals(false to OPEN_DP, resized)
+	}
+
+	@Test
+	fun handleIsAnAdjustableControlForAssistiveServices() {
+		sizing = SidebarSize(expanded = true, open = OPEN_DP)
+		show()
+		handle().assert(SemanticsMatcher.expectValue(SemanticsProperties.ProgressBarRangeInfo, ProgressBarRangeInfo(OPEN_DP, sizing.range)))
+		handle().performSemanticsAction(SemanticsActions.SetProgress) { it(300f) }
+		rule.waitForIdle()
+		assertEquals(300f, sizing.open, 0.5f)
 	}
 
 	@Test
@@ -192,7 +231,7 @@ class SidebarScreenshotTest {
 
 	@Test
 	fun firstCompositionIsAlreadyAtItsWidth() {
-		expanded.value = true
+		sizing = SidebarSize(expanded = true, open = OPEN_DP)
 		rule.mainClock.autoAdvance = false
 		show()
 		val first = sidebarWidth()
@@ -236,8 +275,8 @@ class SidebarScreenshotTest {
 							destinations = destinations,
 							selected = selected.value,
 							onSelect = { selected.value = it },
-							expanded = expanded.value,
-							onToggle = { expanded.value = !expanded.value },
+							sizing = sizing,
+							onResize = { expanded, open -> resized = expanded to open },
 							settingsProfile = profile.value,
 						)
 						PlaceholderContent()
@@ -248,6 +287,8 @@ class SidebarScreenshotTest {
 	}
 
 	private fun brand() = rule.onNodeWithTag(SidebarTags.Brand)
+
+	private fun handle() = rule.onNodeWithContentDescription("Resize sidebar")
 
 	private fun item(key: String) = rule.onNodeWithTag(SidebarTags.item(key))
 
@@ -284,8 +325,8 @@ class SidebarScreenshotTest {
 		/** Long enough for the pane to be most of the way open while its labels and the mark are still moving. */
 		const val MidAnimationMillis = 150L
 
-		/** The pane's 236 dp less the rail's 72 dp. */
-		const val OpenGrowth = 164f
+		/** The pane's width less the rail's. */
+		const val OpenGrowth = OPEN_DP - RAIL_DP
 
 		val MarkBox = 96.dp
 

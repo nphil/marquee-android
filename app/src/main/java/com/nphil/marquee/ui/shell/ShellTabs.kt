@@ -16,6 +16,12 @@ import com.nphil.marquee.core.TabLayout
 /** The saved key of the Settings page: it is shown like a tab but is not a [Destination]. */
 internal const val SETTINGS_KEY = "Settings"
 
+/** Windows at least this wide (dp) get the sidebar; narrower ones keep the bottom bar. */
+internal const val WIDE_WIDTH_DP = 600
+
+/** How many tabs a window [widthDp] wide shows: every one in the sidebar, as many as fit in a phone's bar. */
+internal fun tabLimit(widthDp: Float): Int = if (widthDp >= WIDE_WIDTH_DP) TabLayout.NO_LIMIT else TabLayout.phoneLimit(widthDp)
+
 /** The page to show for the [saved] key: Settings, or a tab still in the bar; Home once the layout edit removed it. */
 internal fun selectedPage(saved: String, tabs: List<Destination>): String =
 	if (saved == SETTINGS_KEY || tabs.any { it.name == saved }) saved else Destination.Home.name

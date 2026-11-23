@@ -118,15 +118,13 @@ internal class PlayerDock(private val saved: SavedStateHandle) : ViewModel() {
 	}
 }
 
-/** The height the bar takes at the foot of a page: the thumbnail and the text beside it. */
-internal val MiniBarHeight = 56.dp
-
-/** How much of its foot a page leaves free for the bar: the bar's height while something is docked, else nothing. */
+/** How much of its foot a page leaves free for the bar: the bar's height as the person left it while something is docked, else nothing. */
 internal val LocalDockRoom = compositionLocalOf { 0.dp }
 
 /**
- * Where the tabs' pages end, in window pixels, with the phone's tab bar fully up, so the bar sits right under them
- * (above the tab bar on a phone, beside the sidebar on a tablet). Null while the tabs are not composed.
+ * Where the tabs' pages end, with the room they leave at their foot for the bar, in window pixels and with the phone's
+ * tab bar fully up: the bar's foot sits there (above the tab bar on a phone, beside the sidebar on a tablet), and it
+ * stands as tall as it was made. Null while the tabs are not composed.
  */
 @Stable
 internal class DockAnchor {

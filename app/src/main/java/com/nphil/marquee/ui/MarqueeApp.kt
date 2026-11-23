@@ -26,7 +26,9 @@ import com.nphil.marquee.ui.components.LocalShowsScrollBars
 import com.nphil.marquee.ui.components.ProvidePlexImages
 import com.nphil.marquee.ui.link.LinkRemoteOverlay
 import com.nphil.marquee.ui.servers.ServerChoiceScreen
+import com.nphil.marquee.ui.shell.LocalShellMetrics
 import com.nphil.marquee.ui.shell.Shell
+import com.nphil.marquee.ui.shell.ShellMetrics
 import com.nphil.marquee.ui.signin.SignInScreen
 import com.nphil.marquee.ui.theme.ThemeChoice
 import com.nphil.marquee.ui.theme.lucent
@@ -36,9 +38,19 @@ import com.nphil.marquee.ui.tvremote.TvRemoteOverlay
 
 private enum class RootScreen { SignIn, Servers, Shell }
 
-/** Sign-in, then the server list, then the app: whichever the session's phase calls for. */
+/**
+ * Sign-in, then the server list, then the app: whichever the session's phase calls for. All of it shares one
+ * [LocalShellMetrics], so an overlay beside the shell can read where the sidebar is.
+ */
 @Composable
 fun MarqueeApp(container: AppContainer, choice: ThemeChoice, onTheme: ((ThemeChoice) -> ThemeChoice) -> Unit) {
+	CompositionLocalProvider(LocalShellMetrics provides remember { ShellMetrics() }) {
+		MarqueeScreens(container, choice, onTheme)
+	}
+}
+
+@Composable
+private fun MarqueeScreens(container: AppContainer, choice: ThemeChoice, onTheme: ((ThemeChoice) -> ThemeChoice) -> Unit) {
 	val state = container.session.state.collectAsStateWithLifecycle()
 	val root by remember {
 		derivedStateOf {

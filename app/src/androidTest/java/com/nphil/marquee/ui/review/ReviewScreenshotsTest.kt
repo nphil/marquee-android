@@ -66,7 +66,7 @@ class ReviewScreenshotsTest(private val screen: Screen, private val device: Devi
 			Screen.Watchlist -> watchlist()
 			Screen.SearchRecents -> searchRecents()
 			Screen.SearchResults -> searchResults()
-			Screen.TabBar -> settingsPage("Tab Bar", hasText("On Scroll"))
+			Screen.TabBar -> settingsPage("Tab Bar", hasText("Tab Bar While Scrolling"))
 			Screen.FavoriteLibraries -> settingsPage("Favorite Libraries", hasText("Which libraries this device shows."))
 		}
 		if (screen.hasArt) app.art.awaitSettled(rule)

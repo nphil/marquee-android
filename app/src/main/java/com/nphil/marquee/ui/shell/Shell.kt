@@ -43,6 +43,7 @@ import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -75,13 +76,10 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
-/** Windows at least this wide (dp) get the sidebar; narrower ones keep the bottom bar. */
-private const val WIDE_WIDTH_DP = 600
-
 private fun Destination.sidebarEntry() = SidebarDestination(name, title, tabIcon(false), tabIcon(true))
 
-/** What the person chose for the sidebar before; [expanded] is null while they have not chosen. */
-private class RememberedSidebar(val expanded: Boolean?)
+/** What the person chose for the sidebar before; [expanded] and [width] are null while they have not chosen. */
+private class RememberedSidebar(val expanded: Boolean?, val width: Float?)
 
 /** What the content area shows: a tab or Settings, or a [place] opened over it. Equal values are the same screen. */
 private data class Showing(val page: String, val place: Destination?) {
@@ -97,7 +95,7 @@ private data class Showing(val page: String, val place: Destination?) {
 fun Shell(container: AppContainer, choice: ThemeChoice, onTheme: ((ThemeChoice) -> ThemeChoice) -> Unit) {
 	val env = container.browse
 	val remembered by produceState<RememberedSidebar?>(null, env) {
-		value = RememberedSidebar(env.preferences.sidebarExpanded.first())
+		value = RememberedSidebar(env.preferences.sidebarExpanded.first(), env.preferences.sidebarWidth.first())
 	}
 	val place by env.source.place.collectAsStateWithLifecycle()
 	val seerr by container.seerr.enabled.collectAsStateWithLifecycle()
@@ -110,7 +108,7 @@ fun Shell(container: AppContainer, choice: ThemeChoice, onTheme: ((ThemeChoice) 
 		Box(Modifier.fillMaxSize().background(lucent.canvas))
 		return
 	}
-	ShellPages(container, env, where, sidebar.expanded, tabLayout, seerr, behavior, choice, onTheme)
+	ShellPages(container, env, where, sidebar.expanded, sidebar.width, tabLayout, seerr, behavior, choice, onTheme)
 }
 
 @Composable
@@ -119,6 +117,7 @@ private fun ShellPages(
 	env: BrowseEnvironment,
 	place: BrowsePlace,
 	rememberedExpanded: Boolean?,
+	rememberedWidth: Float?,
 	layout: TabLayout,
 	seerr: Boolean,
 	behavior: TabBarBehavior,
@@ -135,7 +134,8 @@ private fun ShellPages(
 	val glasses = container.glasses
 	val bigScreen = if (glasses.isConnected) remember(glasses.remoteTitle, glasses.symbol) { BigScreenEntry(glasses.remoteTitle, glasses.symbol, glasses::showRemote) } else null
 	val available = remember(seerr) { TabLayout.available(seerr) }
-	val tabs = remember(layout, available) { layout.tabs(available) }
+	val limit = tabLimit(maxWidth.value)
+	val tabs = remember(layout, available, limit) { layout.tabs(available, limit) }
 	val others = remember(layout, tabs, available) { placesOutsideTabs(layout, tabs, available) }
 	var savedPage by rememberSaveable { mutableStateOf(Destination.Home.name) }
 	var savedPlace by rememberSaveable { mutableStateOf<String?>(null) }
@@ -170,7 +170,7 @@ private fun ShellPages(
 	BackHandler(enabled = opened != null) { savedPlace = null }
 	val showing = Showing(page, opened)
 	LaunchedEffect(showing) { DiagScreen.tab(opened?.title ?: if (page == SETTINGS_KEY) "Settings" else Destination.valueOf(page).title) }
-	// The player's bar sits right under the pages, so the pages say where they end, and leave room at their foot while it shows.
+	// The player's bar sits right under the pages, so the pages say where they and their room for it end, and leave that room at their foot while it shows.
 	val anchor = LocalDockAnchor.current
 	val room = LocalDockRoom.current
 	DisposableEffect(anchor) { onDispose { anchor.pages = null } }
@@ -213,47 +213,55 @@ private fun ShellPages(
 			containerColor = lucent.canvas,
 			contentWindowInsets = WindowInsets(0, 0, 0, 0),
 		) { padding ->
-			// Where the pages end is kept with the tab bar up; the bar adds the slide itself, so it keeps pace with no lag.
+			// Where the pages and their room end is kept with the tab bar up; the bar adds the slide itself, so it keeps pace with no lag.
 			pages(
-				Modifier.padding(padding).padding(bottom = room).fillMaxSize()
+				Modifier.padding(padding).fillMaxSize()
 					.onGloballyPositioned { anchor.pages = it.boundsInWindow().translate(0f, -scroll.hidden) }
+					.padding(bottom = room)
 					.consumeWindowInsets(padding).nestedScroll(scroll),
 			)
 		}
 		return@BoxWithConstraints
 	}
 
-	var expanded by rememberSaveable { mutableStateOf(rememberedExpanded ?: true) }
+	val sizing = rememberSaveable(saver = SidebarSize.Saver) { SidebarSize(rememberedExpanded ?: true, rememberedWidth ?: OPEN_DP) }
 	val scope = rememberCoroutineScope()
+	val density = LocalDensity.current
+	val direction = LocalLayoutDirection.current
 	val startInsets = WindowInsets.systemBars.union(WindowInsets.displayCutout).only(WindowInsetsSides.Start)
 	val shellWidth = constraints.maxWidth
-	// While the player shows, the page ends above the navigation bar, where the player's bar goes, and leaves it to the bar.
+	val startInset = startInsets.getLeft(density, direction) + startInsets.getRight(density, direction)
+	SideEffect { sizing.fit(shellWidth, density.density, startInset.toFloat()) }
+	// While the player shows, the page ends above the navigation bar, where the player's bar goes, and leaves room for the bar.
 	val docked = room > 0.dp
 	val navigation = WindowInsets.navigationBars.only(WindowInsetsSides.Bottom)
-	val foot = if (docked) room + with(LocalDensity.current) { navigation.getBottom(this).toDp() } else 0.dp
+	val clear = if (docked) with(density) { navigation.getBottom(this).toDp() } else 0.dp
 	SideEffect { anchor.hidden = { 0f } }
 	Row(Modifier.fillMaxSize().background(lucent.canvas)) {
 		MarqueeSidebar(
 			destinations = tabs.map { it.sidebarEntry() },
 			selected = page,
 			onSelect = select,
-			expanded = expanded,
-			onToggle = {
-				expanded = !expanded
-				scope.launch { env.preferences.setSidebarExpanded(expanded) }
+			sizing = sizing,
+			onResize = { expanded, open ->
+				scope.launch {
+					env.preferences.setSidebarExpanded(expanded)
+					env.preferences.setSidebarWidth(open)
+				}
 			},
 			settingsProfile = settingsProfile,
-			onRemote = if (remoteEnabled) container.tvRemote::open else null,
 			bigScreen = bigScreen,
 			onLink = controllable?.let { phone -> { container.link.control(phone.id) } },
 			linkLabel = "Control ${controllable?.name.orEmpty()}",
 		)
-		pages(Modifier.weight(1f).fillMaxHeight().padding(bottom = foot).onGloballyPositioned { anchor.pages = it.boundsInWindow() }.clipToBounds().layout { child, available ->
-			val full = shellWidth - startInsets.getLeft(this, layoutDirection) - startInsets.getRight(this, layoutDirection)
-			// Slide the wide page behind the trailing clip. Reflow posters once, not at each spring step.
-			val narrow = (full - ExpandedWidth.roundToPx()).coerceAtLeast(0)
-			val width = if (expanded && available.maxWidth <= narrow) available.maxWidth
-				else (full - CollapsedWidth.roundToPx()).coerceAtLeast(available.maxWidth)
+		pages(Modifier.weight(1f).fillMaxHeight().padding(bottom = clear).onGloballyPositioned { anchor.pages = it.boundsInWindow() }.padding(bottom = room).clipToBounds().layout { child, available ->
+			// Slide the wide page behind the trailing clip. Reflow posters once, when the sidebar lands, not at each step.
+			val width = if (sizing.moving) {
+				val full = shellWidth - startInsets.getLeft(this, layoutDirection) - startInsets.getRight(this, layoutDirection)
+				(full - RAIL_DP.dp.roundToPx()).coerceAtLeast(available.maxWidth)
+			} else {
+				available.maxWidth
+			}
 			val page = child.measure(available.copy(minWidth = width, maxWidth = width))
 			layout(available.maxWidth, page.height) { page.placeRelative(0, 0) }
 		}.consumeWindowInsets(startInsets).then(if (docked) Modifier.consumeWindowInsets(navigation) else Modifier))
