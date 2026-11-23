@@ -129,7 +129,8 @@ Each phase ends with a release installed on the tablet.
    Core (English subtitles on by default; original audio, or the English dub with its own subtitle for
    anime; a Tracks menu of On, Off, Style and one Advanced row), Bazarr and SpeechDock, subtitle style,
    Skip Intro, credits and Up Next, background play (a media session and a foreground service keep the sound
-   going with the screen off), playback info, the format badge, stats for nerds, seek-bar previews (the
+   going with the screen off, and the player keeps the last keyframe so the picture comes back without a
+   reload), playback info, the format badge, stats for nerds, seek-bar previews (the
    server's thumbnail index, or frames the app takes itself) and the `Diag` trail (route reasons by name,
    chosen tracks, stalls, the server's own account of a conversion; never URLs or tokens). Small-player modes:
    - **Picture in Picture** outside the app: resizable by the system; Android draws its controls, so the

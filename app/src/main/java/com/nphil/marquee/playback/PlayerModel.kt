@@ -448,7 +448,8 @@ class PlayerModel(
 
 	/**
 	 * The app went behind another or the screen turned off ([on]), or came back. With Keep Playing the picture is dropped
-	 * and the sound goes on under the media session; without it playback pauses.
+	 * and the sound goes on under the media session; without it playback pauses. The video track comes back from the
+	 * buffer because the player keeps its last keyframe ([titleLoadControl]).
 	 */
 	fun background(on: Boolean) {
 		val engine = player ?: return

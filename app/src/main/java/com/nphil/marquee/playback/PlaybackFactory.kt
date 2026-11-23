@@ -10,8 +10,10 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.LoadControl
 import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MediaSource
@@ -44,7 +46,9 @@ class PlaybackFactory(private val context: Context, private val http: OkHttpClie
 		// ON, not PREFER: the FFmpeg audio renderer (:ffmpeg) then sits behind the platform's, so it plays only what the
 		// platform's decoders and any passthrough to a receiver cannot.
 		val renderers = DefaultRenderersFactory(context).setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
-		val player = ExoPlayer.Builder(context, renderers).setMediaSourceFactory(source).build()
+		val builder = ExoPlayer.Builder(context, renderers).setMediaSourceFactory(source)
+		if (kind == Kind.Player) builder.setLoadControl(titleLoadControl())
+		val player = builder.build()
 		val content = if (kind == Kind.ThemeMusic) C.AUDIO_CONTENT_TYPE_MUSIC else C.AUDIO_CONTENT_TYPE_MOVIE
 		val attributes = AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(content).build()
 		player.setAudioAttributes(attributes, kind == Kind.Viewer || kind == Kind.Player)
@@ -72,3 +76,11 @@ class PlaybackFactory(private val context: Context, private val http: OkHttpClie
 
 	private fun data(headers: Map<String, String>) = OkHttpDataSource.Factory(http).setDefaultRequestProperties(headers)
 }
+
+/**
+ * Keeps each track's last keyframe behind the playhead. Playing in the background switches the video track off, and
+ * without a back buffer the player drops that keyframe while the track is off, so switching it back on reloaded the
+ * file from the playhead: a 0.5-1.3 s stall and a new range request. With the keyframe kept the track resumes from memory.
+ */
+@OptIn(UnstableApi::class)
+internal fun titleLoadControl(): LoadControl = DefaultLoadControl.Builder().setBackBuffer(0, true).build()
