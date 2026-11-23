@@ -91,9 +91,14 @@ public final class FfmpegVideoRenderer extends DecoderVideoRenderer {
 
   @Override
   public @RendererCapabilities.Capabilities int supportsFormat(Format format) {
-    if (!MimeTypes.VIDEO_MPEG2.equals(format.sampleMimeType)
-        || !FfmpegVideoDecoder.isAvailable()
-        || !softwareWanted.getAsBoolean()) {
+    if (!MimeTypes.VIDEO_MPEG2.equals(format.sampleMimeType)) {
+      return RendererCapabilities.create(C.FORMAT_UNSUPPORTED_TYPE);
+    }
+    boolean libraryAvailable = FfmpegVideoDecoder.isAvailable();
+    boolean wanted = libraryAvailable && softwareWanted.getAsBoolean();
+    // The one trace of why a channel's MPEG-2 was, or was not, taken here instead of by MediaCodec.
+    Log.d(TAG, "video/mpeg2: libraryAvailable=" + libraryAvailable + " softwareWanted=" + wanted);
+    if (!wanted) {
       return RendererCapabilities.create(C.FORMAT_UNSUPPORTED_TYPE);
     }
     if (format.cryptoType != C.CRYPTO_TYPE_NONE) {

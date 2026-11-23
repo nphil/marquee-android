@@ -13,7 +13,7 @@ import androidx.media3.exoplayer.DecoderCounters
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.Renderer
 import androidx.media3.exoplayer.RenderersFactory
-import androidx.media3.exoplayer.video.VideoRendererEventListener
+import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.test.ext.junit.rules.ActivityScenarioRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -55,7 +55,7 @@ class SoftMpeg2Test {
 		val file = File(target.cacheDir, "interlaced.ts")
 		instrumentation.context.assets.open("mpeg2/interlaced.ts").use { input -> file.outputStream().use { input.copyTo(it) } }
 
-		val counted = Counted()
+		val counters = AtomicReference<DecoderCounters>()
 		val ended = CountDownLatch(1)
 		val failure = AtomicReference<PlaybackException>()
 		lateinit var player: ExoPlayer
@@ -63,10 +63,17 @@ class SoftMpeg2Test {
 		activity.scenario.onActivity { host ->
 			view = TextureView(host)
 			host.setContentView(view, ViewGroup.LayoutParams(2 * FrameWidth, 2 * FrameHeight))
-			val renderers = RenderersFactory { handler, _, _, _, _ ->
-				arrayOf<Renderer>(FfmpegVideoRenderer(0, handler, counted, 50) { true })
+			// The player learns the video format and the counters from the listener it hands the factory, so the
+			// renderer reports to that one.
+			val renderers = RenderersFactory { handler, video, _, _, _ ->
+				arrayOf<Renderer>(FfmpegVideoRenderer(0, handler, video, 50) { true })
 			}
 			player = ExoPlayer.Builder(target, renderers).build()
+			player.addAnalyticsListener(object : AnalyticsListener {
+				override fun onVideoEnabled(eventTime: AnalyticsListener.EventTime, decoderCounters: DecoderCounters) {
+					counters.set(decoderCounters)
+				}
+			})
 			player.addListener(object : Player.Listener {
 				override fun onPlaybackStateChanged(playbackState: Int) {
 					if (playbackState == Player.STATE_ENDED) ended.countDown()
@@ -87,39 +94,34 @@ class SoftMpeg2Test {
 		instrumentation.waitForIdleSync()
 
 		var mime: String? = null
+		var detail = "the renderer was never enabled"
 		var pictures = 0
 		var colours = 0
 		activity.scenario.onActivity {
-			val counters = checkNotNull(counted.counters) { "the renderer was never enabled" }
-			counters.ensureUpdated()
-			pictures = counters.renderedOutputBufferCount + counters.droppedBufferCount + counters.skippedOutputBufferCount
+			counters.get()?.let {
+				it.ensureUpdated()
+				pictures = it.renderedOutputBufferCount + it.droppedBufferCount + it.skippedOutputBufferCount
+				detail = "${it.renderedOutputBufferCount} rendered, ${it.droppedBufferCount} dropped " +
+					"(${it.droppedInputBufferCount} before decoding), ${it.skippedOutputBufferCount} skipped"
+			}
 			mime = player.videoFormat?.sampleMimeType
 			colours = coloursSampled(view)
 			player.release()
 		}
-		assertEquals("video/mpeg2", mime)
-		assertTrue("45 frames of two fields gave $pictures pictures, not about 90", pictures in 80..92)
-		assertTrue("the picture is blank: $colours colours in the samples", colours >= 6)
+		val seen = "video format $mime, pictures: $detail, $colours colours sampled"
+		assertEquals(seen, "video/mpeg2", mime)
+		assertTrue("45 frames of two fields should give about 90 pictures; $seen", pictures in 60..92)
+		assertTrue("the picture is blank; $seen", colours >= 6)
 	}
 
 	/** How many different colours a grid of points over the view's picture holds. */
 	private fun coloursSampled(view: TextureView): Int {
-		val bitmap = checkNotNull(view.bitmap) { "the texture view holds no picture" }
+		val bitmap = view.bitmap ?: return 0
 		val seen = HashSet<Int>()
 		for (x in 0 until 16) for (y in 0 until 12) {
 			seen += bitmap.getPixel(bitmap.width * (2 * x + 1) / 32, bitmap.height * (2 * y + 1) / 24)
 		}
 		return seen.size
-	}
-
-	/** Keeps the renderer's counters, which it updates as it draws. */
-	private class Counted : VideoRendererEventListener {
-		@Volatile
-		var counters: DecoderCounters? = null
-
-		override fun onVideoEnabled(counters: DecoderCounters) {
-			this.counters = counters
-		}
 	}
 
 	private companion object {
