@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
@@ -179,8 +180,16 @@ class Navigator internal constructor(
 	internal fun openRecording(ratingKey: String, titleKey: String, mediaID: Int) =
 		push(Play(ratingKey, titleKey = titleKey, recordingMediaID = mediaID))
 
+	/** A title the big screen chose: the phone's player opens it, and its picture goes to the display. */
+	internal fun openPlay(ratingKey: String, titleKey: String, fromStart: Boolean) = push(Play(ratingKey, fromStart, titleKey))
+
 	fun back() {
 		if (stack.size > 1) stack.removeAt(stack.lastIndex)
+	}
+
+	/** Back to the tabs, whatever page is open above them. */
+	internal fun toRoot() {
+		while (stack.size > 1) stack.removeAt(stack.lastIndex)
 	}
 
 	private fun push(route: Route) {
@@ -298,6 +307,9 @@ fun AppNavigation(container: AppContainer, shell: @Composable (Navigator) -> Uni
 	val stack = rememberNavBackStack(BackStack, Root)
 	val scope = rememberCoroutineScope()
 	val navigator = remember(stack, container, scope) { Navigator(stack, container, scope) }
+	LaunchedEffect(navigator, container) {
+		container.glasses.plays.collect { navigator.openPlay(it.ratingKey, it.titleKey, it.fromStart) }
+	}
 	// A message that offers Undo does its work when the app stops, as the iPhone's does.
 	LifecycleEventEffect(Lifecycle.Event.ON_STOP) { container.toasts.finish() }
 	Box(Modifier.fillMaxSize()) {

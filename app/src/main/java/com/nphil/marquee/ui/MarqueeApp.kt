@@ -29,6 +29,8 @@ import com.nphil.marquee.ui.shell.Shell
 import com.nphil.marquee.ui.signin.SignInScreen
 import com.nphil.marquee.ui.theme.ThemeChoice
 import com.nphil.marquee.ui.theme.lucent
+import com.nphil.marquee.bigscreen.GlassesAskDialog
+import com.nphil.marquee.bigscreen.GlassesRemoteOverlay
 import com.nphil.marquee.ui.tvremote.TvRemoteOverlay
 
 private enum class RootScreen { SignIn, Servers, Shell }
@@ -84,5 +86,7 @@ fun MarqueeApp(container: AppContainer, choice: ThemeChoice, onTheme: ((ThemeCho
 			}
 		}
 		TvRemoteOverlay(container.tvRemote)
+		GlassesRemoteOverlay(container)
+		GlassesAskDialog(container.glasses)
 	}
 }

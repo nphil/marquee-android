@@ -100,6 +100,7 @@ fun MarqueeSidebar(
 	settingsProfile: PlexHomeUser?,
 	modifier: Modifier = Modifier,
 	onRemote: (() -> Unit)? = null,
+	bigScreen: BigScreenEntry? = null,
 ) {
 	val theme = lucent
 	// Both animations are read only in layout and draw below, so a toggle never recomposes the items. The
@@ -161,7 +162,11 @@ fun MarqueeSidebar(
 		}
 		Spacer(Modifier.height(Space.s2))
 		Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(Space.s1)) {
-			if (onRemote != null) {
+			if (bigScreen != null) {
+				SidebarItem("big-screen", bigScreen.label, false, labelAlpha, { bigScreen.onClick() }, role = Role.Button) { tint ->
+					Icon(painterResource(bigScreen.icon), contentDescription = null, modifier = Modifier.size(IconSize), tint = tint)
+				}
+			} else if (onRemote != null) {
 				SidebarItem("tv-remote", "TV Remote", false, labelAlpha, { onRemote() }, role = Role.Button) { tint ->
 					Icon(painterResource(R.drawable.ic_tv_remote), contentDescription = null, modifier = Modifier.size(IconSize), tint = tint)
 				}
@@ -172,6 +177,9 @@ fun MarqueeSidebar(
 		}
 	}
 }
+
+/** The connected display's remote button, which takes the place of the TV remote's while a display is connected. */
+class BigScreenEntry(val label: String, @androidx.annotation.DrawableRes val icon: Int, val onClick: () -> Unit)
 
 /** What the UI tests find the sidebar's parts by. */
 internal object SidebarTags {

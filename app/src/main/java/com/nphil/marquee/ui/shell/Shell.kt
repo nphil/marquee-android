@@ -49,6 +49,8 @@ import com.nphil.marquee.core.PlexHomeUser
 import com.nphil.marquee.core.TabBarBehavior
 import com.nphil.marquee.core.TabLayout
 import com.nphil.marquee.diagnostics.DiagScreen
+import com.nphil.marquee.bigscreen.GlassesRemoteButton
+import com.nphil.marquee.ui.LocalNavigator
 import com.nphil.marquee.ui.downloads.DownloadsScreen
 import com.nphil.marquee.ui.home.HomeScreen
 import com.nphil.marquee.ui.library.LibraryScreen
@@ -119,6 +121,8 @@ private fun ShellPages(
 	val remoteEnabled by remember(remote) { derivedStateOf { remote.value.enabled } }
 	val session by container.session.state.collectAsStateWithLifecycle()
 	val settingsProfile = session.user
+	val glasses = container.glasses
+	val bigScreen = if (glasses.isConnected) remember(glasses.remoteTitle, glasses.symbol) { BigScreenEntry(glasses.remoteTitle, glasses.symbol, glasses::showRemote) } else null
 	val available = remember(seerr) { TabLayout.available(seerr) }
 	val tabs = remember(layout, available) { layout.tabs(available) }
 	val others = remember(layout, tabs, available) { placesOutsideTabs(layout, tabs, available) }
@@ -140,6 +144,13 @@ private fun ShellPages(
 				is PlaceRoute.Open -> savedPlace = route.destination.name
 				PlaceRoute.Ignore -> Unit
 			}
+		}
+	}
+	val navigator = LocalNavigator.current
+	LaunchedEffect(glasses, navigator) {
+		glasses.settingsRequests.collect {
+			navigator?.toRoot()
+			select(SETTINGS_KEY)
 		}
 	}
 	// A place that stopped being one (the layout was edited) must not come back if the layout is edited again.
@@ -205,6 +216,7 @@ private fun ShellPages(
 			},
 			settingsProfile = settingsProfile,
 			onRemote = if (remoteEnabled) container.tvRemote::open else null,
+			bigScreen = bigScreen,
 		)
 		pages(Modifier.weight(1f).fillMaxHeight().clipToBounds().layout { child, available ->
 			val full = shellWidth - startInsets.getLeft(this, layoutDirection) - startInsets.getRight(this, layoutDirection)
@@ -256,7 +268,7 @@ private fun Pages(
 					places = places,
 					trailing = {
 						if (!wide) {
-							if (remoteEnabled) RemoteEntryIcon(onClick = container.tvRemote::open)
+							if (container.glasses.isConnected) GlassesRemoteButton(container.glasses) else if (remoteEnabled) RemoteEntryIcon(onClick = container.tvRemote::open)
 							CompactSettingsButton(settingsProfile, onClick = onSettings)
 						}
 					},

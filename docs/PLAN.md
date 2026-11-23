@@ -134,6 +134,10 @@ Each phase ends with a release installed on the tablet.
      floating window (`resizeableActivity`, layouts that hold at small window sizes).
 4. **The rest.** Downloads, Live TV (guide, DVR, direct from tuner), casting, linked phones, the
    LumaTV remote, glasses, the HomeLabber quality map.
+   - Big Screen (Settings > Integrations, off by default) follows the iPhone's v0.1.70 plugin: a connected external
+     display (DisplayManager, shown through `Presentation`) gets Marquee's own 1080-high canvas, with the player's
+     picture, Subtitles/Audio options and Next Episode, and the phone becomes the remote (touchpad, hold-to-scrub,
+     tilt, haptic cues). Per-display answers are remembered; Mirror leaves the system's mirroring alone.
    - Plex Live TV uses Core's lineup, schedule, tuner sessions and stream cleanup. The guide uses a pinned
      channel/time grid when the content pane has room, and a Now & Next list at narrower widths or larger
      type sizes. The player has a Quick Guide alongside the picture in wide windows and below it otherwise.

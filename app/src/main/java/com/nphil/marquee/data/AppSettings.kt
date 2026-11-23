@@ -88,6 +88,13 @@ class AppSettings(context: Context) : BrowsePreferences {
 		store.edit { prefs -> prefs.setSeerrPrefs(change(prefs.seerrPrefs())) }
 	}
 
+	/** The big-screen plugin's settings; see [BigScreenPrefs]. */
+	val bigScreen: Flow<BigScreenPrefs> = store.data.map { it.bigScreenPrefs() }.distinctUntilChanged()
+
+	suspend fun updateBigScreen(change: (BigScreenPrefs) -> BigScreenPrefs) {
+		store.edit { prefs -> prefs.setBigScreenPrefs(change(prefs.bigScreenPrefs())) }
+	}
+
 	/** Receiver discovery is a device setting, not a setting of the Plex profile. */
 	internal val castEnabled = store.data.map { it[CAST_ENABLED] ?: false }.distinctUntilChanged()
 

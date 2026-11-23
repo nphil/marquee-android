@@ -15,6 +15,7 @@ import com.nphil.marquee.browse.Snapshots
 import com.nphil.marquee.cast.Casting
 import com.nphil.marquee.core.ClientIdentity
 import com.nphil.marquee.core.LibraryChanges
+import com.nphil.marquee.bigscreen.GlassesCenter
 import com.nphil.marquee.core.MarqueeCore
 import com.nphil.marquee.core.NativeCore
 import com.nphil.marquee.core.NativeTransport
@@ -63,6 +64,9 @@ class AppContainer(
 	internal val subtitleServices = SubtitleServices(settings, SecretStore(context, "subtitle_services"), scope)
 	internal val homeLabber = HomeLabberStore(SecretStore(context, "homelabber"), scope)
 	internal val tvRemote by lazy { TvRemote(context.applicationContext, scope) }
+
+	/** The big-screen plugin: off until Settings turns it on; it watches displays only while it is on and the app is open. */
+	internal val glasses by lazy { GlassesCenter(this, scope) }
 
 	internal val cast = Casting(context, settings, scope)
 

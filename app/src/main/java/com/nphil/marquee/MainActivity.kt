@@ -50,6 +50,7 @@ class MainActivity : ComponentActivity() {
 		enableEdgeToEdge()
 		reportButton = ReportButtonHost(this).also { it.attach() }
 		val container = container
+		container.glasses.attach(this)
 		var ready = false
 		openRemoteInvite(intent)
 		// The splash stays until the first frame can show the chosen theme on the screen the kept sign-in
@@ -75,6 +76,11 @@ class MainActivity : ComponentActivity() {
 			setContent { Root(container, initial) }
 			ready = true
 		}
+	}
+
+	override fun onDestroy() {
+		container.glasses.detach(this)
+		super.onDestroy()
 	}
 
 	override fun onNewIntent(intent: Intent) {

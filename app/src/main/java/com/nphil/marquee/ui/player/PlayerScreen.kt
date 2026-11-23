@@ -403,6 +403,11 @@ fun PlayerScreen(
 	DisposableEffect(brightness) { onDispose { brightness.restore() } }
 	DisposableEffect(model) { onDispose { if (held) model.setSpeed(heldSpeed) } }
 	BackgroundPlaybackEffect(model, pip)
+	// While a display shows Marquee's own screen, it draws the picture and the remote drives this player.
+	DisposableEffect(model, container) {
+		container.glasses.attachPlayer(model, onClose)
+		onDispose { container.glasses.detachPlayer(model) }
+	}
 	LaunchedEffect(model.finished) { if (model.finished) onClose() }
 	LaunchedEffect(model) {
 		model.controlTaps.collect { toggle -> if (!locked) shown = if (toggle) !shown else true }
@@ -480,7 +485,7 @@ fun PlayerScreen(
 			.onKeyEvent { onKey(it) },
 	) {
 		if (engine != null) {
-			Video(engine, aspect, keepScreenOn = playing, pip = pip)
+			if (!container.glasses.drawsPicture) Video(engine, aspect, keepScreenOn = playing, pip = pip)
 			// The subtitle lines are the app's own, over the picture and under the controls and the tap that brings them up.
 			CaptionView(
 				cues = if (pages.lastOrNull() == TracksPage.Style && model.tracks.cues.isEmpty()) sample else model.tracks.cues,
