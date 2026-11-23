@@ -40,8 +40,12 @@ core/       git submodule: nphil/marquee-ios, pinned; MarqueeCore and the shared
   decode (DTS, TrueHD and similar, read from `MediaCodecList`) goes to an LGPL-only FFmpeg build
   (`ffmpeg/`: Media3's FFmpeg audio extension over separate shared libraries), which decodes AC3,
   E-AC3, DTS, TrueHD, FLAC, Opus, Vorbis and ALAC to PCM; the platform's decoder is always tried
-  first. Audio neither can decode is declared unsupported, so Core's route has Plex convert only the
-  audio and copy the video (a direct stream). Passthrough to a receiver stays Media3's own where one
+  first. A tablet whose codec list has no MPEG-2 decoder decodes MPEG-2 video with the same build's
+  `mpeg2video` (Marquee's own Media3 renderer in `ffmpeg/`: slice-threaded decoding, a motion-adaptive
+  deinterlacer that shows each field of an interlaced frame as a picture, and OpenGL drawing onto the
+  player's surface); where there is a decoder, MediaCodec keeps the stream. Audio neither can decode is
+  declared unsupported, so Core's route has Plex convert only the audio and copy the video (a direct
+  stream). Passthrough to a receiver stays Media3's own where one
   is attached. Subtitles: SRT sidecars
   as on iPhone, a cue starting `{\an8}` at the top, and the file's own text tracks; which audio and
   subtitle play is Core's `TrackRules`. The app draws the lines itself (Media3's `SubtitleView` over the
@@ -171,7 +175,8 @@ Each phase ends with a release installed on the tablet.
      playback can rewind within the server's live window. DVR rules and scheduled airings use Plex's
      recording templates; Recorded opens the completed DVR version in the normal player. Before tuning direct,
      Android asks the tablet's decoders for what the tuner sends (the lineup's codecs for an HDHomeRun, MPEG-2
-     and AC-3 for a LumaTV) and goes to Plex when one is missing; a stream the renderers or a decoder then refuse
+     and AC-3 for a LumaTV; MPEG-2 counts as decodable on a tablet with no decoder of its own, through the
+     software renderer) and goes to Plex when one is missing; a stream the renderers or a decoder then refuse
      is remembered for the run, and a tuner whose stream cannot connect or times out is not tried again for a
      minute, as on the iPhone. Each fallback to Plex logs its cause and the stream's tracks.
    - LumaTV Remote is opt-in. A TV can pair by QR link or a code on the local network. The sidebar
