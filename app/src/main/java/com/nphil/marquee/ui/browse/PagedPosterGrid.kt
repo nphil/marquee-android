@@ -19,6 +19,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import com.nphil.marquee.core.Paged
 import com.nphil.marquee.core.PlexItem
+import com.nphil.marquee.ui.components.TrackScroll
 import com.nphil.marquee.ui.components.pageScroll
 import com.nphil.marquee.ui.theme.Space
 import kotlinx.coroutines.flow.filterNotNull
@@ -66,6 +67,7 @@ fun PagedPosterGrid(
 				items(paged.items, key = { it.ratingKey }, contentType = { "poster" }) { item -> poster(item, metrics.cellWidth) }
 			}
 			NearEnd(state, paged.items.size, onNearEnd)
+			TrackScroll("PagedPosterGrid", state, state.interactionSource)
 		}
 	}
 }
