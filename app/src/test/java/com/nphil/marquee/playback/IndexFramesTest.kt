@@ -1,7 +1,9 @@
 package com.nphil.marquee.playback
 
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -121,5 +123,44 @@ class IndexFramesTest {
 		time.runUntilIdle()
 
 		assertEquals("f0", frames.frame(5.0))
+	}
+
+	@Test
+	@OptIn(ExperimentalCoroutinesApi::class)
+	fun loadingAFrameReadsTheIndexAtOnceAndKeepsTheFrame() {
+		val frames = frames()
+		val loaded = scope.async { frames.load(25.0) }
+		time.runUntilIdle()
+
+		assertEquals("f2", loaded.getCompleted())
+		assertEquals(1, fetches)
+		assertEquals("f2", frames.frame(25.0))
+		// Asked again, the frame is not decoded twice.
+		val again = scope.async { frames.load(25.0) }
+		time.runUntilIdle()
+		assertEquals("f2", again.getCompleted())
+		assertEquals(1, decodes)
+	}
+
+	@Test
+	@OptIn(ExperimentalCoroutinesApi::class)
+	fun loadingGivesNothingWhenTheServerHasNoIndex() {
+		answer = null
+		val frames = frames()
+		val loaded = scope.async { frames.load(25.0) }
+		time.runUntilIdle()
+
+		assertNull(loaded.getCompleted())
+	}
+
+	@Test
+	@OptIn(ExperimentalCoroutinesApi::class)
+	fun closingEndsALoadStillWaitingForTheIndex() {
+		val frames = IndexFrames(scope, time, time, pictures, Revision(), RecordingLog()) { answer }
+		val loaded = scope.async { frames.load(25.0) }
+		frames.close()
+		time.runUntilIdle()
+
+		assertNull(loaded.getCompleted())
 	}
 }

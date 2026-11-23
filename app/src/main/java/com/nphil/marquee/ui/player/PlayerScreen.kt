@@ -11,7 +11,9 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
@@ -54,6 +56,7 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextAlign
@@ -70,6 +73,7 @@ import com.nphil.marquee.R
 import com.nphil.marquee.container
 import com.nphil.marquee.core.Chapter
 import com.nphil.marquee.core.Marker
+import com.nphil.marquee.core.MediaType
 import com.nphil.marquee.core.QualityPreset
 import com.nphil.marquee.data.SubtitleLook
 import com.nphil.marquee.playback.HideSystemBars
@@ -232,6 +236,9 @@ internal fun PlayerScreen(
 	val lastPages = remember { arrayOf(listOf(TracksPage.Subtitles)) }
 	if (pages.isNotEmpty()) lastPages[0] = pages
 	val panelOpen = pages.isNotEmpty()
+	// A narrow screen has no room beside the picture for the episodes: they come up from the bottom instead.
+	val wide = LocalConfiguration.current.screenWidthDp.dp >= WIDE
+	val episodesSheet = !wide && pages.lastOrNull() == TracksPage.Episodes
 	val menuOpen = panelOpen || choosingCast
 
 	val hold = remember { PositionHold() }
@@ -561,6 +568,8 @@ internal fun PlayerScreen(
 					canChangeQuality = !model.isOffline,
 					canPip = pip.supported && receiver == null,
 					hasChapters = plan?.chapters?.isNotEmpty() == true,
+					chapters = plan?.chapters.orEmpty(),
+					hasEpisodes = !model.isOffline && plan?.item?.let { it.type == MediaType.Episode && it.grandparentRatingKey != null } == true,
 					hasNext = model.next != null,
 					casting = receiver != null,
 				)
@@ -587,6 +596,7 @@ internal fun PlayerScreen(
 					},
 					aspect = { changeAspect(aspect.next()) },
 					chapters = { pages = listOf(TracksPage.Chapters) },
+					episodes = { pages = listOf(TracksPage.Episodes) },
 					next = {
 						touches++
 						model.userActed()
@@ -634,7 +644,7 @@ internal fun PlayerScreen(
 				Box(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures(onTap = { pages = emptyList() }) })
 			}
 			AnimatedVisibility(
-				visible = panelOpen,
+				visible = panelOpen && !episodesSheet,
 				modifier = Modifier.align(Alignment.CenterEnd),
 				enter = fadeIn(motion.defaultEffectsSpec()) + slideInHorizontally(motion.defaultSpatialSpec<IntOffset>()) { it / 3 },
 				exit = fadeOut(motion.fastEffectsSpec()) + slideOutHorizontally(motion.fastSpatialSpec<IntOffset>()) { it / 3 },
@@ -653,6 +663,14 @@ internal fun PlayerScreen(
 					onClose = { pages = emptyList() },
 					onTouch = { panelTouched = SystemClock.elapsedRealtime() },
 				)
+			}
+			AnimatedVisibility(
+				visible = panelOpen && episodesSheet,
+				modifier = Modifier.align(Alignment.BottomCenter),
+				enter = fadeIn(motion.defaultEffectsSpec()) + slideInVertically(motion.defaultSpatialSpec<IntOffset>()) { it / 3 },
+				exit = fadeOut(motion.fastEffectsSpec()) + slideOutVertically(motion.fastSpatialSpec<IntOffset>()) { it / 3 },
+			) {
+				EpisodeSheet(model, onClose = { pages = emptyList() }, onTouch = { panelTouched = SystemClock.elapsedRealtime() })
 			}
 			if (locked) {
 				UnlockPill(unlockStamp, onUnlock = { unlock() }, modifier = Modifier.align(Alignment.BottomStart).safeDrawingPadding().padding(Space.s4))

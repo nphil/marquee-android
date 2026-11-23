@@ -355,11 +355,13 @@ struct ChapterWire: Encodable {
     let title: String?
     let start: Int
     let end: Int
+    let thumb: String?
 
     init(_ chapter: PlexChapter) {
         title = chapter.title
         start = chapter.start
         end = chapter.end
+        thumb = chapter.thumb
     }
 }
 

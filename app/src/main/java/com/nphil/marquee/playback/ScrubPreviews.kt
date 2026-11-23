@@ -21,6 +21,12 @@ interface ScrubPreviews {
 	/** The scrub is at [seconds]: ask for a better frame (debounced, newest request wins, stale ones cancelled). */
 	fun want(seconds: Double)
 
+	/**
+	 * The picture of exactly [seconds]'s frame, made now: for a list that shows several at once, such as the chapters.
+	 * Null when the stream cannot give it. Suspends for as long as the frame takes; a scrub's [want] does not cancel it.
+	 */
+	suspend fun load(seconds: Double): ImageBitmap?
+
 	/** The scrub ended: drop pending requests. */
 	fun settle()
 
@@ -53,6 +59,8 @@ private class Shown(private val frames: Frames<ImageBitmap>) : ScrubPreviews {
 	override fun frame(seconds: Double): ImageBitmap? = frames.frame(seconds)
 
 	override fun want(seconds: Double) = frames.want(seconds)
+
+	override suspend fun load(seconds: Double): ImageBitmap? = frames.load(seconds)
 
 	override fun settle() = frames.settle()
 

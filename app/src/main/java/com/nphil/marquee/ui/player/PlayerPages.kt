@@ -13,6 +13,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -27,6 +30,7 @@ import com.nphil.marquee.core.QualityPreset
 import com.nphil.marquee.playback.PlayerModel
 import com.nphil.marquee.ui.components.GroupGap
 import com.nphil.marquee.ui.components.GroupRow
+import com.nphil.marquee.ui.components.PlexArt
 import com.nphil.marquee.ui.settings.SettingsActionRow
 import com.nphil.marquee.ui.theme.Radius
 import com.nphil.marquee.ui.theme.lucent
@@ -163,21 +167,29 @@ internal fun SleepPage(model: PlayerModel, sleep: SleepTimer) {
 	}
 }
 
-/** The title's chapters with a picture of each when the stream has previews; one tap goes there. */
+/**
+ * The title's chapters, each with a picture: the server's own picture of the chapter when it made one, else the frame
+ * of the stream's previews at the chapter's start, made as the page opens. One tap goes there.
+ */
 @Composable
 internal fun ChaptersPage(model: PlayerModel, onClose: () -> Unit) {
 	val chapters = model.plan?.chapters.orEmpty()
 	val previews = model.previews
-	// Reading the revision shows a picture that arrives after the page opened.
-	previews?.revision
 	val at = model.movieMs()
+	// Kept here, not read back from the previews, whose memory is small and would drop the first pictures of a long list.
+	val frames = remember(chapters, previews) { mutableStateMapOf<Int, ImageBitmap>() }
+	LaunchedEffect(chapters, previews) {
+		if (previews == null) return@LaunchedEffect
+		chapters.forEachIndexed { index, chapter ->
+			if (chapter.thumb == null) previews.load(chapter.start / 1000.0)?.let { frames[index] = it }
+		}
+	}
 	Column(verticalArrangement = Arrangement.spacedBy(GroupGap)) {
 		chapters.forEachIndexed { index, chapter ->
 			ChapterRow(
 				index, chapters.size, chapter,
-				number = index + 1,
 				current = at >= chapter.start && at < chapter.end,
-				art = previews?.frame(chapter.start / 1000.0),
+				frame = frames[index],
 			) {
 				model.seekTo(chapter.start / 1000.0)
 				onClose()
@@ -191,9 +203,8 @@ private fun ChapterRow(
 	index: Int,
 	count: Int,
 	chapter: Chapter,
-	number: Int,
 	current: Boolean,
-	art: ImageBitmap?,
+	frame: ImageBitmap?,
 	onClick: () -> Unit,
 ) {
 	GroupRow(index, count, selected = current, onClick = onClick) {
@@ -201,11 +212,14 @@ private fun ChapterRow(
 			Modifier.size(CHAPTER_ART_WIDTH, CHAPTER_ART_HEIGHT).clip(RoundedCornerShape(Radius.control)).background(lucent.glass),
 			contentAlignment = Alignment.Center,
 		) {
-			if (art != null) Image(art, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.size(CHAPTER_ART_WIDTH, CHAPTER_ART_HEIGHT))
+			when {
+				chapter.thumb != null -> PlexArt(chapter.thumb, CHAPTER_ART_WIDTH, CHAPTER_ART_HEIGHT)
+				frame != null -> Image(frame, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.size(CHAPTER_ART_WIDTH, CHAPTER_ART_HEIGHT))
+			}
 		}
 		Column(Modifier.weight(1f)) {
 			Text(
-				chapter.title?.takeIf { it.isNotBlank() } ?: "Chapter $number",
+				chapterName(chapter, index),
 				style = MaterialTheme.typography.titleMedium,
 				color = lucent.ink,
 				maxLines = 2,

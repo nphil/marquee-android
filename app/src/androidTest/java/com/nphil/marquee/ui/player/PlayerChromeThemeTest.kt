@@ -180,6 +180,7 @@ private val NoActions = ChromeActions(
 	lock = {},
 	aspect = {},
 	chapters = {},
+	episodes = {},
 	next = {},
 	remaining = {},
 )
@@ -203,6 +204,7 @@ private fun Chrome() {
 				hasAudioChoices = true,
 				canPip = true,
 				hasChapters = true,
+				hasEpisodes = true,
 				hasNext = true,
 			),
 			actions = NoActions,

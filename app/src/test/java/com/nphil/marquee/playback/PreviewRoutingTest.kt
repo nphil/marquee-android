@@ -3,7 +3,9 @@ package com.nphil.marquee.playback
 import com.nphil.marquee.core.PlayPlan
 import com.nphil.marquee.core.PlayStream
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -70,6 +72,28 @@ class PreviewRoutingTest {
 
 		assertEquals(1, platform.indexRequests)
 		assertEquals("frame@10000", previews.frame(10.0))
+	}
+
+	@Test
+	@OptIn(ExperimentalCoroutinesApi::class)
+	fun loadingAConversionsFrameComesFromTheServersIndex() {
+		platform.index = bifOf(listOf(0L, 10L, 20L), listOf("f0", "f1", "f2"))
+		val previews = previewsOf(filmPlan(index = true), hlsStream())!!
+		val loaded = scope.async { previews.load(15.0) }
+		time.runUntilIdle()
+
+		assertEquals("f1", loaded.getCompleted())
+		assertEquals(0, platform.opened)
+	}
+
+	@Test
+	@OptIn(ExperimentalCoroutinesApi::class)
+	fun loadingFromAFileWhoseIndexIsUnusableReadsTheFileItself() {
+		val previews = previewsOf(filmPlan(index = true), fileStream())!!
+		val loaded = scope.async { previews.load(10.0) }
+		time.runUntilIdle()
+
+		assertEquals("frame@10000", loaded.getCompleted())
 	}
 
 	@Test

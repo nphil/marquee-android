@@ -1,7 +1,9 @@
 package com.nphil.marquee.playback
 
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -251,5 +253,40 @@ class OwnFramesTest {
 	@Test
 	fun theFillWaitsWhileTheScreenIsOff() {
 		assertFillWaits({ conditions.screenOnNow = false }, { conditions.screenOnNow = true })
+	}
+
+	@Test
+	@OptIn(ExperimentalCoroutinesApi::class)
+	fun loadingMakesTheFrameAtOnceWithoutAScrub() {
+		val frames = engine()
+		val loaded = scope.async { frames.load(50.0) }
+		time.runUntilIdle()
+
+		assertEquals("frame@50000", loaded.getCompleted())
+		assertEquals(listOf(50_000L), source.asked)
+	}
+
+	@Test
+	@OptIn(ExperimentalCoroutinesApi::class)
+	fun loadingAFrameThatIsKeptDoesNotAskTheFileAgain() {
+		val frames = engine()
+		scope.async { frames.load(50.0) }
+		time.runUntilIdle()
+		val again = scope.async { frames.load(50.0) }
+		time.runUntilIdle()
+
+		assertEquals("frame@50000", again.getCompleted())
+		assertEquals(1, source.asked.size)
+	}
+
+	@Test
+	@OptIn(ExperimentalCoroutinesApi::class)
+	fun loadingGivesNothingWhenTheFileGivesNoFrame() {
+		source.fails = true
+		val frames = engine()
+		val loaded = scope.async { frames.load(50.0) }
+		time.runUntilIdle()
+
+		assertNull(loaded.getCompleted())
 	}
 }

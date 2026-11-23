@@ -44,12 +44,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.nphil.marquee.R
+import com.nphil.marquee.core.Chapter
 import com.nphil.marquee.playback.ScrubPreviews
 import com.nphil.marquee.ui.theme.Size
 import com.nphil.marquee.ui.theme.Space
 
 /** The window width from which the top bar lists every action and the transport spreads out. */
-private val WIDE = 600.dp
+internal val WIDE = 600.dp
 
 /**
  * From the bottom of the safe area up past the seek bar and the row under it. The offers and the captions sit this
@@ -87,6 +88,10 @@ internal class ChromeState(
 	val canChangeQuality: Boolean = true,
 	val canPip: Boolean = false,
 	val hasChapters: Boolean = false,
+	/** The chapters in order, for the name over the seek preview; the bar's cuts are in [cuts]. */
+	val chapters: List<Chapter> = emptyList(),
+	/** A show's episode is playing and the server can list its season. */
+	val hasEpisodes: Boolean = false,
 	val hasNext: Boolean = false,
 	val casting: Boolean = false,
 )
@@ -106,6 +111,7 @@ internal class ChromeActions(
 	val lock: () -> Unit,
 	val aspect: () -> Unit,
 	val chapters: () -> Unit,
+	val episodes: () -> Unit,
 	val next: () -> Unit,
 	val remaining: () -> Unit,
 	val cast: (() -> Unit)? = null,
@@ -148,7 +154,7 @@ internal fun PlayerChrome(
 				}
 			}
 		}
-		if (scrub.active) SeekPreview(scrub, state.durationMs, previews, { bar })
+		if (scrub.active) SeekPreview(scrub, state.durationMs, previews, state.chapters, { bar })
 	}
 }
 
@@ -323,7 +329,9 @@ private fun BottomRow(state: ChromeState, actions: ChromeActions, accent: Color,
 		GlassButton(R.drawable.ic_lock, "Lock controls", actions.lock)
 		if (!wide) CastButton(state, actions.cast, accent)
 		Spacer(Modifier.weight(1f))
-		if (state.hasChapters) GlassButton(R.drawable.ic_chapters, "Chapters", actions.chapters)
+		// A narrow screen keeps the chapters in the seek bar and its preview; the list is for a wide one.
+		if (state.hasChapters && wide) GlassButton(R.drawable.ic_chapters, "Chapters", actions.chapters)
+		if (state.hasEpisodes) GlassButton(R.drawable.ic_video_library, "Episodes", actions.episodes)
 		if (!state.casting) {
 			if (wide) GlassPill(state.aspect.label, actions.aspect, icon = R.drawable.ic_aspect_ratio)
 			else GlassButton(R.drawable.ic_aspect_ratio, "Aspect: ${state.aspect.label}", actions.aspect)

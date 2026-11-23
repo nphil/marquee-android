@@ -201,8 +201,9 @@ data class LinkProbe(
 @Serializable
 data class Marker(val start: Int, val end: Int, val isFinal: Boolean = false)
 
+/** A chapter in milliseconds. [thumb] is the server's picture of it (an art path), when the server made one. */
 @Serializable
-data class Chapter(val title: String? = null, val start: Int, val end: Int)
+data class Chapter(val title: String? = null, val start: Int, val end: Int, val thumb: String? = null)
 
 /** The subtitles menu's choice: off, automatic (what the rules pick), or one track by its stream id. */
 @Serializable
