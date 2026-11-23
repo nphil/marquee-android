@@ -55,6 +55,8 @@ import androidx.compose.ui.input.pointer.changedToDownIgnoreConsumed
 import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -155,6 +157,9 @@ private fun RemoteHost(remote: TvRemote, state: TvRemote.State) {
 	val residual = remember { Animatable(Offset.Zero, Offset.VectorConverter) }
 	val blend = remember { Animatable(if (Snapshot.withoutReadObservation { metrics.sidebarWidth } >= inlineMin) 1f else 0f) }
 	val rendered = remember { RenderedOrb() }
+	// The shell reports its bounds in window px; this overlay need not start at the window's corner, so its own
+	// origin is taken off to land the orb on the row. Read only in layout lambdas.
+	var windowOrigin by remember { mutableStateOf(Offset.Zero) }
 
 	val sidebarAvailable by remember(metrics) { derivedStateOf { metrics.profileBounds != null && metrics.sidebarWidth > 0f } }
 	fun effective(dock: RemoteDock): RemoteDock = if (dock is RemoteDock.Sidebar && !sidebarAvailable) DefaultEdge else dock
@@ -185,7 +190,7 @@ private fun RemoteHost(remote: TvRemote, state: TvRemote.State) {
 	}
 	DisposableEffect(metrics) { onDispose { metrics.dockRoom = 0f } }
 
-	BoxWithConstraints(Modifier.fillMaxSize()) {
+	BoxWithConstraints(Modifier.fillMaxSize().onGloballyPositioned { windowOrigin = it.positionInWindow() }) {
 		val width = constraints.maxWidth.toFloat()
 		val height = constraints.maxHeight.toFloat()
 		val bars = WindowInsets.systemBars.union(WindowInsets.displayCutout)
@@ -206,7 +211,7 @@ private fun RemoteHost(remote: TvRemote, state: TvRemote.State) {
 
 		fun homeOf(dock: RemoteDock): Offset = when (dock) {
 			is RemoteDock.Edge -> edgeOrigin(field(), dock, orb)
-			RemoteDock.Sidebar -> metrics.profileBounds?.let { sidebarOrigin(metrics.sidebarWidth, it, orb, sidebarInset, gap, blend.value) }
+			RemoteDock.Sidebar -> metrics.profileBounds?.let { sidebarOrigin(metrics.sidebarWidth, it.translate(-windowOrigin), orb, sidebarInset, gap, blend.value) }
 				?: edgeOrigin(field(), DefaultEdge, orb)
 		}
 
