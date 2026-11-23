@@ -172,6 +172,8 @@ internal fun DownloadQualityOptions(options: List<DownloadChoice>, chosen: Strin
 						Text(option.label, style = MaterialTheme.typography.titleMedium, color = if (enabled) lucent.ink else lucent.ink2)
 						val description = option.refusal ?: listOfNotNull(option.resolution, option.bytes?.let { fileSize(it) }).joinToString(" · ")
 						if (description.isNotEmpty()) Text(description, style = MaterialTheme.typography.bodyMedium, color = lucent.ink2)
+						val basis = if (option.refusal == null) option.basis?.replaceFirstChar { it.uppercase() } else null
+						if (basis != null) Text(basis, style = MaterialTheme.typography.bodySmall, color = lucent.ink3)
 					}
 				}
 			}

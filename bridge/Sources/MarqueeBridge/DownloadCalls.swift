@@ -3,7 +3,10 @@ import MarqueeCore
 
 /// Android owns the files and scheduling; Core owns Plex's download protocol and quality/watch rules.
 enum DownloadCalls {
-    static func handle(_ method: String, _ payload: Data, library makeLibrary: (ServerCall) throws -> PlexLibrary) async throws -> Data {
+    static func handle(
+        _ method: String, _ payload: Data, library makeLibrary: (ServerCall) throws -> PlexLibrary,
+        qualityMaps: HomeLabberMaps = .shared, transport: any PlexTransport = OkHttpTransport.shared
+    ) async throws -> Data {
         if method == "download.watch.update" {
             let request = try decode(WatchUpdate.self, payload)
             var watch = request.watch
@@ -32,10 +35,15 @@ enum DownloadCalls {
             let show = if let show = item.grandparentRatingKey, item.type == .episode {
                 try? await library.metadata(show)
             } else { nil as PlexMetadata? }
+            // HomeLabber's measured tiers, when its plugin is set up and has scored this title.
+            let map = await qualityMaps.entry(
+                config: request.homelabber?.config, server: library.server.clientIdentifier, ratingKey: item.ratingKey,
+                transport: transport
+            )
             // The queue's MP4 profile offers H.264, not the streamed HEVC option on iPhone.
             let plan = DownloadQualityPlan(
                 media: media, animated: DownloadQualityPlan.isAnimated(genres: show?.genres ?? item.genres),
-                hevc: false, originalPlays: refusal == nil, map: nil
+                hevc: false, originalPlays: refusal == nil, map: map
             )
             let tier = DownloadTier(rawValue: request.quality)
             return try Reply.ok(ChoicesWire(
@@ -186,6 +194,17 @@ enum DownloadCalls {
         let mediaIndex: Int
         let quality: String
         let capabilities: CapabilitiesWire
+        let homelabber: HomeLabberLink?
+    }
+
+    /// The saved HomeLabber address and token, handed in with each call; nothing is kept here.
+    private struct HomeLabberLink: Decodable {
+        let address: String
+        let token: String
+
+        var config: HomeLabberConfig? {
+            try? HomeLabberConfig.parse(address: address, token: token).get()
+        }
     }
 
     private struct Episodes: Decodable {
@@ -248,6 +267,8 @@ enum DownloadCalls {
         let bytes: Int64?
         let target: DownloadTarget?
         let refusal: String?
+        /// Where a conversion's size comes from: HomeLabber's `measured` scores or an `estimated` guess; nil for Original.
+        let basis: String?
 
         init(_ option: DownloadQualityPlan.Option, refusal: String?) {
             id = option.id
@@ -256,6 +277,11 @@ enum DownloadCalls {
             bytes = option.bytes
             target = option.target
             self.refusal = target == nil ? refusal : nil
+            basis = switch option.basis {
+            case .original: nil
+            case .measured: "measured"
+            case .estimated: "estimated"
+            }
         }
     }
 

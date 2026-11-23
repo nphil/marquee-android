@@ -2,6 +2,7 @@ package com.nphil.marquee.downloads
 
 import com.nphil.marquee.core.Capabilities
 import com.nphil.marquee.core.CoreJson
+import com.nphil.marquee.core.HomeLabberLink
 import com.nphil.marquee.core.MarqueeCore
 import com.nphil.marquee.core.PlayPlan
 import com.nphil.marquee.core.PlexServer
@@ -51,6 +52,8 @@ internal data class DownloadChoice(
 	val bytes: Long? = null,
 	val target: JsonObject? = null,
 	val refusal: String? = null,
+	/** "measured" from HomeLabber's scores or "estimated" for a conversion; null for Original. */
+	val basis: String? = null,
 )
 
 @Serializable
@@ -114,7 +117,10 @@ internal class DownloadServer(val server: PlexServer, val remembered: String?)
 
 internal suspend fun MarqueeCore.downloadChoices(
 	server: DownloadServer, key: String, index: Int, quality: DownloadQuality, capabilities: Capabilities,
+	homeLabber: HomeLabberLink? = null,
 ): DownloadChoices = downloadCall("choices", server) {
+	// With HomeLabber set up, the tiers use its measured bitrates for the titles it has scored.
+	if (homeLabber != null) put("homelabber", CoreJson.encodeToJsonElement(homeLabber))
 	put("ratingKey", key)
 	put("mediaIndex", index)
 	put("quality", quality.key)

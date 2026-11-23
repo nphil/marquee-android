@@ -19,6 +19,7 @@ import com.nphil.marquee.core.MarqueeCore
 import com.nphil.marquee.core.NativeCore
 import com.nphil.marquee.core.NativeTransport
 import com.nphil.marquee.data.AppSettings
+import com.nphil.marquee.data.HomeLabberStore
 import com.nphil.marquee.data.SecretStore
 import com.nphil.marquee.data.SubtitleServices
 import com.nphil.marquee.diagnostics.Diag
@@ -60,6 +61,7 @@ class AppContainer(
 	/** Requests: off until Settings › Integrations › Seerr turns it on. Its own secrets survive a Plex sign-out. */
 	val seerr = Seerr(core, settings, SecretStore(context, "seerr"), session, scope)
 	internal val subtitleServices = SubtitleServices(settings, SecretStore(context, "subtitle_services"), scope)
+	internal val homeLabber = HomeLabberStore(SecretStore(context, "homelabber"), scope)
 	internal val tvRemote by lazy { TvRemote(context.applicationContext, scope) }
 
 	internal val cast = Casting(context, settings, scope)
@@ -67,7 +69,7 @@ class AppContainer(
 	/** What this app changed on the server, so every screen showing a changed title refreshes it. */
 	val changes = LibraryChanges()
 	val toasts = ToastCenter(scope)
-	internal val downloads = Downloads(context, core, session, changes, toasts, scope, http)
+	internal val downloads = Downloads(context, core, session, changes, toasts, scope, http, homeLabber)
 
 	/** What Home, Library, Search and the Watchlist share: the server and profile browsed, their preferences and saved answers. */
 	val browse = BrowseEnvironment(

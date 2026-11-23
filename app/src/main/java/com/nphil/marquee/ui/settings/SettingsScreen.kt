@@ -70,6 +70,7 @@ enum class SettingsPage(val title: String) {
 	Seerr("Seerr"),
 	Bazarr("Bazarr"),
 	SpeechDock("SpeechDock"),
+	HomeLabber("HomeLabber Quality Map"),
 	TvRemote("LumaTV Remote"),
 	Chromecast("Chromecast"),
 	AirPlay("AirPlay"),
@@ -146,6 +147,7 @@ private fun SettingsList(
 	val themeSummary = remember(choice) { summary(themes, choice) }
 	val playbackSummary = rememberPlaybackPrefs().value?.let { "Trailers ${onOff(it.playsTrailers)} · Theme music ${onOff(it.playsThemeMusic)}" } ?: ""
 	val container = LocalContext.current.container
+	val homeLabber by container.homeLabber.link.collectAsStateWithLifecycle()
 	val seerr by container.seerr.config.collectAsStateWithLifecycle()
 	val bazarr by container.subtitleServices.bazarr.collectAsStateWithLifecycle()
 	val speechDock by container.subtitleServices.speechDock.collectAsStateWithLifecycle(null)
@@ -229,37 +231,43 @@ private fun SettingsList(
 			}
 			item(key = "integrations") { Heading("Integrations") }
 			item(key = "seerr") {
-				PageRow(0, 6, SettingsPage.Seerr, selected, onOpen) {
+				PageRow(0, 7, SettingsPage.Seerr, selected, onOpen) {
 					IconBadge(R.drawable.ic_playlist_add)
 					Labels("Seerr", seerrSummary)
 				}
 			}
 			item(key = "bazarr") {
-				PageRow(1, 6, SettingsPage.Bazarr, selected, onOpen) {
+				PageRow(1, 7, SettingsPage.Bazarr, selected, onOpen) {
 					IconBadge(R.drawable.ic_closed_caption)
 					Labels("Bazarr", if (bazarr == null) "Not set up" else "Subtitle search")
 				}
 			}
 			item(key = "speechDock") {
-				PageRow(2, 6, SettingsPage.SpeechDock, selected, onOpen) {
+				PageRow(2, 7, SettingsPage.SpeechDock, selected, onOpen) {
 					IconBadge(R.drawable.ic_match_case)
 					Labels("SpeechDock", if (speechDock == null) "Off" else "Spoken subtitle timing")
 				}
 			}
+			item(key = "homeLabber") {
+				PageRow(3, 7, SettingsPage.HomeLabber, selected, onOpen) {
+					IconBadge(R.drawable.ic_speed)
+					Labels(SettingsPage.HomeLabber.title, if (homeLabber == null) "Off" else "On")
+				}
+			}
 			item(key = "tvRemote") {
-				PageRow(3, 6, SettingsPage.TvRemote, selected, onOpen) {
+				PageRow(4, 7, SettingsPage.TvRemote, selected, onOpen) {
 					IconBadge(R.drawable.ic_tv_remote)
 					Labels(SettingsPage.TvRemote.title, if (remote.enabled) "On" else "Off")
 				}
 			}
 			item(key = "chromecast") {
-				PageRow(4, 6, SettingsPage.Chromecast, selected, onOpen) {
+				PageRow(5, 7, SettingsPage.Chromecast, selected, onOpen) {
 					IconBadge(R.drawable.ic_cast)
 					Labels("Chromecast", if (container.cast[CastProvider.Chromecast].enabled) "On" else "Off")
 				}
 			}
 			item(key = "airPlay") {
-				PageRow(5, 6, SettingsPage.AirPlay, selected, onOpen) {
+				PageRow(6, 7, SettingsPage.AirPlay, selected, onOpen) {
 					IconBadge(R.drawable.ic_tv)
 					Labels("AirPlay", if (container.cast[CastProvider.AirPlay].enabled) "On" else "Off")
 				}
@@ -368,6 +376,7 @@ private fun SettingsDetail(
 			SettingsPage.Seerr -> SeerrPage(padding.plusInset())
 			SettingsPage.Bazarr -> SubtitleServicePage(SubtitleService.Bazarr, padding.plusInset())
 			SettingsPage.SpeechDock -> SubtitleServicePage(SubtitleService.SpeechDock, padding.plusInset())
+			SettingsPage.HomeLabber -> HomeLabberPage(padding.plusInset())
 			SettingsPage.TvRemote -> TvRemoteSettings(padding.plusInset())
 			SettingsPage.Chromecast -> CastSettingsPage(padding.plusInset(), CastProvider.Chromecast)
 			SettingsPage.AirPlay -> CastSettingsPage(padding.plusInset(), CastProvider.AirPlay)

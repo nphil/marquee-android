@@ -10,7 +10,7 @@ enum SubtitleCalls {
         transport: any PlexTransport = OkHttpTransport.shared
     ) async throws -> Data {
         func read<T: Decodable>(_ type: T.Type) throws -> T { try JSONDecoder().decode(type, from: payload) }
-        let transport = SubtitleOriginTransport(upstream: transport)
+        let transport = OriginRestrictedTransport(upstream: transport)
         switch name {
         case "subtitles.bazarr.address":
             let call = try read(AddressCall.self)
@@ -58,8 +58,8 @@ enum SubtitleCalls {
     }
 }
 
-/// Bazarr's key and SpeechDock's cue text must not go to a different origin through a redirect.
-private struct SubtitleOriginTransport: PlexTransport {
+/// Bazarr's key, SpeechDock's cue text and HomeLabber's token must not go to a different origin through a redirect.
+struct OriginRestrictedTransport: PlexTransport {
     let upstream: any PlexTransport
 
     func send(_ request: PlexRequest) async throws -> PlexHTTPResponse {
