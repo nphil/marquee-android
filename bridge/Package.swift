@@ -14,7 +14,7 @@ let package = Package(
     ],
     dependencies: [
         .package(path: "../core/Packages/MarqueeCore"),
-        .package(url: "https://github.com/nphil/LumaRemoteKit", exact: "1.0.3"),
+        .package(url: "https://github.com/nphil/LumaRemoteKit", exact: "1.0.4"),
     ],
     targets: [
         .target(name: "CMarqueeJNI"),

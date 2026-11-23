@@ -6,8 +6,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/nphil/LumaRemoteKit",
       "state" : {
-        "revision" : "4c45a3885202bcc5e024aa69c8de47839a328bec",
-        "version" : "1.0.3"
+        "revision" : "52deeee2ab8483cfe9ca48c48f6892a749b3e0c0",
+        "version" : "1.0.4"
       }
     },
     {
