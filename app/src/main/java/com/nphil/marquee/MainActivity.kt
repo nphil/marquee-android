@@ -82,7 +82,7 @@ class MainActivity : ComponentActivity() {
 	override fun onStart() {
 		super.onStart()
 		container.link.setForeground(true)
-		container.session.preferLocal()
+		container.session.preferLocal("foreground")
 	}
 
 	override fun onStop() {

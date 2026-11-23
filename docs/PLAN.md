@@ -95,6 +95,10 @@ Each phase ends with a release installed on the tablet.
      batches, reports) behind the `diag.*` calls, with its Swift tests run in CI. The app side is
      `diagnostics/` (the `Diag` facade, Logcat, the crash handler, last run's exit reasons, the request
      log) and Settings › Diagnostic Logs, with the Report a Problem sheet and the floating button.
+   - Plex address: Core keeps the address that last worked. `AppSession.preferLocal` asks it to look for a nearer one
+     when the app comes to the front and when the default network changes (settled for a second), as the iPhone does
+     on a network change, so a tablet that comes home leaves the remote address without waiting for a failed
+     request. Leaving home is left to Core's failover on the next failed request.
 2. **Browse.** Home with its rows and layout editor (Continue Watching with rewatches), libraries,
    detail pages with trailers and theme music, seasons and episodes, search, watchlist, Seerr requests.
    - Browse bridge: `bridge/Sources/MarqueeBridge/BrowseCalls.swift` serves Home (rows, rewatch cards, the
@@ -168,7 +172,8 @@ Each phase ends with a release installed on the tablet.
      recording templates; Recorded opens the completed DVR version in the normal player. Before tuning direct,
      Android asks the tablet's decoders for what the tuner sends (the lineup's codecs for an HDHomeRun, MPEG-2
      and AC-3 for a LumaTV) and goes to Plex when one is missing; a stream the renderers or a decoder then refuse
-     is remembered for the run. Each fallback to Plex logs its cause and the stream's tracks.
+     is remembered for the run, and a tuner whose stream cannot connect or times out is not tried again for a
+     minute, as on the iPhone. Each fallback to Plex logs its cause and the stream's tracks.
    - LumaTV Remote is opt-in. A TV can pair by QR link or a code on the local network. The sidebar
      keeps the remote just above Settings; narrow windows use Home’s toolbar instead. Pairing and
      encrypted commands use the same LumaRemoteCore as iOS.

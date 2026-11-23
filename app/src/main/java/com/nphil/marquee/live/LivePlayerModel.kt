@@ -378,14 +378,17 @@ internal class LivePlayerModel(
 			if (direct != null) {
 				val renderer = error as? ExoPlaybackException
 				val format = renderer?.rendererFormat?.sampleMimeType
+				val lost = tunerLost(error.errorCode)
 				Diag.warning(
 					DiagCategory.Player, "live.direct.failed", "code" to error.errorCodeName,
-					"cause" to error.cause?.javaClass?.simpleName, "renderer" to renderer?.rendererName, "format" to format,
+					"cause" to error.cause?.javaClass?.simpleName, "renderer" to renderer?.rendererName, "format" to format, "lost" to lost,
 				)
 				// A format the decoder refuses is refused on every tune; a decoder that merely failed to start may start next time.
 				val refused = error.errorCode == PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED ||
 					error.errorCode == PlaybackException.ERROR_CODE_DECODING_FORMAT_EXCEEDS_CAPABILITIES
 				if (refused && format != null) container.live.undecodable += format
+				// Until the memory lapses the next tunes go straight to Plex instead of waiting on this tuner again.
+				if (lost) direct?.tuner?.let(tuner::lost)
 				recoverDirect("error", directProblem(error.errorCode, error.cause))
 				return
 			}

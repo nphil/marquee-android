@@ -32,6 +32,7 @@ import com.nphil.marquee.live.LiveTv
 import com.nphil.marquee.playback.PlaybackCoordinator
 import com.nphil.marquee.seerr.Seerr
 import com.nphil.marquee.session.AppSession
+import com.nphil.marquee.session.watchNetworkChanges
 import com.nphil.marquee.tvremote.TvRemote
 import com.nphil.marquee.ui.components.ToastCenter
 import com.nphil.marquee.ui.detail.MediaDeletions
@@ -101,6 +102,7 @@ class AppContainer(
 	init {
 		NativeCore.install(NativeTransport(http))
 		scope.launch { session.restore() }
+		watchNetworkChanges(context.applicationContext, scope, session)
 		scope.launch { session.state.map { it.user?.title }.distinctUntilChanged().collect { Diag.profile(it) } }
 		scope.launch { Snapshots.forgetWhenLeft(session, core, browse.snapshots) }
 	}

@@ -167,6 +167,14 @@ class DirectTunerTest {
 	}
 
 	@Test
+	fun onlyAConnectionThatFailedOrTimedOutMarksTheTunerLost() {
+		assertTrue(tunerLost(PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED))
+		assertTrue(tunerLost(PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT))
+		assertFalse(tunerLost(PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS))
+		assertFalse(tunerLost(PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED))
+	}
+
+	@Test
 	fun permissionDenialSkipsDiscoveryButOlderAndroidStillProbes() = runBlocking {
 		val denied = permitsDirectTuner(37) { false }
 		assertNull(probeTunerIfAllowed(denied) { candidate() })

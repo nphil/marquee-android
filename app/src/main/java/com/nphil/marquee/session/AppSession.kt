@@ -219,14 +219,18 @@ class AppSession(
 	}
 
 	/**
-	 * Back in front, a nearer address may answer where a remote one was taken while the tablet was away or on another
-	 * network. Core probes the better-ranked addresses and moves to the best that answers, as the iPhone app does.
+	 * Back in front or on another network ([cause]), a nearer address may answer where a remote one was taken while the
+	 * tablet was away. Core probes the better-ranked addresses and moves to the best that answers, as the iPhone app does.
 	 */
-	fun preferLocal() {
+	fun preferLocal(cause: String) {
 		val server = state.value.server ?: return
 		scope.launch {
-			val reach = orNull { core.preferLocal(server, state.value.addresses[server.id]) } ?: return@launch
-			if (server.id == state.value.server?.id) reach.connection?.let { keepAddress(server.id, it.uri) }
+			val before = state.value.addresses[server.id]
+			val reach = orNull { core.preferLocal(server, before) } ?: return@launch
+			val found = reach.connection ?: return@launch
+			if (server.id != state.value.server?.id) return@launch
+			if (found.uri != before) Diag.info(DiagCategory.Plex, "address.preferred", "inUse" to reach.inUse, "cause" to cause)
+			keepAddress(server.id, found.uri)
 		}
 	}
 

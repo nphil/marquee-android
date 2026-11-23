@@ -14,6 +14,7 @@ import androidx.core.content.ContextCompat
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
@@ -58,7 +59,7 @@ import kotlin.coroutines.resume
 /** Only a physical, attached LAN may read a tuner. VPNs can make the phone look like Plex to a one-tuner TV. */
 internal class DirectTuner(private val context: Context, private val http: OkHttpClient) {
 	private val connections = context.getSystemService(ConnectivityManager::class.java)
-	private var discovery: Discovery? = null
+	private val memory = TunerMemory<Site, TunerCandidate>(SystemClock::elapsedRealtime)
 
 	suspend fun probe(channel: GuideChannel): TunerCandidate? =
 		probeTunerIfAllowed(canReadLocalTuner(context)) { probeAttached(channel) }
@@ -80,9 +81,8 @@ internal class DirectTuner(private val context: Context, private val http: OkHtt
 		val literal = try { InetAddresses.parseNumericAddress(base.host) } catch (_: IllegalArgumentException) { null }
 		if (literal != null && !attached(literal)) return null
 
-		val known = discovery?.takeIf { it.network == network && it.uuid == uuid && it.base == base &&
-			SystemClock.elapsedRealtime() - it.at < 60_000L }
-		if (known != null) return known.tuner
+		val site = Site(network, uuid, base)
+		memory.recall(site)?.let { return it.tuner }
 		val bound = http.newBuilder()
 			.proxy(Proxy.NO_PROXY).socketFactory(network.socketFactory)
 			.dns(object : Dns {
@@ -94,11 +94,15 @@ internal class DirectTuner(private val context: Context, private val http: OkHtt
 			.callTimeout(0, TimeUnit.MILLISECONDS).connectTimeout(5, TimeUnit.SECONDS).readTimeout(5, TimeUnit.SECONDS)
 			.build()
 		val tuner = TunerCandidate.discover(bound, base, uuid, links.linkAddresses.mapNotNull { it.address.hostAddress }.toSet())
-		discovery = Discovery(network, uuid, base, SystemClock.elapsedRealtime(), tuner)
+		memory.keep(site, tuner)
 		return tuner
 	}
 
-	private class Discovery(val network: Network, val uuid: String, val base: HttpUrl, val at: Long, val tuner: TunerCandidate?)
+	/** A stream from [tuner] could not connect or went silent: for a minute it is not asked again, as on the iPhone. */
+	fun lost(tuner: TunerCandidate) = memory.lost(tuner)
+
+	/** What a remembered answer holds for: this tuner, at this address, on this network. */
+	private data class Site(val network: Network, val uuid: String, val base: HttpUrl)
 }
 
 internal class TunerCandidate private constructor(
@@ -294,6 +298,11 @@ internal fun directProblem(errorCode: Int, cause: Throwable?): DirectProblem {
 	return if (errorCode in 2000..4999) DirectProblem.Fallback
 	else DirectProblem.Refused("The tuner stream stopped unexpectedly.", "unsupported_error")
 }
+
+/** The connection to the tuner failed or timed out, as against a tuner that answered with a stream this tablet could not play. */
+internal fun tunerLost(errorCode: Int): Boolean =
+	errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ||
+		errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT
 
 internal fun tunerHttpRefusal(status: Int, marker: String?, body: ByteArray): String {
 	val message = body.decodeToString(endIndex = minOf(body.size, 240))
