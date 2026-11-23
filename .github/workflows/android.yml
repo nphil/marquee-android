@@ -305,6 +305,9 @@ jobs:
           # Media3 loads the FFmpeg renderer by name, so R8 removes it unless the consumer rules keep it.
           kept="$(unzip -p "$apk" 'classes*.dex' | grep -ac 'Landroidx/media3/decoder/ffmpeg/FfmpegAudioRenderer;' || true)"
           [ "$kept" -gt 0 ] || { echo "R8 removed the FFmpeg renderer"; exit 1; }
+          # Marquee's MPEG-2 video renderer sits beside the audio one; libffmpegJNI.so, checked above, carries its native code.
+          video="$(unzip -p "$apk" 'classes*.dex' | grep -ac 'Lcom/nphil/marquee/ffmpeg/FfmpegVideoRenderer;' || true)"
+          [ "$video" -gt 0 ] || { echo "R8 removed the FFmpeg video renderer"; exit 1; }
           "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --print-certs "$apk"
           size="$(stat -c %s "$apk")"
           echo "path=$apk" >> "$GITHUB_OUTPUT"
