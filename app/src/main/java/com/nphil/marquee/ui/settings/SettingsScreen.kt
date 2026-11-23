@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nphil.marquee.R
 import com.nphil.marquee.container
+import com.nphil.marquee.core.ArrKind
 import com.nphil.marquee.core.SubtitleService
 import com.nphil.marquee.diagnostics.Diag
 import com.nphil.marquee.diagnostics.DiagScreen
@@ -69,6 +70,8 @@ enum class SettingsPage(val title: String) {
 	Downloads("Downloads"),
 	Seerr("Seerr"),
 	Bazarr("Bazarr"),
+	Radarr("Radarr"),
+	Sonarr("Sonarr"),
 	SpeechDock("SpeechDock"),
 	HomeLabber("HomeLabber Quality Map"),
 	TvRemote("LumaTV Remote"),
@@ -152,6 +155,8 @@ private fun SettingsList(
 	val homeLabber by container.homeLabber.link.collectAsStateWithLifecycle()
 	val seerr by container.seerr.config.collectAsStateWithLifecycle()
 	val bazarr by container.subtitleServices.bazarr.collectAsStateWithLifecycle()
+	val radarr by container.arrServices.saved(ArrKind.Radarr).collectAsStateWithLifecycle()
+	val sonarr by container.arrServices.saved(ArrKind.Sonarr).collectAsStateWithLifecycle()
 	val speechDock by container.subtitleServices.speechDock.collectAsStateWithLifecycle(null)
 	val remote by container.tvRemote.state.collectAsStateWithLifecycle()
 	val link by container.link.state.collectAsStateWithLifecycle()
@@ -235,55 +240,67 @@ private fun SettingsList(
 			}
 			item(key = "integrations") { Heading("Integrations") }
 			item(key = "seerr") {
-				PageRow(0, 9, SettingsPage.Seerr, selected, onOpen) {
+				PageRow(0, 11, SettingsPage.Seerr, selected, onOpen) {
 					IconBadge(R.drawable.ic_playlist_add)
 					Labels("Seerr", seerrSummary)
 				}
 			}
 			item(key = "bazarr") {
-				PageRow(1, 9, SettingsPage.Bazarr, selected, onOpen) {
+				PageRow(1, 11, SettingsPage.Bazarr, selected, onOpen) {
 					IconBadge(R.drawable.ic_closed_caption)
 					Labels("Bazarr", if (bazarr == null) "Not set up" else "Subtitle search")
 				}
 			}
+			item(key = "radarr") {
+				PageRow(2, 11, SettingsPage.Radarr, selected, onOpen) {
+					IconBadge(R.drawable.ic_movie)
+					Labels("Radarr", if (radarr == null) "Not set up" else "Removes deleted movies")
+				}
+			}
+			item(key = "sonarr") {
+				PageRow(3, 11, SettingsPage.Sonarr, selected, onOpen) {
+					IconBadge(R.drawable.ic_tv)
+					Labels("Sonarr", if (sonarr == null) "Not set up" else "Removes deleted shows")
+				}
+			}
 			item(key = "speechDock") {
-				PageRow(2, 9, SettingsPage.SpeechDock, selected, onOpen) {
+				PageRow(4, 11, SettingsPage.SpeechDock, selected, onOpen) {
 					IconBadge(R.drawable.ic_match_case)
 					Labels("SpeechDock", if (speechDock == null) "Off" else "Spoken subtitle timing")
 				}
 			}
 			item(key = "homeLabber") {
-				PageRow(3, 9, SettingsPage.HomeLabber, selected, onOpen) {
+				PageRow(5, 11, SettingsPage.HomeLabber, selected, onOpen) {
 					IconBadge(R.drawable.ic_speed)
 					Labels(SettingsPage.HomeLabber.title, if (homeLabber == null) "Off" else "On")
 				}
 			}
 			item(key = "tvRemote") {
-				PageRow(4, 9, SettingsPage.TvRemote, selected, onOpen) {
+				PageRow(6, 11, SettingsPage.TvRemote, selected, onOpen) {
 					IconBadge(R.drawable.ic_tv_remote)
 					Labels(SettingsPage.TvRemote.title, if (remote.enabled) "On" else "Off")
 				}
 			}
 			item(key = "bigScreen") {
-				PageRow(5, 9, SettingsPage.BigScreen, selected, onOpen) {
+				PageRow(7, 11, SettingsPage.BigScreen, selected, onOpen) {
 					IconBadge(R.drawable.ic_glasses)
 					Labels(SettingsPage.BigScreen.title, if (container.glasses.prefs.enabled) "On" else "Off")
 				}
 			}
 			item(key = "chromecast") {
-				PageRow(6, 9, SettingsPage.Chromecast, selected, onOpen) {
+				PageRow(8, 11, SettingsPage.Chromecast, selected, onOpen) {
 					IconBadge(R.drawable.ic_cast)
 					Labels("Chromecast", if (container.cast[CastProvider.Chromecast].enabled) "On" else "Off")
 				}
 			}
 			item(key = "airPlay") {
-				PageRow(7, 9, SettingsPage.AirPlay, selected, onOpen) {
+				PageRow(9, 11, SettingsPage.AirPlay, selected, onOpen) {
 					IconBadge(R.drawable.ic_tv)
 					Labels("AirPlay", if (container.cast[CastProvider.AirPlay].enabled) "On" else "Off")
 				}
 			}
 			item(key = "linkedPhones") {
-				PageRow(8, 9, SettingsPage.LinkedPhones, selected, onOpen) {
+				PageRow(10, 11, SettingsPage.LinkedPhones, selected, onOpen) {
 					IconBadge(R.drawable.ic_smartphone)
 					Labels(SettingsPage.LinkedPhones.title, linkSummary)
 				}
@@ -391,6 +408,8 @@ private fun SettingsDetail(
 			SettingsPage.Downloads -> DownloadSettingsPage(LocalContext.current.container.downloads, padding.plusInset(), onDownloads)
 			SettingsPage.Seerr -> SeerrPage(padding.plusInset())
 			SettingsPage.Bazarr -> SubtitleServicePage(SubtitleService.Bazarr, padding.plusInset())
+			SettingsPage.Radarr -> ArrServicePage(ArrKind.Radarr, padding.plusInset())
+			SettingsPage.Sonarr -> ArrServicePage(ArrKind.Sonarr, padding.plusInset())
 			SettingsPage.SpeechDock -> SubtitleServicePage(SubtitleService.SpeechDock, padding.plusInset())
 			SettingsPage.HomeLabber -> HomeLabberPage(padding.plusInset())
 			SettingsPage.TvRemote -> TvRemoteSettings(padding.plusInset())

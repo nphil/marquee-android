@@ -6,16 +6,13 @@ import androidx.lifecycle.viewModelScope
 import com.nphil.marquee.AppContainer
 import com.nphil.marquee.core.CoreException
 import com.nphil.marquee.core.DeleteOutcome
-import com.nphil.marquee.core.Deletion
 import com.nphil.marquee.core.MediaType
 import com.nphil.marquee.core.PlexHub
 import com.nphil.marquee.core.PlexItem
 import com.nphil.marquee.core.ServerInfo
 import com.nphil.marquee.core.Watchlist
-import com.nphil.marquee.core.WatchlistCleanup
 import com.nphil.marquee.core.addToWatchlist
 import com.nphil.marquee.core.children
-import com.nphil.marquee.core.delete
 import com.nphil.marquee.core.deleteVersion
 import com.nphil.marquee.core.extras
 import com.nphil.marquee.core.item
@@ -349,31 +346,11 @@ class DetailModel(private val container: AppContainer, private val route: Detail
 
 	/**
 	 * Deletes [item] from the server's disk and takes it out of every list. It runs on the app's scope so a page
-	 * closed meanwhile does not cancel it; [onResult] hears how it ended, on the main thread.
+	 * closed meanwhile does not cancel it; [onResult] hears how the server's delete ended, on the main thread. The
+	 * steps after it (the Watchlist, Radarr or Sonarr, and Seerr) are [MediaDeletions]'s.
 	 */
-	fun delete(item: PlexItem, onResult: (Deletion) -> Unit) {
-		container.scope.launch {
-			val result = try {
-				session.onServer { server, remembered ->
-					core.delete(server, remembered, item, changes.state.value.deleted.keys, session.accountToken)
-				}
-			} catch (e: CoreException) {
-				Diag.warning(DiagCategory.Ui, "detail.delete.failed", "kind" to e.kind.name, "status" to e.status)
-				Deletion(DeleteOutcome.Failed)
-			}
-			if (result.outcome == DeleteOutcome.Deleted) {
-				changes.recordDeletion(item)
-				when (result.watchlist) {
-					WatchlistCleanup.Removed -> {
-						result.guid?.let(changes::hideFromWatchlist)
-						toasts.show("Deleted “${item.title}”")
-					}
-					WatchlistCleanup.Failed -> toasts.show("Deleted, but couldn't remove it from your Watchlist.")
-					WatchlistCleanup.Unchanged -> toasts.show("Deleted “${item.title}”")
-				}
-			}
-			onResult(result)
-		}
+	fun delete(item: PlexItem, onResult: (DeleteOutcome) -> Unit) {
+		container.scope.launch { onResult(container.deletions.delete(item)) }
 	}
 
 	/** Deletes one version of [item] and its file; the other versions stay. */

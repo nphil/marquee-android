@@ -4,11 +4,14 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.nphil.marquee.core.ClientIdentity
 import com.nphil.marquee.core.DeleteOutcome
+import com.nphil.marquee.core.DeleteServices
 import com.nphil.marquee.core.MarqueeCore
 import com.nphil.marquee.core.MediaType
+import com.nphil.marquee.core.ServiceCleanup
 import com.nphil.marquee.core.WatchlistCleanup
 import com.nphil.marquee.core.addToWatchlist
 import com.nphil.marquee.core.children
+import com.nphil.marquee.core.cleanUp
 import com.nphil.marquee.core.copiesOf
 import com.nphil.marquee.core.delete
 import com.nphil.marquee.core.deleteVersion
@@ -166,10 +169,16 @@ class DetailBridgeTest {
 	@Test
 	fun deletingATitleOrOneVersionSendsDeleteAndIsDeleted() = runBlocking {
 		val sintel = item("108")
-		val whole = core.delete(server, at, sintel, alreadyDeleted = emptySet(), accountToken = null)
-		assertEquals(DeleteOutcome.Deleted, whole.outcome)
-		assertEquals(WatchlistCleanup.Unchanged, whole.watchlist)
+		val services = DeleteServices(accountToken = null, radarr = null, sonarr = null, seerr = null)
+		val first = core.delete(server, at, sintel, services).value
+		assertEquals(DeleteOutcome.Deleted, first.outcome)
 		assertEquals(1, fake.requestsTo("/library/metadata/108", method = "DELETE").size)
+
+		// The steps after the server's: none of the services is set up, so none is asked.
+		val whole = core.cleanUp(server, at, first.ticket!!, alreadyDeleted = emptySet(), services = services).value
+		assertEquals(WatchlistCleanup.Unchanged, whole.watchlist)
+		assertEquals(ServiceCleanup.NotConnected, whole.arr)
+		assertEquals(ServiceCleanup.NotConnected, whole.requests)
 
 		val version = core.deleteVersion(server, at, "108", mediaId = 1082)
 		assertEquals(DeleteOutcome.Deleted, version.outcome)

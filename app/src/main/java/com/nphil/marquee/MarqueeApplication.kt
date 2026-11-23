@@ -20,6 +20,7 @@ import com.nphil.marquee.core.MarqueeCore
 import com.nphil.marquee.core.NativeCore
 import com.nphil.marquee.core.NativeTransport
 import com.nphil.marquee.data.AppSettings
+import com.nphil.marquee.data.ArrServices
 import com.nphil.marquee.data.HomeLabberStore
 import com.nphil.marquee.data.SecretStore
 import com.nphil.marquee.data.SubtitleServices
@@ -33,6 +34,7 @@ import com.nphil.marquee.seerr.Seerr
 import com.nphil.marquee.session.AppSession
 import com.nphil.marquee.tvremote.TvRemote
 import com.nphil.marquee.ui.components.ToastCenter
+import com.nphil.marquee.ui.detail.MediaDeletions
 import com.nphil.marquee.ui.theme.ThemeCatalog
 import com.nphil.marquee.ui.theme.Themes
 import com.nphil.marquee.ui.theme.lucentTypography
@@ -64,6 +66,7 @@ class AppContainer(
 	val seerr = Seerr(core, settings, SecretStore(context, "seerr"), session, scope)
 	internal val subtitleServices = SubtitleServices(settings, SecretStore(context, "subtitle_services"), scope)
 	internal val homeLabber = HomeLabberStore(SecretStore(context, "homelabber"), scope)
+	internal val arrServices = ArrServices(SecretStore(context, "arr_services"), scope)
 	internal val tvRemote by lazy { TvRemote(context.applicationContext, scope) }
 
 	/** The big-screen plugin: off until Settings turns it on; it watches displays only while it is on and the app is open. */
@@ -78,6 +81,9 @@ class AppContainer(
 	val changes = LibraryChanges()
 	val toasts = ToastCenter(scope)
 	internal val downloads = Downloads(context, core, session, changes, toasts, scope, http, homeLabber)
+
+	/** A title's delete and the steps after it, which finish after the page that started it has closed. */
+	internal val deletions = MediaDeletions(core, session, changes, toasts, seerr, arrServices, scope)
 
 	/** What Home, Library, Search and the Watchlist share: the server and profile browsed, their preferences and saved answers. */
 	val browse = BrowseEnvironment(

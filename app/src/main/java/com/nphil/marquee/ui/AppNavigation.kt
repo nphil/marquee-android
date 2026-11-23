@@ -52,6 +52,7 @@ import com.nphil.marquee.diagnostics.DiagCategory
 import com.nphil.marquee.downloads.DownloadEntry
 import com.nphil.marquee.ui.components.ArtSpec
 import com.nphil.marquee.ui.components.ToastHost
+import com.nphil.marquee.ui.detail.DeletionFollowUpDialog
 import com.nphil.marquee.ui.detail.DetailScreen
 import com.nphil.marquee.ui.detail.ExtraScreen
 import com.nphil.marquee.ui.detail.PersonScreen
@@ -346,6 +347,7 @@ fun AppNavigation(container: AppContainer, shell: @Composable (Navigator) -> Uni
 			}
 		}
 		ToastHost(container.toasts, Modifier.align(Alignment.BottomCenter))
+		DeletionFollowUpDialog(container.deletions)
 	}
 }
 

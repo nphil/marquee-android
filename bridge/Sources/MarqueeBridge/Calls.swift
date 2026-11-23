@@ -94,6 +94,10 @@ final class Methods: Sendable {
             return try Reply.ok(try await library.sections().map(Section.init))
         case _ where DiagCalls.handles(method):
             return try await DiagCalls.handle(method, payload)
+        case _ where DeleteCalls.handles(method):
+            return try await DeleteCalls.handle(method, payload, library: library(for:), watchlist: watchlist(token:))
+        case _ where ArrCalls.handles(method):
+            return try await ArrCalls.handle(method, payload)
         case _ where DetailCalls.handles(method):
             return try await DetailCalls.handle(method, payload, on: self)
         case _ where SeerrCalls.handles(method):

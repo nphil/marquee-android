@@ -260,17 +260,20 @@ private fun DetailPage(
 			}
 		}
 		deleting?.let { target ->
+			val arrLink by container.arrServices.saved(DeleteWording.arrKind(target.item)).collectAsStateWithLifecycle()
+			val seerrOn by container.seerr.enabled.collectAsStateWithLifecycle()
 			DeleteDialogs(
 				target = target,
+				places = (target as? DeleteTarget.Title)?.let { DeleteWording.places(it.item, arrLink != null, seerrOn) }.orEmpty(),
 				onDismiss = { deleting = null },
 				run = { done ->
 					when (target) {
-						is DeleteTarget.Title -> model.delete(target.item) { result ->
-							if (result.outcome == DeleteOutcome.Deleted) {
+						is DeleteTarget.Title -> model.delete(target.item) { outcome ->
+							if (outcome == DeleteOutcome.Deleted) {
 								deleting = null
 								navigator.back()
 							}
-							done(result.outcome)
+							done(outcome)
 						}
 						is DeleteTarget.Version -> {
 							val media = target.item.media[target.index]
@@ -641,10 +644,11 @@ private sealed interface DeleteTarget {
 
 /**
  * Asks before deleting, as the iPhone does (Cancel is the way out), then deletes and says how it went: a turned-off
- * server setting can't be retried, a failed delete can.
+ * server setting can't be retried, a failed delete can. [places] are the services that also drop the title, which the
+ * question names.
  */
 @Composable
-private fun DeleteDialogs(target: DeleteTarget, onDismiss: () -> Unit, run: ((DeleteOutcome) -> Unit) -> Unit) {
+private fun DeleteDialogs(target: DeleteTarget, places: List<String>, onDismiss: () -> Unit, run: ((DeleteOutcome) -> Unit) -> Unit) {
 	var failure by remember { mutableStateOf<DeleteOutcome?>(null) }
 	var working by remember { mutableStateOf(false) }
 	val item = target.item
@@ -663,11 +667,7 @@ private fun DeleteDialogs(target: DeleteTarget, onDismiss: () -> Unit, run: ((De
 			text = {
 				Text(
 					when (target) {
-						is DeleteTarget.Title -> when (item.type) {
-							MediaType.Show -> "Every season and episode, and their files, are removed from the server's disk. This can't be undone."
-							MediaType.Season -> "Every episode in this season, and their files, are removed from the server's disk. This can't be undone."
-							else -> "Its files are removed from the server's disk. This can't be undone."
-						}
+						is DeleteTarget.Title -> DeleteWording.message(item, places)
 						is DeleteTarget.Version ->
 							"The ${item.media[target.index].versionLabel} file is removed from the server's disk. The other versions stay. This can't be undone."
 					},

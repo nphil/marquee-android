@@ -1,13 +1,13 @@
 import Foundation
 import MarqueeCore
 
-/// The calls behind the detail page: one item and what hangs off it, watched state, deletion, and the
-/// account watchlist. Names match exactly, so a sibling namespace such as `watchlist.items` stays with the
-/// file that owns it.
+/// The calls behind the detail page: one item and what hangs off it, watched state, deleting one version, and the
+/// account watchlist. Deleting a whole title is `DeleteCalls`. Names match exactly, so a sibling namespace such as
+/// `watchlist.items` stays with the file that owns it.
 enum DetailCalls {
     private static let names: Set<String> = [
         "detail.item", "detail.children", "detail.extras", "detail.related", "detail.person", "detail.matching",
-        "detail.setWatched", "detail.serverInfo", "detail.delete", "detail.deleteVersion", "detail.mediaURL",
+        "detail.setWatched", "detail.serverInfo", "detail.deleteVersion", "detail.mediaURL",
         "watchlist.contains", "watchlist.add", "watchlist.remove",
     ]
 
@@ -50,14 +50,6 @@ enum DetailCalls {
         case "detail.serverInfo":
             let library = try methods.library(for: decode(ServerCall.self, payload))
             return try Reply.ok(ServerInfoWire(try await library.serverInfo()))
-        case "detail.delete":
-            let library = try methods.library(for: decode(ServerCall.self, payload))
-            let call = try decode(DeleteCall.self, payload)
-            let watchlist = try call.token.map(methods.watchlist(token:))
-            var deleted = DeletedTitles()
-            for key in call.alreadyDeleted { deleted.insert(key) }
-            let result = await MediaDeletion(server: library, watchlist: watchlist).delete(call.item, alreadyDeleted: deleted)
-            return try Reply.ok(DeletionWire(result))
         case "detail.deleteVersion":
             let library = try methods.library(for: decode(ServerCall.self, payload))
             let call = try decode(VersionCall.self, payload)
@@ -122,16 +114,6 @@ private struct WatchlistCall: Decodable {
     let guid: String
 }
 
-/// A delete. `item` carries the identity on screen in Plex's own key names, which is what the Watchlist
-/// cleanup falls back on when the server cannot give one; `alreadyDeleted` is this session's earlier
-/// deletes, because the server lists those episodes until its trash is emptied.
-private struct DeleteCall: Decodable {
-    let item: PlexMetadata
-    let alreadyDeleted: [String]
-    /// Nil when no account is signed in to a watchlist.
-    let token: String?
-}
-
 private struct Flag: Encodable {
     let value: Bool
 }
@@ -143,41 +125,6 @@ private struct ServerInfoWire: Encodable {
     init(_ info: PlexServerInfo) {
         allowsMediaDeletion = info.allowsMediaDeletion
         hasPlexPass = info.hasPlexPass
-    }
-}
-
-/// How a delete ended: `outcome` is `deleted`, `notAllowed` or `failed`; `watchlist` is `unchanged`,
-/// `removed` or `failed`, with the catalogue `guid` for the last two.
-private struct DeletionWire: Encodable {
-    let outcome: String
-    let watchlist: String
-    let guid: String?
-
-    init(_ result: MediaDeletionResult) {
-        outcome = Self.name(of: result.outcome)
-        switch result.watchlist {
-        case .unchanged:
-            watchlist = "unchanged"
-            guid = nil
-        case .removed(let removed):
-            watchlist = "removed"
-            guid = removed
-        case .failed(let failed):
-            watchlist = "failed"
-            guid = failed
-        }
-    }
-
-    init(outcome: DeleteOutcome) {
-        self.init(MediaDeletionResult(outcome: outcome))
-    }
-
-    private static func name(of outcome: DeleteOutcome) -> String {
-        switch outcome {
-        case .deleted: "deleted"
-        case .notAllowed: "notAllowed"
-        case .failed: "failed"
-        }
     }
 }
 

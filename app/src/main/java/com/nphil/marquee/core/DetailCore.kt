@@ -51,18 +51,43 @@ suspend fun MarqueeCore.serverInfo(server: PlexServer, remembered: String?): Ser
 	call("detail.serverInfo", serverParams(server, remembered))
 
 /**
- * Deletes [item] from the server's disk. [alreadyDeleted] lists the keys this session deleted before, because the
- * server lists those episodes until its trash is emptied; [accountToken] lets a deleted title leave the Watchlist
- * too, and is null when no account is signed in to one.
+ * What a delete may ask beside the server, each only where it is set up: [accountToken] is the signed-in profile's, for
+ * the Watchlist, and null when no account is signed in to one.
  */
-suspend fun MarqueeCore.delete(
-	server: PlexServer, remembered: String?, item: PlexItem, alreadyDeleted: Set<String>, accountToken: String?,
-): Deletion = call(
+internal class DeleteServices(val accountToken: String?, val radarr: ArrLink?, val sonarr: ArrLink?, val seerr: SeerrLink?) {
+	fun withSeerr(link: SeerrLink?) = DeleteServices(accountToken, radarr, sonarr, link)
+}
+
+/**
+ * Deletes [item] from the server's disk and asks no other service, so the title can leave every list at once. The
+ * services in [services] are named only so the ids they know the title by are read before the server forgets it. With
+ * [DeleteOutcome.Deleted] comes the [Deletion.ticket] that [cleanUp] takes.
+ */
+internal suspend fun MarqueeCore.delete(
+	server: PlexServer, remembered: String?, item: PlexItem, services: DeleteServices,
+): SeerrReply<Deletion> = call(
 	"detail.delete",
 	serverParams(server, remembered) {
 		put("item", identity(item))
+		putServices(services)
+	},
+)
+
+/**
+ * The steps after [delete]: the Watchlist, Radarr or Sonarr, and Seerr, each answering for itself and none stopping the
+ * next. [alreadyDeleted] lists the keys this session deleted before, because the server lists those episodes until its
+ * trash is emptied. [previous] is an earlier answer of this call: only the steps that failed in it run again.
+ */
+internal suspend fun MarqueeCore.cleanUp(
+	server: PlexServer, remembered: String?, ticket: JsonObject, alreadyDeleted: Set<String>, services: DeleteServices,
+	previous: Deletion? = null,
+): SeerrReply<Deletion> = call(
+	"detail.cleanUp",
+	serverParams(server, remembered) {
+		put("ticket", ticket)
 		put("alreadyDeleted", buildJsonArray { alreadyDeleted.forEach { add(it) } })
-		if (accountToken != null) put("token", accountToken)
+		putServices(services)
+		if (previous != null) put("previous", previous.steps())
 	},
 )
 
@@ -105,11 +130,29 @@ private fun identity(item: PlexItem): JsonObject = buildJsonObject {
 	put("ratingKey", item.ratingKey)
 	put("type", CoreJson.encodeToJsonElement(MediaType.serializer(), item.type))
 	put("title", item.title)
+	item.year?.let { put("year", it) }
 	putIfPresent("guid", item.guid)
 	putIfPresent("parentGuid", item.parentGuid)
 	putIfPresent("grandparentGuid", item.grandparentGuid)
+	putIfPresent("parentTitle", item.parentTitle)
+	putIfPresent("grandparentTitle", item.grandparentTitle)
 	putIfPresent("parentRatingKey", item.parentRatingKey)
 	putIfPresent("grandparentRatingKey", item.grandparentRatingKey)
+}
+
+internal fun JsonObjectBuilder.putServices(services: DeleteServices) {
+	if (services.accountToken != null) put("token", services.accountToken)
+	services.radarr?.let { put("radarr", CoreJson.encodeToJsonElement(ArrLink.serializer(), it)) }
+	services.sonarr?.let { put("sonarr", CoreJson.encodeToJsonElement(ArrLink.serializer(), it)) }
+	services.seerr?.let { put("seerr", it.params()) }
+}
+
+/** What each step of an earlier cleanup came to, which is all a retry needs besides the ticket. */
+internal fun Deletion.steps(): JsonObject = buildJsonObject {
+	put("watchlist", CoreJson.encodeToJsonElement(WatchlistCleanup.serializer(), watchlist))
+	putIfPresent("guid", guid)
+	put("arr", CoreJson.encodeToJsonElement(ServiceCleanup.serializer(), arr))
+	put("requests", CoreJson.encodeToJsonElement(ServiceCleanup.serializer(), requests))
 }
 
 private fun JsonObjectBuilder.putIfPresent(name: String, value: String?) {
@@ -125,13 +168,24 @@ data class ServerInfo(
 	val hasPlexPass: Boolean = false,
 )
 
-/** How a delete ended, and what became of the title's Watchlist entry. */
+/**
+ * How a delete stands. Straight after [delete] only [outcome] and [ticket] say anything; after [cleanUp] each step has
+ * its own result.
+ */
 @Serializable
 data class Deletion(
 	val outcome: DeleteOutcome,
 	val watchlist: WatchlistCleanup = WatchlistCleanup.Unchanged,
 	/** The catalogue title the Watchlist cleanup touched or failed to touch. */
 	val guid: String? = null,
+	/** Radarr for a movie, Sonarr for a show. */
+	val arr: ServiceCleanup = ServiceCleanup.NotConnected,
+	val requests: ServiceCleanup = ServiceCleanup.NotConnected,
+	/**
+	 * What [cleanUp] needs, kept as the bridge wrote it. It comes with [DeleteOutcome.Deleted] and stays after a cleanup
+	 * only while a step failed that asking again may fix.
+	 */
+	val ticket: JsonObject? = null,
 )
 
 @Serializable
@@ -159,6 +213,34 @@ enum class WatchlistCleanup {
 	Removed,
 
 	/** The title is on the Watchlist and could not be taken off it. */
+	@SerialName("failed")
+	Failed,
+}
+
+/** What became of the title in Radarr, Sonarr or Seerr. */
+@Serializable
+enum class ServiceCleanup {
+	/** Marquee has no connection to the service, so it was not asked. */
+	@SerialName("notConnected")
+	NotConnected,
+
+	/** Nothing to do there: the delete left part of the show in place. */
+	@SerialName("notApplicable")
+	NotApplicable,
+
+	/** The server gave the title no id the service knows it by. Asking again cannot help. */
+	@SerialName("unmatched")
+	Unmatched,
+
+	/** The title is off the service: removed now, or not there to begin with. */
+	@SerialName("removed")
+	Removed,
+
+	/** The service refused the account or the key. Asking again cannot help. */
+	@SerialName("refused")
+	Refused,
+
+	/** An error or no answer; Retry may work. */
 	@SerialName("failed")
 	Failed,
 }

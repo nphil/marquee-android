@@ -239,6 +239,15 @@ class Seerr(
 
 	suspend fun requests(): List<SeerrRequest> = call("requests") { core.seerrRequests(it) }
 
+	/**
+	 * Runs [block] with the saved connection when Requests is on, and with null when it is not, for a call that serves
+	 * other services too (a delete). A sign-in cookie the call hands back is kept, as for any call to Seerr.
+	 */
+	suspend fun <T> whenOn(name: String, block: suspend (SeerrLink?) -> SeerrReply<T>): T {
+		loadedConfig.await()
+		return if (mutableConfig.value.enabled) call(name, block) else block(null).value
+	}
+
 	// MARK: Connection
 
 	/** The connection a call was made with, and the profile it was made as. */
