@@ -44,7 +44,7 @@ data class Reading(val bytes: Int, val seconds: Double)
 
 /** Opens an item: what to play and where, and what the profile and the tablet allow. */
 @Serializable
-data class StartRequest(
+internal data class StartRequest(
 	val ratingKey: String,
 	/** The player screen's session. A restart, a quality move and the next item keep it; null opens one. */
 	val session: String? = null,
@@ -64,7 +64,7 @@ data class StartRequest(
 	val view: Frame? = null,
 	/** The tablet's player failed on this item, so the server converts it. */
 	val onDeviceFailed: Boolean? = null,
-	/** Auto moved to this rung: a restart after [playLook] named it. */
+	/** Auto moved to this rung: a restart after [playLook] named it, by its place in Auto's ladder (the bridge keeps the ladder). */
 	val move: Int? = null,
 	/** The read [PlayPlan.probe] asked for. */
 	val probe: Reading? = null,
@@ -73,6 +73,10 @@ data class StartRequest(
 	val subtitle: SubtitlePick? = null,
 	val memory: JsonElement? = null,
 	val recordingMediaID: Int? = null,
+	/** The saved HomeLabber link, when its plugin is on: a title it has measured streams by its own curve under Auto. Never log it. */
+	val homelabber: HomeLabberLink? = null,
+	/** The device's class, for HomeLabber's phone or tablet scores. */
+	val screen: ScreenClass? = null,
 )
 
 /** How an item plays: the route Core chose, what opens it, and what the screen needs around it. */
@@ -95,6 +99,8 @@ data class PlayPlan(
 	val isAnime: Boolean = false,
 	/** The quality the route was decided at: kbit/s, 0 for Original. */
 	val quality: Int = 0,
+	/** What Auto streams at, worded for the screen: a preset's name or a step of the title's measured curve such as "3.2 Mbps 720p". */
+	val qualityTitle: String? = null,
 	/** Auto adapts the quality on this stream. */
 	val adapts: Boolean = false,
 	/** What the first-start badge shows for the stream that plays. */
@@ -259,7 +265,7 @@ data class Neighbors(val next: PlexItem? = null, val previous: PlexItem? = null)
 @Serializable
 private data class Took(val took: Boolean)
 
-/** Auto's answer to a look: the rung to move to, if any, and what it knows of the link. */
+/** Auto's answer to a look: the rung to move to (its place in Auto's ladder), if any, and what it knows of the link. */
 @Serializable
 data class QualityMove(val rung: Int? = null, val estimateKbps: Int? = null, val belowFloor: Boolean = false)
 
@@ -283,7 +289,7 @@ object QualityPreset {
  * Opens [request.ratingKey]'s item for playing and says how. The first call of an item may come back with a
  * [PlayPlan.probe] and no stream: read it and call again with the [StartRequest.probe] reading.
  */
-suspend fun MarqueeCore.startPlay(server: PlexServer, remembered: String?, request: StartRequest): PlayPlan =
+internal suspend fun MarqueeCore.startPlay(server: PlexServer, remembered: String?, request: StartRequest): PlayPlan =
 	call("play.start", serverParams(server, remembered) {
 		CoreJson.encodeToJsonElement(StartRequest.serializer(), request).jsonObject.forEach { (name, value) -> put(name, value) }
 	})

@@ -83,7 +83,7 @@ internal fun HomeLabberPage(contentPadding: PaddingValues) {
 					onChange = model::editAddress, onFocus = { editingAddress = it }, keyboardType = KeyboardType.Uri,
 				)
 				SettingsFieldRow(
-					1, 2, "Token", model.token, "Required", onChange = model::editToken, onFocus = { editingToken = it },
+					1, 2, "Token", model.token, HomeLabberText.TOKEN_HINT, onChange = model::editToken, onFocus = { editingToken = it },
 					imeAction = ImeAction.Done, secret = true, onDone = test,
 				)
 			}

@@ -6,6 +6,7 @@ import com.nphil.marquee.core.HomeLabberLink
 import com.nphil.marquee.core.MarqueeCore
 import com.nphil.marquee.core.PlayPlan
 import com.nphil.marquee.core.PlexServer
+import com.nphil.marquee.core.ScreenClass
 import com.nphil.marquee.core.StartRequest
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -117,10 +118,11 @@ internal class DownloadServer(val server: PlexServer, val remembered: String?)
 
 internal suspend fun MarqueeCore.downloadChoices(
 	server: DownloadServer, key: String, index: Int, quality: DownloadQuality, capabilities: Capabilities,
-	homeLabber: HomeLabberLink? = null,
+	homeLabber: HomeLabberLink? = null, screen: ScreenClass = ScreenClass.Phone,
 ): DownloadChoices = downloadCall("choices", server) {
-	// With HomeLabber set up, the tiers use its measured bitrates for the titles it has scored.
+	// With HomeLabber set up, the tiers use its measured bitrates for the titles it has scored, as this screen's class is judged.
 	if (homeLabber != null) put("homelabber", CoreJson.encodeToJsonElement(homeLabber))
+	put("screen", CoreJson.encodeToJsonElement(screen))
 	put("ratingKey", key)
 	put("mediaIndex", index)
 	put("quality", quality.key)

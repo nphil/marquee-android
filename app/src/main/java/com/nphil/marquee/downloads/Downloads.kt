@@ -12,6 +12,7 @@ import com.nphil.marquee.core.LibraryChanges
 import com.nphil.marquee.core.MarqueeCore
 import com.nphil.marquee.core.MediaType
 import com.nphil.marquee.core.PlexItem
+import com.nphil.marquee.core.ScreenClass
 import com.nphil.marquee.data.HomeLabberStore
 import com.nphil.marquee.diagnostics.Diag
 import com.nphil.marquee.diagnostics.DiagCategory
@@ -92,7 +93,9 @@ internal class Downloads(
 		val key = currentScope()
 		val server = server(key) ?: throw DownloadFailure("The Plex server's credentials are unavailable.")
 		val capabilities = withContext(Dispatchers.Default) { PlayerCapabilities.read(context) }
-		val choices = core.downloadChoices(server, item.ratingKey, version, preferences.value.quality, capabilities, homeLabber.current())
+		val choices = core.downloadChoices(
+			server, item.ratingKey, version, preferences.value.quality, capabilities, homeLabber.current(), ScreenClass.of(context),
+		)
 		return DownloadOffer(key, version, choices)
 	}
 
@@ -111,6 +114,7 @@ internal class Downloads(
 		val capabilities = withContext(Dispatchers.Default) { PlayerCapabilities.read(context) }
 		val quality = preferences.value.quality
 		val qualityMap = homeLabber.current()
+		val screen = ScreenClass.of(context)
 		var added = 0
 		var missed = 0
 		try {
@@ -118,7 +122,7 @@ internal class Downloads(
 				if (session.state.value.downloadScope != key) break
 				if (store.state.value.any { it.scope == key && it.phase != DownloadPhase.Removed && it.title.ratingKey == episode }) continue
 				try {
-					val choices = core.downloadChoices(server, episode, 0, quality, capabilities, qualityMap)
+					val choices = core.downloadChoices(server, episode, 0, quality, capabilities, qualityMap, screen)
 					val picked = choices.options.firstOrNull { it.id == choices.preferred && it.refusal == null }
 					if (picked == null) missed++
 					else if (session.state.value.downloadScope == key && store.create(key, choices, 0, picked)) added++

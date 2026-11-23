@@ -47,6 +47,7 @@ import com.nphil.marquee.core.PlexItem
 import com.nphil.marquee.core.PlexServer
 import com.nphil.marquee.core.Reading
 import com.nphil.marquee.core.RouteKind
+import com.nphil.marquee.core.ScreenClass
 import com.nphil.marquee.core.SkipSide
 import com.nphil.marquee.core.StartRequest
 import com.nphil.marquee.core.SubtitlePick
@@ -625,6 +626,8 @@ class PlayerModel(
 			audio = audioPick,
 			subtitle = subtitlePick,
 			recordingMediaID = recordingMediaID,
+			homelabber = container.homeLabber.current(),
+			screen = ScreenClass.of(app),
 		)
 		Diag.info(
 			DiagCategory.Player, "play.request",
