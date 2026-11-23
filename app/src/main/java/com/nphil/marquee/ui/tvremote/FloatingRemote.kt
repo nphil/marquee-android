@@ -30,6 +30,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -49,6 +50,9 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.changedToDownIgnoreConsumed
+import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
@@ -79,6 +83,7 @@ import com.nphil.marquee.ui.theme.lucent
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /** Lucent's container transform: the orb and the panel are one surface, so one spring moves both. */
@@ -138,6 +143,9 @@ private fun RemoteHost(remote: TvRemote, state: TvRemote.State) {
 	var ready by remember { mutableStateOf(false) }
 	var reduced by remember { mutableStateOf(false) }
 	var dragging by remember { mutableStateOf(false) }
+	var dimmed by remember { mutableStateOf(false) }
+	var held by remember { mutableStateOf(false) }
+	var touches by remember { mutableIntStateOf(0) }
 	// Read only inside layout and draw lambdas, so a drag or a resize does not recompose.
 	var drag by remember { mutableStateOf<Offset?>(null) }
 	var panelOffset by remember { mutableStateOf(Offset.Zero) }
@@ -150,12 +158,24 @@ private fun RemoteHost(remote: TvRemote, state: TvRemote.State) {
 
 	val sidebarAvailable by remember(metrics) { derivedStateOf { metrics.profileBounds != null && metrics.sidebarWidth > 0f } }
 	fun effective(dock: RemoteDock): RemoteDock = if (dock is RemoteDock.Sidebar && !sidebarAvailable) DefaultEdge else dock
+	fun wake() {
+		dimmed = false
+		touches++
+	}
 
 	// The shell lays itself out in the first frames; showing the orb after that avoids a flash at the wrong spot.
 	LaunchedEffect(Unit) {
 		withFrameNanos { }
 		withFrameNanos { }
 		ready = true
+	}
+	// An orb resting over content dims after the dwell; any touch, drag, open panel or dock change starts the wait again.
+	LaunchedEffect(touches, effective(wanted), state.opened, dragging, held) {
+		dimmed = false
+		if (!dragging && !held && orbDimmed(effective(wanted), state.opened, DimDwellMs)) {
+			delay(DimDwellMs)
+			dimmed = true
+		}
 	}
 	LaunchedEffect(metrics, inlineMin) {
 		snapshotFlow { metrics.sidebarWidth >= inlineMin }.collect { inline -> blend.animateTo(if (inline) 1f else 0f, ContainerSpring) }
@@ -299,6 +319,7 @@ private fun RemoteHost(remote: TvRemote, state: TvRemote.State) {
 		val pressed by pressSource.collectIsPressedAsState()
 		val pressScale = animateFloatAsState(if (pressed) 0.97f else 1f, MaterialTheme.motionScheme.fastSpatialSpec())
 		val lift = animateFloatAsState(if (dragging) 1f else 0f, MaterialTheme.motionScheme.fastSpatialSpec())
+		val dimAlpha = animateFloatAsState(if (dimmed) DimmedAlpha else 1f, MaterialTheme.motionScheme.fastEffectsSpec())
 		val idle by remember { derivedStateOf { progress.value < 0.01f } }
 		val spots = remember(sidebarAvailable) {
 			buildList<RemoteDock> {
@@ -342,15 +363,16 @@ private fun RemoteHost(remote: TvRemote, state: TvRemote.State) {
 				onEnd = ::dropOrb,
 			)
 			.clickable(interactionSource = pressSource, indication = null, role = Role.Button, onClickLabel = "Open remote") {
+				wake()
 				haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
 				remote.open()
 			}
 			.semantics {
 				contentDescription = "TV Remote"
 				customActions = buildList {
-					if (sidebarAvailable) add(CustomAccessibilityAction("Dock in sidebar") { dockTo(RemoteDock.Sidebar); true })
-					add(CustomAccessibilityAction("Move to left edge") { dockTo(edgeDock(DockSide.Start)); true })
-					add(CustomAccessibilityAction("Move to right edge") { dockTo(edgeDock(DockSide.End)); true })
+					if (sidebarAvailable) add(CustomAccessibilityAction("Dock in sidebar") { wake(); dockTo(RemoteDock.Sidebar); true })
+					add(CustomAccessibilityAction("Move to left edge") { wake(); dockTo(edgeDock(DockSide.Start)); true })
+					add(CustomAccessibilityAction("Move to right edge") { wake(); dockTo(edgeDock(DockSide.End)); true })
 				}
 			}
 		// An open panel is a surface of its own: its empty areas take touches rather than pass them to the app below.
@@ -372,7 +394,9 @@ private fun RemoteHost(remote: TvRemote, state: TvRemote.State) {
 					val scale = if (p <= 0f) pressScale.value * (1f + 0.06f * lift.value) else 1f
 					scaleX = scale
 					scaleY = scale
-					alpha = if (!ready) 0f else if (reduced) fade.value else 1f
+					// The dim applies only while the container is still the orb; the panel is never dimmed.
+					val orbAlpha = if (p <= 0f) dimAlpha.value else 1f
+					alpha = (if (!ready) 0f else if (reduced) fade.value else 1f) * orbAlpha
 					shape = RoundedCornerShape(lerp(orb / 2, Radius.sheet.toPx(), p))
 					clip = true
 					// Docked and idle the orb is flat like the sidebar's own rows; it lifts only when it floats or is held.
@@ -387,6 +411,17 @@ private fun RemoteHost(remote: TvRemote, state: TvRemote.State) {
 						lerp(orbEdge, panelEdge, p), Offset(stroke / 2, stroke / 2), Size(size.width - stroke, size.height - stroke),
 						CornerRadius(max(radius - stroke / 2, 0f)), Stroke(stroke),
 					)
+				}
+				.pointerInput(Unit) {
+					// Initial pass and never consumed, so a touch that starts a drag or a tap still reaches the orb.
+					awaitPointerEventScope {
+						while (true) {
+							val event = awaitPointerEvent(PointerEventPass.Initial)
+							held = event.changes.any { it.pressed }
+							dimmed = false
+							if (event.changes.any { it.changedToDownIgnoreConsumed() || it.changedToUpIgnoreConsumed() }) touches++
+						}
+					}
 				}
 				.then(if (idle && !state.opened) orbInput else panelInput),
 		) {
