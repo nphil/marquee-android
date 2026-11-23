@@ -15,6 +15,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.Timeline
 import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.ExoPlaybackException
 import androidx.media3.exoplayer.ExoPlayer
 import com.nphil.marquee.AppContainer
 import com.nphil.marquee.core.CoreException
@@ -25,7 +26,9 @@ import com.nphil.marquee.core.openLive
 import com.nphil.marquee.core.reportLive
 import com.nphil.marquee.diagnostics.Diag
 import com.nphil.marquee.diagnostics.DiagCategory
+import com.nphil.marquee.playback.DeviceDecoders
 import com.nphil.marquee.playback.PlaybackFactory
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
@@ -34,6 +37,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
 
@@ -165,9 +169,11 @@ internal class LivePlayerModel(
 		if (!canReadLocalTuner(app)) return TuneChoice.Plex("local_network_permission")
 		val reason = plexReason ?: run {
 			val candidate = tuner.probe(next)
-			val plan = candidate?.let { readPlan(next, it, timeoutMs = 4_000) }
+			val missing = candidate?.let { undecodable(next, it) }.orEmpty()
+			val plan = candidate?.takeIf { missing.isEmpty() }?.let { readPlan(next, it, timeoutMs = 4_000) }
 			when {
 				candidate == null -> "tuner_not_reachable"
+				missing.isNotEmpty() -> "unsupported_codec"
 				plan == null -> "schedule_not_verified"
 				plan.path == DirectPlan.Path.Protected -> return TuneChoice.Refused("This channel is protected.", plan.reason)
 				plan.path == DirectPlan.Path.Plex -> plan.reason
@@ -188,6 +194,18 @@ internal class LivePlayerModel(
 			else -> Unit
 		}
 		return TuneChoice.Plex(reason)
+	}
+
+	/** What the channel needs that this tablet cannot decode. Asked before the tune, so the tuner is not given a stream that cannot play. */
+	private suspend fun undecodable(next: GuideChannel, candidate: TunerCandidate): List<String> {
+		val codecs = tunerCodecs(candidate.lineup(next.number), candidate.isLuma)
+		val (installed, names) = withContext(Dispatchers.Default) { DeviceDecoders.installed to codecs.video?.let(::decoderNames) }
+		val missing = codecs.missing { it !in container.live.undecodable && installed.canDecode(it) }
+		Diag.info(
+			DiagCategory.Player, "live.direct.codecs", "video" to codecs.video, "audio" to codecs.audio,
+			"decoders" to names, "missing" to missing.joinToString("+").ifEmpty { "none" },
+		)
+		return missing
 	}
 
 	private suspend fun readPlan(next: GuideChannel, candidate: TunerCandidate, timeoutMs: Long): DirectPlan? =
@@ -236,12 +254,20 @@ internal class LivePlayerModel(
 		}
 	}
 
-	private fun recoverDirect(problem: DirectProblem = DirectProblem.Fallback) {
+	/** [cause] is what ended the direct stream, for the log: `tracks`, `error`, `ended` or `timeout`. */
+	private fun recoverDirect(cause: String, problem: DirectProblem = DirectProblem.Fallback) {
 		val next = channel ?: return
-		when (val recovery = direct?.recover(problem)) {
-			DirectProblem.Fallback -> queueTune(next, "Couldn't play from the tuner · playing through Plex", "direct_failed")
+		val feed = direct ?: return
+		when (val recovery = feed.recover(problem)) {
+			DirectProblem.Fallback -> {
+				Diag.warning(
+					DiagCategory.Player, "live.direct.fallback", "cause" to cause, "admission" to feed.admissionName,
+					"state" to player?.playbackState?.let { STATES.getOrNull(it) },
+				)
+				queueTune(next, "Couldn't play from the tuner · playing through Plex", "direct_failed")
+			}
 			is DirectProblem.Refused -> {
-				Diag.info(DiagCategory.Player, "live.route", "route" to "stopped", "reason" to recovery.reason)
+				Diag.info(DiagCategory.Player, "live.route", "route" to "stopped", "reason" to recovery.reason, "cause" to cause)
 				fail(recovery.message)
 			}
 			null -> Unit
@@ -350,8 +376,17 @@ internal class LivePlayerModel(
 		override fun onPlayerError(error: PlaybackException) {
 			if (loaded != generation) return
 			if (direct != null) {
-				Diag.warning(DiagCategory.Player, "live.direct.failed", "code" to error.errorCodeName)
-				recoverDirect(directProblem(error.errorCode, error.cause))
+				val renderer = error as? ExoPlaybackException
+				val format = renderer?.rendererFormat?.sampleMimeType
+				Diag.warning(
+					DiagCategory.Player, "live.direct.failed", "code" to error.errorCodeName,
+					"cause" to error.cause?.javaClass?.simpleName, "renderer" to renderer?.rendererName, "format" to format,
+				)
+				// A format the decoder refuses is refused on every tune; a decoder that merely failed to start may start next time.
+				val refused = error.errorCode == PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED ||
+					error.errorCode == PlaybackException.ERROR_CODE_DECODING_FORMAT_EXCEEDS_CAPABILITIES
+				if (refused && format != null) container.live.undecodable += format
+				recoverDirect("error", directProblem(error.errorCode, error.cause))
 				return
 			}
 			if (error.errorCode == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW) {
@@ -365,8 +400,15 @@ internal class LivePlayerModel(
 
 		override fun onTracksChanged(tracks: Tracks) {
 			if (loaded != generation || direct == null || tracks.isEmpty) return
-			if ((tracks.containsType(C.TRACK_TYPE_VIDEO) && !tracks.isTypeSupported(C.TRACK_TYPE_VIDEO)) ||
-				(tracks.containsType(C.TRACK_TYPE_AUDIO) && !tracks.isTypeSupported(C.TRACK_TYPE_AUDIO))) recoverDirect()
+			val seen = arrayOf("video" to tracks.describe(C.TRACK_TYPE_VIDEO), "audio" to tracks.describe(C.TRACK_TYPE_AUDIO))
+			val unplayable = tracks.unplayable()
+			if (unplayable.isEmpty()) {
+				Diag.info(DiagCategory.Player, "live.direct.tracks", *seen)
+				return
+			}
+			Diag.warning(DiagCategory.Player, "live.direct.tracks", *seen, "unplayable" to unplayable.joinToString("+"))
+			container.live.undecodable += unplayable
+			recoverDirect("tracks")
 		}
 
 		override fun onRenderedFirstFrame() {
@@ -379,7 +421,7 @@ internal class LivePlayerModel(
 			if (playbackState == Player.STATE_READY && feed == null) timeout?.cancel()
 			if (playbackState == Player.STATE_ENDED) {
 				if (feed == null) fail("Plex ended this live stream.")
-				else recoverDirect(feed.endProblem())
+				else recoverDirect("ended", feed.endProblem())
 			}
 		}
 	}
@@ -401,7 +443,7 @@ internal class LivePlayerModel(
 		timeout = container.scope.launch {
 			delay(if (tuner == null) 20_000 else 12_000)
 			if (loaded == generation) {
-				if (tuner != null) recoverDirect()
+				if (tuner != null) recoverDirect("timeout")
 				else if (phase == LivePlayerPhase.Tuning) fail("Plex took too long to start the channel.")
 			}
 		}
@@ -528,6 +570,9 @@ private sealed interface TuneChoice {
 }
 
 private fun RecordingHandover.remainingMs(): Long = (releaseAt * 1_000).toLong() - System.currentTimeMillis()
+
+/** Media3's playback states by number, for the log. */
+private val STATES = listOf("?", "idle", "buffering", "ready", "ended")
 
 internal sealed interface LivePlayerPhase {
 	data object Tuning : LivePlayerPhase

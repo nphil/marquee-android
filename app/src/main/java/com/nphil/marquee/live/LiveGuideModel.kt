@@ -23,6 +23,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.File
 import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
 
 /** One active server/profile guide, shared between the shell and its player. Loading is owned by the visible page. */
 internal class LiveTv(private val container: AppContainer, cache: File) {
@@ -33,6 +34,9 @@ internal class LiveTv(private val container: AppContainer, cache: File) {
 	val operations = Mutex()
 
 	val dvrRelease = DvrTunerRelease()
+
+	/** MIME types a tuner's stream held that this tablet failed to decode this run; direct is not tried for them again. */
+	val undecodable: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
 	suspend fun recordAfterTunerRelease(write: suspend () -> Unit): Boolean =
 		operations.withLock { dvrRelease.beforeRecord(write) }

@@ -18,6 +18,7 @@ import androidx.compose.material3.rememberSliderState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -29,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.media3.common.MimeTypes
 import com.nphil.marquee.R
 import com.nphil.marquee.container
 import com.nphil.marquee.core.CreditsAutoplay
@@ -37,15 +39,18 @@ import com.nphil.marquee.core.QualityPreset
 import com.nphil.marquee.core.SkipTapMode
 import com.nphil.marquee.data.PlaybackPrefs
 import com.nphil.marquee.live.canReadLocalTuner
+import com.nphil.marquee.playback.DeviceDecoders
 import com.nphil.marquee.playback.rememberPlaybackPrefs
 import com.nphil.marquee.ui.components.ChoiceRow
 import com.nphil.marquee.ui.components.GroupGap
 import com.nphil.marquee.ui.components.GroupRow
 import com.nphil.marquee.ui.theme.Space
 import com.nphil.marquee.ui.theme.lucent
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Video & Playback (DESIGN §8.7): how titles stream, the hero trailer, and a show's theme music with its volume.
@@ -60,6 +65,10 @@ fun VideoPlaybackPage(contentPadding: PaddingValues) {
 		tunerPermission = canReadLocalTuner(context)
 	}
 	LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { tunerPermission = canReadLocalTuner(context) }
+	// The codec list takes tens of milliseconds to read, so it is asked off the main thread.
+	val decodesMpeg2 by produceState(true) {
+		value = withContext(Dispatchers.Default) { DeviceDecoders.installed.canDecode(MimeTypes.VIDEO_MPEG2) }
+	}
 	val profile by remember(container) {
 		container.session.state.map { it.user?.uuid }.distinctUntilChanged()
 	}.collectAsStateWithLifecycle(null)
@@ -194,6 +203,8 @@ fun VideoPlaybackPage(contentPadding: PaddingValues) {
 			Footnote(
 				if (prefs.readsTunerDirectly && !tunerPermission)
 					"Allow local network access so Marquee can reach the nearby tuner. Until then, Live TV uses Plex where available."
+				else if (prefs.readsTunerDirectly && !decodesMpeg2)
+					"This tablet can't decode MPEG-2, the video of most antenna channels, so Live TV plays through Plex."
 				else "Live TV can play straight from a nearby tuner at home. Away from home, it uses Plex.",
 			)
 		}

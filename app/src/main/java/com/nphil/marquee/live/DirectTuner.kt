@@ -228,6 +228,9 @@ internal class DirectTunerFeed(val tuner: TunerCandidate, private val url: HttpU
 	private var check: Call? = null
 	@Volatile private var admission: TunerAvailability? = null
 
+	/** For the log: what the tuner said about the lease, `none` before it said anything. */
+	val admissionName: String get() = admission?.let { it::class.simpleName } ?: "none"
+
 	val refusal: String?
 		get() = when (val state = admission) {
 			is TunerAvailability.Held -> state.message

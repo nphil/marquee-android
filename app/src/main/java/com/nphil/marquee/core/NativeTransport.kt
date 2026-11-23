@@ -60,11 +60,14 @@ class NativeTransport(private val client: OkHttpClient, private val sink: Sink =
 		val repeatable = wire.isIdempotent ?: read
 		// OkHttp strips Authorization across origins, but not Plex's custom token header.
 		val restricted = wire.restrictToOrigin || hasPlexCredential(wire.headers, url)
+		// A bodiless read can always go again, whatever Core says about repeating it (its timeline report and address
+		// probe say no). OkHttp recovers a pooled connection the server closed meanwhile by that same retry; without it
+		// the first read after a spell in the background fails, and Core drops a LAN address that still works.
 		val requestClient = client.newBuilder()
 			.connectTimeout(timeout, TimeUnit.MILLISECONDS)
 			.readTimeout(timeout, TimeUnit.MILLISECONDS)
 			.writeTimeout(timeout, TimeUnit.MILLISECONDS)
-			.retryOnConnectionFailure(repeatable)
+			.retryOnConnectionFailure(repeatable || read)
 			.followRedirects(!restricted)
 			.followSslRedirects(!restricted)
 			.build()

@@ -146,7 +146,11 @@ final class LiveCalls: Sendable {
 
         func finish() async throws {
             try? await report(.stopped)
-            try await live.stopStream(session)
+            do {
+                try await live.stopStream(session)
+            } catch PlexError.server(status: 404, message: _) {
+                // The stopped timeline can end the grab before this delete arrives; nothing is left to cancel.
+            }
         }
     }
 }

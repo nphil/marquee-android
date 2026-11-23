@@ -78,10 +78,11 @@ class MainActivity : ComponentActivity() {
 		}
 	}
 
-	// Linked phones look for each other only while Marquee is in front.
+	// Linked phones look for each other only while Marquee is in front, and a nearer Plex address may answer again.
 	override fun onStart() {
 		super.onStart()
 		container.link.setForeground(true)
+		container.session.preferLocal()
 	}
 
 	override fun onStop() {

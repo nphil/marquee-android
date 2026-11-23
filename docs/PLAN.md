@@ -164,7 +164,10 @@ Each phase ends with a release installed on the tablet.
      stay visible, and the player releases the tuner for Plex recordings or when it stops. Android 17
      requires local-network permission. Direct streams do not have a rewind buffer on Android; Plex
      playback can rewind within the server's live window. DVR rules and scheduled airings use Plex's
-     recording templates; Recorded opens the completed DVR version in the normal player.
+     recording templates; Recorded opens the completed DVR version in the normal player. Before tuning direct,
+     Android asks the tablet's decoders for what the tuner sends (the lineup's codecs for an HDHomeRun, MPEG-2
+     and AC-3 for a LumaTV) and goes to Plex when one is missing; a stream the renderers or a decoder then refuse
+     is remembered for the run. Each fallback to Plex logs its cause and the stream's tracks.
    - LumaTV Remote is opt-in. A TV can pair by QR link or a code on the local network. The sidebar
      keeps the remote just above Settings; narrow windows use Home’s toolbar instead. Pairing and
      encrypted commands use the same LumaRemoteCore as iOS.

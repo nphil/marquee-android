@@ -53,6 +53,13 @@ class MarqueeCore(private val identity: suspend () -> ClientIdentity) {
 	suspend fun connect(server: PlexServer, remembered: String?, refresh: Boolean = false): Reach =
 		call("server.connect", serverParams(server, remembered, refresh))
 
+	/**
+	 * While a remote or relay address is in use, probes the better-ranked ones and moves to the best that answers. Requests
+	 * keep the current address meanwhile. The iPhone app asks each time it comes to the front.
+	 */
+	suspend fun preferLocal(server: PlexServer, remembered: String?): Reach =
+		call("server.prefer", serverParams(server, remembered))
+
 	suspend fun sections(server: PlexServer, remembered: String?): List<LibrarySection> =
 		call("library.sections", serverParams(server, remembered, refresh = false))
 

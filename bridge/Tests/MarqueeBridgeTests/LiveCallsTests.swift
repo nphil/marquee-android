@@ -104,6 +104,16 @@ import Testing
         #expect(server.playbackRequests.last?.method == .delete)
     }
 
+    @Test func closingAStreamPlexAlreadyEndedIsNotAFailure() async throws {
+        let server = Server(releaseStatus: 404)
+        let bridge = LiveCalls()
+        let channel = try await server.channel(bridge)
+        let stream: Stream = try await server.call(bridge, "live.open", ["channel": jsonObject(channel)])
+        let _: EmptyReply = try await server.call(bridge, "live.close", ["session": stream.session])
+        #expect(server.playbackRequests.last?.url.path == Self.grab)
+        #expect(server.playbackRequests.last?.method == .delete)
+    }
+
     @Test func guideProgrammeCreatesPlexEpisodeAndExplicitSeriesRules() async throws {
         let server = Server()
         let bridge = LiveCalls()
@@ -262,11 +272,13 @@ import Testing
         private let dvrStatus: Int
         private let noDvr: Bool
         private let decisionStatus: Int
+        private let releaseStatus: Int
 
-        init(dvrStatus: Int = 200, noDvr: Bool = false, decisionStatus: Int = 200) {
+        init(dvrStatus: Int = 200, noDvr: Bool = false, decisionStatus: Int = 200, releaseStatus: Int = 200) {
             self.dvrStatus = dvrStatus
             self.noDvr = noDvr
             self.decisionStatus = decisionStatus
+            self.releaseStatus = releaseStatus
         }
 
         var requests: [PlexRequest] { recorded.withLock { $0 } }
@@ -346,7 +358,8 @@ import Testing
             case "/library/metadata/2101":
                 return try recordingDetails()
             case universal + "/decision": return PlexHTTPResponse(status: decisionStatus, body: Data())
-            case universal + "/stop", "/:/timeline", LiveCallsTests.grab: return PlexHTTPResponse(status: 200, body: Data())
+            case "/:/timeline": return PlexHTTPResponse(status: 200, body: Data())
+            case universal + "/stop", LiveCallsTests.grab: return PlexHTTPResponse(status: releaseStatus, body: Data())
             default: return PlexHTTPResponse(status: 404, body: Data())
             }
         }

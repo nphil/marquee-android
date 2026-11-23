@@ -218,6 +218,18 @@ class AppSession(
 		return reach
 	}
 
+	/**
+	 * Back in front, a nearer address may answer where a remote one was taken while the tablet was away or on another
+	 * network. Core probes the better-ranked addresses and moves to the best that answers, as the iPhone app does.
+	 */
+	fun preferLocal() {
+		val server = state.value.server ?: return
+		scope.launch {
+			val reach = orNull { core.preferLocal(server, state.value.addresses[server.id]) } ?: return@launch
+			if (server.id == state.value.server?.id) reach.connection?.let { keepAddress(server.id, it.uri) }
+		}
+	}
+
 	suspend fun sections(server: PlexServer): List<LibrarySection> {
 		try {
 			return core.sections(server, state.value.addresses[server.id])

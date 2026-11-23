@@ -89,6 +89,9 @@ final class Methods: Sendable {
                 picked = nil
             }
             return try Reply.ok(Reach(connection: picked, lines: await connection.probeRounds.last?.lines ?? []))
+        case "server.prefer":
+            let connection = try library(for: decode(ServerCall.self, payload)).connection
+            return try Reply.ok(Reach(connection: await connection.preferLocal(), lines: []))
         case "library.sections":
             let library = try library(for: decode(ServerCall.self, payload))
             return try Reply.ok(try await library.sections().map(Section.init))

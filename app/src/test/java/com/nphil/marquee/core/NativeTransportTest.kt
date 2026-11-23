@@ -90,6 +90,18 @@ class NativeTransportTest {
 		assertEquals(3, server.requestCount)
 	}
 
+	@Test
+	fun aReadCoreWillNotRepeatStillSurvivesAConnectionTheServerClosed() {
+		server.enqueue(MockResponse().setBody("warm"))
+		server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST))
+		server.enqueue(MockResponse().setBody("sent again"))
+		transport.send(9, request("/identity"), null)
+		assertEquals("warm", sink.await().body)
+		transport.send(10, request("/:/timeline", isIdempotent = false), null)
+		assertEquals("sent again", sink.await().body)
+		assertEquals(3, server.requestCount)
+	}
+
 	private class RecordingSink : NativeTransport.Sink {
 		class Answer(val status: Int = 0, val headers: String = "", val body: String = "", val failure: Int? = null)
 
