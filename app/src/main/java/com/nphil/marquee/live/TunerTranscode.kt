@@ -116,3 +116,29 @@ internal class TunerTranscode {
  */
 internal fun retriesWithoutTranscode(asked: Boolean, status: Int?, noVideo: Boolean, sharingRefusal: Boolean): Boolean =
 	asked && !sharingRefusal && (noVideo || status == 400 || status == 503)
+
+/**
+ * When a LumaTV stream ends under a viewer who did not change the channel (the converter steps aside, the TV restarts
+ * it), the same channel is reopened, at most [LIMIT] times in [WINDOW_MS]. A reopen that ends again within [QUICK_MS] is
+ * followed by one more without the conversion; after the limit playback stops.
+ */
+internal class TunerReopen {
+	class Decision(val reopen: Boolean, val n: Int, val withoutTranscode: Boolean)
+
+	private val reopened = ArrayList<Long>()
+
+	/** The stream ended at [nowMs] (monotonic). */
+	fun ended(nowMs: Long): Decision {
+		reopened.removeAll { nowMs - it > WINDOW_MS }
+		if (reopened.size >= LIMIT) return Decision(false, reopened.size, false)
+		val endedQuickly = reopened.lastOrNull()?.let { nowMs - it <= QUICK_MS } == true
+		reopened += nowMs
+		return Decision(true, reopened.size, withoutTranscode = reopened.size == 2 && endedQuickly)
+	}
+
+	companion object {
+		const val LIMIT = 2
+		const val WINDOW_MS = 60_000L
+		const val QUICK_MS = 5_000L
+	}
+}

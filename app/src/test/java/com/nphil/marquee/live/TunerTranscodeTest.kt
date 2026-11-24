@@ -75,4 +75,16 @@ class TunerTranscodeTest {
 		assertFalse(retriesWithoutTranscode(asked = true, status = 403, noVideo = false, sharingRefusal = false))
 		assertFalse(retriesWithoutTranscode(asked = false, status = 503, noVideo = true, sharingRefusal = false))
 	}
+
+	@Test
+	fun aStreamThatEndsIsReopenedTwiceAMinuteAndTheSecondReopenDropsTheConversionWhenItEndedQuickly() {
+		val policy = TunerReopen()
+		assertTrue(policy.ended(100_000).let { it.reopen && it.n == 1 && !it.withoutTranscode })
+		assertTrue(policy.ended(103_000).let { it.reopen && it.n == 2 && it.withoutTranscode })
+		assertFalse(policy.ended(104_000).reopen)
+		assertTrue(policy.ended(170_000).reopen)
+		val slow = TunerReopen()
+		slow.ended(0)
+		assertFalse(slow.ended(20_000).withoutTranscode)
+	}
 }

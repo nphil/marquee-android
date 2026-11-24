@@ -285,6 +285,9 @@ internal class DirectTunerFeed(
 	val tuner: TunerCandidate, private val url: HttpUrl, val decision: TunerTranscode.Decision = TunerTranscode.Decision(null, "not-luma", null),
 ) : Call.Factory {
 	val asked: Boolean get() = decision.asked
+
+	/** The first picture of this tune reached the screen, so an end after it is a stream lost, not one refused. */
+	@Volatile var rendered = false
 	private val client = tuner.streamClient(::trackCheck, { admission = it }, { timing?.mark(it) })
 	private var call: Call? = null
 	private var check: Call? = null

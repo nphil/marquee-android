@@ -1,5 +1,6 @@
 package com.nphil.marquee.live
 
+import android.os.SystemClock
 import android.content.Context
 import androidx.annotation.OptIn
 import androidx.compose.runtime.Stable
@@ -60,6 +61,7 @@ internal class LivePlayerModel(
 	private var closed = false
 	private var stream: LiveStream? = null
 	private var direct: DirectTunerFeed? = null
+	private var reopens = TunerReopen()
 	private var outgoingTuner: TunerCandidate? = null
 	private var resolving: Job? = null
 	private var recordingGuard: Job? = null
@@ -118,7 +120,10 @@ internal class LivePlayerModel(
 		queueTune(next, takeBack = takeBack)
 	}
 
-	private fun queueTune(next: GuideChannel, plexNotice: String? = null, plexReason: String? = null, takeBack: Boolean = false) {
+	private fun queueTune(
+		next: GuideChannel, plexNotice: String? = null, plexReason: String? = null, takeBack: Boolean = false, reopen: Boolean = false,
+	) {
+		if (!reopen) reopens = TunerReopen()
 		val mine = ++generation
 		stopMedia()
 		timing = null
@@ -289,6 +294,15 @@ internal class LivePlayerModel(
 						"source" to (feed.decision.source ?: "unknown"), "got" to "none", "fallback" to "retried", "cause" to cause, "status" to refused?.status,
 					)
 					return@launch queueTune(next)
+				}
+				// A stream that ends, or is lost once playing, is reopened (the displaced check above came first).
+				if (cause == "ended" || (cause == "error" && feed.rendered && refused?.status == null)) {
+					val reopen = reopens.ended(SystemClock.elapsedRealtime())
+					if (reopen.reopen) {
+						if (reopen.withoutTranscode) feed.tuner.declineTranscode()
+						Diag.info(DiagCategory.Player, "live.direct.reopen", "n" to reopen.n, "reason" to cause, "transcode" to !reopen.withoutTranscode)
+						return@launch queueTune(next, reopen = true)
+					}
 				}
 				return@launch recovered(next, feed, cause, if (sentence != null) (recovery as DirectProblem.Refused).copy(message = sentence) else recovery)
 			}
@@ -472,6 +486,7 @@ internal class LivePlayerModel(
 
 		override fun onRenderedFirstFrame() {
 			if (loaded != generation || direct == null) return
+			direct?.rendered = true
 			timeout?.cancel()
 			val tap = timing ?: return
 			timing = null
