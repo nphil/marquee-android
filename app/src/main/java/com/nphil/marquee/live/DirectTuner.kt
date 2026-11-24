@@ -8,6 +8,7 @@ import android.net.InetAddresses
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.os.Build
+import android.provider.Settings
 import android.os.SystemClock
 import androidx.annotation.OptIn
 import androidx.core.content.ContextCompat
@@ -68,6 +69,11 @@ internal class DirectTuner(private val context: Context, private val http: OkHtt
 	private val connections = context.getSystemService(ConnectivityManager::class.java)
 	private val memory = TunerMemory<Site, TunerCandidate>(SystemClock::elapsedRealtime)
 
+	/** What this tablet is called to a LumaTV tuner: the name shown in Settings, as Plex shows it. */
+	private val clientName = TunerTakeover.clientName(
+		Settings.Global.getString(context.contentResolver, Settings.Global.DEVICE_NAME) ?: Build.MODEL,
+	)
+
 	suspend fun probe(channel: GuideChannel): TunerCandidate? =
 		probeTunerIfAllowed(canReadLocalTuner(context)) { probeAttached(channel) }
 
@@ -100,7 +106,7 @@ internal class DirectTuner(private val context: Context, private val http: OkHtt
 			.retryOnConnectionFailure(false).followRedirects(false).followSslRedirects(false)
 			.callTimeout(0, TimeUnit.MILLISECONDS).connectTimeout(5, TimeUnit.SECONDS).readTimeout(5, TimeUnit.SECONDS)
 			.build()
-		val tuner = TunerCandidate.discover(bound, base, uuid, links.linkAddresses.mapNotNull { it.address.hostAddress }.toSet())
+		val tuner = TunerCandidate.discover(bound, base, uuid, links.linkAddresses.mapNotNull { it.address.hostAddress }.toSet(), clientName)
 		memory.keep(site, tuner)
 		return tuner
 	}
@@ -119,6 +125,7 @@ internal class TunerCandidate private constructor(
 	val isLuma: Boolean,
 	private val clientAddresses: Set<String>,
 	private val lineup: JsonArray?,
+	private val clientName: String,
 ) {
 	fun lineup(number: String): JsonObject? = lineup?.firstNotNullOfOrNull { item ->
 		(item as? JsonObject)?.takeIf { it.text("GuideNumber") == number }
@@ -142,11 +149,19 @@ internal class TunerCandidate private constructor(
 		if (holder == JsonNull) return TunerAvailability.Free
 		if (holder !is JsonObject) return TunerAvailability.Unreported
 		val name = holder.text("name")
-		if (name == TUNER_AGENT && holder.text("ip")?.let(::canonicalIP)?.let { it in clientAddresses } == true)
+		// The TV may list the holder under the ?device= name rather than the User-Agent.
+		if ((name == TUNER_AGENT || name == clientName) && holder.text("ip")?.let(::canonicalIP)?.let { it in clientAddresses } == true)
 			return TunerAvailability.Ours
 		return TunerAvailability.Held(name?.takeIf { it.isNotBlank() }?.let { "The tuner is in use by ${it.take(80)}." }
 			?: "The tuner is already in use.")
 	}
+
+	/**
+	 * The takeover that ended this tablet's stream, if the TV says one did. Null on a tuner that is not LumaTV, on a
+	 * TV that has no `displaced` list, and when nothing answers.
+	 */
+	suspend fun takeover(nowMs: Long = System.currentTimeMillis()): TunerTakeover? =
+		if (isLuma) TunerTakeover.match(json(http, base, "status.json"), clientName, nowMs) else null
 
 	/** Plex is a different client. Wait for the TV to see the outgoing Marquee socket close before it asks. */
 	suspend fun afterRelease(): TunerAvailability = withTimeoutOrNull(5_000) {
@@ -161,7 +176,7 @@ internal class TunerCandidate private constructor(
 	fun open(url: String): DirectTunerFeed? {
 		val stream = url.toHttpUrlOrNull()?.takeIf { it.sameOrigin(base) && it.username.isEmpty() && it.password.isEmpty() }
 			?: return null
-		return DirectTunerFeed(this, stream)
+		return DirectTunerFeed(this, if (isLuma) TunerTakeover.named(stream, clientName) else stream)
 	}
 
 	fun streamClient(
@@ -190,13 +205,13 @@ internal class TunerCandidate private constructor(
 		}.build()
 
 	companion object {
-		suspend fun discover(http: OkHttpClient, base: HttpUrl, uuid: String, clientAddresses: Set<String>): TunerCandidate? {
+		suspend fun discover(http: OkHttpClient, base: HttpUrl, uuid: String, clientAddresses: Set<String>, clientName: String = ""): TunerCandidate? {
 			val found = json(http, base, "discover.json") as? JsonObject ?: return null
 			val id = found.text("DeviceID")?.takeIf { it.isNotBlank() } ?: return null
 			if (!uuid.endsWith("/$id", ignoreCase = true)) return null
 			val count = (found["TunerCount"] as? JsonPrimitive)?.intOrNull?.takeIf { it > 0 } ?: 1
 			val lineup = json(http, base, "lineup.json") as? JsonArray
-			return TunerCandidate(http, base, count, found.text("DeviceAuth") == "lumatv", clientAddresses.mapNotNull(::canonicalIP).toSet(), lineup)
+			return TunerCandidate(http, base, count, found.text("DeviceAuth") == "lumatv", clientAddresses.mapNotNull(::canonicalIP).toSet(), lineup, clientName)
 		}
 
 		private suspend fun json(http: OkHttpClient, base: HttpUrl, path: String): JsonElement? = withTimeoutOrNull(500) {

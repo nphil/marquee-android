@@ -395,7 +395,7 @@ private fun LiveChrome(
 		}
 		Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
 			when (val phase = model.phase) {
-				is LivePlayerPhase.Failed -> StatusCard(phase.message, "Try again", model::retry)
+				is LivePlayerPhase.Failed -> StatusCard(phase.message, if (phase.displaced) "Watch here" else "Try again", model::retry)
 				LivePlayerPhase.Away -> StatusCard("Live TV stopped while the player was away.", "Watch again", model::retry)
 				LivePlayerPhase.Tuning -> StatusCard(model.status ?: "Tuning ${model.channel?.label.orEmpty()}", loading = true)
 				LivePlayerPhase.Buffering -> StatusCard(model.status ?: "Buffering…", loading = true)

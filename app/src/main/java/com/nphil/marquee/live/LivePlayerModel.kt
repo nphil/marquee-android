@@ -113,12 +113,12 @@ internal class LivePlayerModel(
 		else tune(initial)
 	}
 
-	fun tune(next: GuideChannel, retry: Boolean = false) {
+	fun tune(next: GuideChannel, retry: Boolean = false, takeBack: Boolean = false) {
 		if (closed || (!retry && next.id == channel?.id && phase !is LivePlayerPhase.Failed && phase != LivePlayerPhase.Away)) return
-		queueTune(next)
+		queueTune(next, takeBack = takeBack)
 	}
 
-	private fun queueTune(next: GuideChannel, plexNotice: String? = null, plexReason: String? = null) {
+	private fun queueTune(next: GuideChannel, plexNotice: String? = null, plexReason: String? = null, takeBack: Boolean = false) {
 		val mine = ++generation
 		stopMedia()
 		timing = null
@@ -134,7 +134,7 @@ internal class LivePlayerModel(
 				finishStream()
 				if (mine != generation) return@withLock
 				val choice = coroutineScope {
-					async { chooseRoute(next, plexReason) }
+					async { chooseRoute(next, plexReason, takeBack) }
 						.also { resolving = it }.await()
 				}
 				resolving = null
@@ -174,7 +174,8 @@ internal class LivePlayerModel(
 		}
 	}
 
-	private suspend fun chooseRoute(next: GuideChannel, plexReason: String?): TuneChoice {
+	/** [takeBack]: the viewer chose "Watch here" after another client took the tuner, so its being held is not a refusal. */
+	private suspend fun chooseRoute(next: GuideChannel, plexReason: String?, takeBack: Boolean = false): TuneChoice {
 		if (!container.settings.playback(guide.place.profile).first().readsTunerDirectly) return TuneChoice.Plex("setting")
 		if (!canReadLocalTuner(app)) return TuneChoice.Plex("local_network_permission")
 		val reason = plexReason ?: run {
@@ -189,8 +190,8 @@ internal class LivePlayerModel(
 				plan.path == DirectPlan.Path.Plex -> plan.reason
 				else -> {
 					val available = candidate.availability()
-					if (available is TunerAvailability.Held) return TuneChoice.Refused(available.message, "tuner_in_use")
-					if (!candidate.isLuma || available == TunerAvailability.Free || available == TunerAvailability.Ours) {
+					if (available is TunerAvailability.Held && !takeBack) return TuneChoice.Refused(available.message, "tuner_in_use")
+					if (!candidate.isLuma || takeBack || available == TunerAvailability.Free || available == TunerAvailability.Ours) {
 						plan.url?.let(candidate::open)?.let { return TuneChoice.Direct(it, plan.handover) }
 						"invalid_stream_origin"
 					} else "claim_not_verified"
@@ -268,7 +269,23 @@ internal class LivePlayerModel(
 	private fun recoverDirect(cause: String, problem: DirectProblem = DirectProblem.Fallback) {
 		val next = channel ?: return
 		val feed = direct ?: return
-		when (val recovery = feed.recover(problem)) {
+		val recovery = feed.recover(problem) ?: return
+		if (!feed.tuner.isLuma) return recovered(next, feed, cause, recovery)
+		// LumaTV is asked first whether another client took the tuner: then playback stops here, without Plex.
+		val mine = generation
+		container.scope.launch {
+			val taken = feed.tuner.takeover()
+			if (closed || mine != generation) return@launch
+			if (taken == null) return@launch recovered(next, feed, cause, recovery)
+			Diag.info(
+				DiagCategory.Player, "live.displaced", "by" to taken.by, "kind" to if (taken.byTv) "tv" else "app", "cause" to cause,
+			)
+			fail(taken.message, displaced = true)
+		}
+	}
+
+	private fun recovered(next: GuideChannel, feed: DirectTunerFeed, cause: String, recovery: DirectProblem) {
+		when (recovery) {
 			DirectProblem.Fallback -> {
 				Diag.warning(
 					DiagCategory.Player, "live.direct.fallback", "cause" to cause, "admission" to feed.admissionName,
@@ -280,7 +297,6 @@ internal class LivePlayerModel(
 				Diag.info(DiagCategory.Player, "live.route", "route" to "stopped", "reason" to recovery.reason, "cause" to cause)
 				fail(recovery.message)
 			}
-			null -> Unit
 		}
 	}
 
@@ -301,7 +317,8 @@ internal class LivePlayerModel(
 	}
 
 	fun retry() {
-		channel?.let { tune(it, retry = true) }
+		val takeBack = (phase as? LivePlayerPhase.Failed)?.displaced == true
+		channel?.let { tune(it, retry = true, takeBack = takeBack) }
 			?: container.scope.launch { start(refresh = true) }
 	}
 
@@ -530,9 +547,9 @@ internal class LivePlayerModel(
 		}
 	}
 
-	private fun fail(message: String) {
+	private fun fail(message: String, displaced: Boolean = false) {
 		endPlayback()
-		phase = LivePlayerPhase.Failed(message)
+		phase = LivePlayerPhase.Failed(message, displaced)
 	}
 
 	private fun endPlayback() {
@@ -605,7 +622,8 @@ internal sealed interface LivePlayerPhase {
 	data object Buffering : LivePlayerPhase
 	data object Ready : LivePlayerPhase
 	data object Away : LivePlayerPhase
-	data class Failed(val message: String) : LivePlayerPhase
+	/** [displaced]: another client or the TV took the tuner; the action takes it back instead of retrying. */
+	data class Failed(val message: String, val displaced: Boolean = false) : LivePlayerPhase
 }
 
 internal data class LivePosition(val behind: Long = 0L, val reach: Long = 0L) {
