@@ -190,8 +190,10 @@ internal class LivePlayerModel(
 				plan.path == DirectPlan.Path.Plex -> plan.reason
 				else -> {
 					val available = candidate.availability()
-					if (available is TunerAvailability.Held && !takeBack) return TuneChoice.Refused(available.message, "tuner_in_use")
-					if (!candidate.isLuma || takeBack || available == TunerAvailability.Free || available == TunerAvailability.Ours) {
+					// A channel on the RF the holder's viewers are on joins their tuner instead of being refused.
+					val joins = takeBack || (available is TunerAvailability.Held && candidate.shares(next.number))
+					if (available is TunerAvailability.Held && !joins) return TuneChoice.Refused(available.message, "tuner_in_use")
+					if (!candidate.isLuma || joins || available == TunerAvailability.Free || available == TunerAvailability.Ours) {
 						plan.url?.let(candidate::open)?.let { return TuneChoice.Direct(it, plan.handover) }
 						"invalid_stream_origin"
 					} else "claim_not_verified"
@@ -276,7 +278,11 @@ internal class LivePlayerModel(
 		container.scope.launch {
 			val taken = feed.tuner.takeover()
 			if (closed || mine != generation) return@launch
-			if (taken == null) return@launch recovered(next, feed, cause, recovery)
+			if (taken == null) {
+				val sentence = (recovery as? DirectProblem.Refused)?.takeIf { it.busy }?.let { feed.tuner.sharingRefusal(next.number) }
+				if (closed || mine != generation) return@launch
+				return@launch recovered(next, feed, cause, if (sentence != null) (recovery as DirectProblem.Refused).copy(message = sentence) else recovery)
+			}
 			Diag.info(
 				DiagCategory.Player, "live.displaced", "by" to taken.by, "kind" to if (taken.byTv) "tv" else "app", "cause" to cause,
 			)

@@ -163,6 +163,13 @@ internal class TunerCandidate private constructor(
 	suspend fun takeover(nowMs: Long = System.currentTimeMillis()): TunerTakeover? =
 		if (isLuma) TunerTakeover.match(json(http, base, "status.json"), clientName, nowMs) else null
 
+	/** Whether [number] is on the RF a viewer of the TV's tuner is already on, so a direct tune joins it. */
+	suspend fun shares(number: String): Boolean = isLuma && TunerSharing.shares(json(http, base, "status.json"), number)
+
+	/** The sentence for a 503 on [number]'s stream: the tuner is full, or Plex holds it. Null keeps the generic refusal. */
+	suspend fun sharingRefusal(number: String): String? =
+		if (isLuma) TunerSharing.refusalMessage(json(http, base, "status.json"), number) else null
+
 	/** Plex is a different client. Wait for the TV to see the outgoing Marquee socket close before it asks. */
 	suspend fun afterRelease(): TunerAvailability = withTimeoutOrNull(5_000) {
 		var state = availability()
@@ -341,7 +348,7 @@ internal fun directProblem(errorCode: Int, cause: Throwable?): DirectProblem {
 		val marker = refused.headerFields.entries.firstOrNull { it.key.equals("X-HDHomeRun-Error", ignoreCase = true) }
 			?.value?.firstOrNull()
 		if (marker == null && refused.responseCode in 300..399) return DirectProblem.Fallback
-		return DirectProblem.Refused(tunerHttpRefusal(refused.responseCode, marker, refused.responseBody))
+		return DirectProblem.Refused(tunerHttpRefusal(refused.responseCode, marker, refused.responseBody), busy = refused.responseCode == 503)
 	}
 	return if (errorCode in 2000..4999) DirectProblem.Fallback
 	else DirectProblem.Refused("The tuner stream stopped unexpectedly.", "unsupported_error")
@@ -365,7 +372,8 @@ internal fun tunerHttpRefusal(status: Int, marker: String?, body: ByteArray): St
 
 internal sealed interface DirectProblem {
 	data object Fallback : DirectProblem
-	data class Refused(val message: String, val reason: String = "http_refusal") : DirectProblem
+	/** [busy]: a 503, which a LumaTV tuner explains in `status.json`. */
+	data class Refused(val message: String, val reason: String = "http_refusal", val busy: Boolean = false) : DirectProblem
 }
 
 @Serializable
