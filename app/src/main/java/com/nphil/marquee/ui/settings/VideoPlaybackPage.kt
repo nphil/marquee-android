@@ -202,6 +202,17 @@ fun VideoPlaybackPage(contentPadding: PaddingValues) {
 				}
 			}
 		}
+		item(key = "smoothMotion") {
+			SwitchRow("Prefer smooth motion", prefs.prefersSmoothMotion) { on ->
+				change { it.copy(prefersSmoothMotion = on) }
+			}
+		}
+		item(key = "smoothMotionNote") {
+			Footnote(
+				"Interlaced channels (1080i, 480i) play the original broadcast at about 60 pictures a second. " +
+					"Off: the TV converts them to 30, which uses less battery and data.",
+			)
+		}
 		item(key = "directTunerNote") {
 			Footnote(
 				if (prefs.readsTunerDirectly && !tunerPermission)

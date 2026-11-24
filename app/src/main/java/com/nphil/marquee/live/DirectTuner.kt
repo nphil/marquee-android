@@ -44,6 +44,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.put
@@ -185,19 +186,26 @@ internal class TunerCandidate private constructor(
 	@Volatile private var offer: List<TunerTranscode.Profile>? = null
 
 	/** What a tune of [number] asks the tuner for: a conversion profile, or the broadcast as it is. */
-	fun transcodeDecision(number: String): TunerTranscode.Decision =
-		transcode.decide(isLuma, transcodeKey, number, offer, ::decodesVideo)
+	fun transcodeDecision(number: String, smooth: Boolean = false): TunerTranscode.Decision =
+		transcode.decide(
+			isLuma, transcodeKey, number, offer, ::decodesVideo, smooth,
+			lineupInterlaced = (lineup(number)?.get("interlaced") as? JsonPrimitive)?.booleanOrNull,
+		)
 
-	fun open(url: String, number: String): DirectTunerFeed? {
+	/** [smooth]: Settings > Video & Playback > Live TV > Prefer smooth motion. */
+	fun open(url: String, number: String, smooth: Boolean = false): DirectTunerFeed? {
 		val stream = url.toHttpUrlOrNull()?.takeIf { it.sameOrigin(base) && it.username.isEmpty() && it.password.isEmpty() }
 			?: return null
-		val decision = transcodeDecision(number)
+		val decision = transcodeDecision(number, smooth)
 		val named = if (isLuma) TunerTakeover.named(stream, clientName) else stream
 		return DirectTunerFeed(this, decision.profile?.let { TunerTranscode.ask(named, it) } ?: named, decision)
 	}
 
 	/** A picture of [height] lines reached the screen of an unconverted (or unlimited) tune of [number]. */
 	fun noteHeight(height: Int, number: String) = transcode.noted(height, transcodeKey, number)
+
+	/** A picture of an unconverted tune of [number] was [interlaced] or not. */
+	fun noteScan(interlaced: Boolean, number: String) = transcode.notedScan(interlaced, transcodeKey, number)
 
 	/** The tuner answered a conversion request badly: for the rest of this app run it is asked for the broadcast as it is. */
 	fun declineTranscode() = transcode.decline(transcodeKey)

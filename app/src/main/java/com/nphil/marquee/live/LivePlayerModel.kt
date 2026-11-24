@@ -181,7 +181,8 @@ internal class LivePlayerModel(
 
 	/** [takeBack]: the viewer chose "Watch here" after another client took the tuner, so its being held is not a refusal. */
 	private suspend fun chooseRoute(next: GuideChannel, plexReason: String?, takeBack: Boolean = false): TuneChoice {
-		if (!container.settings.playback(guide.place.profile).first().readsTunerDirectly) return TuneChoice.Plex("setting")
+		val playback = container.settings.playback(guide.place.profile).first()
+		if (!playback.readsTunerDirectly) return TuneChoice.Plex("setting")
 		if (!canReadLocalTuner(app)) return TuneChoice.Plex("local_network_permission")
 		val reason = plexReason ?: run {
 			val candidate = tuner.probe(next)
@@ -199,7 +200,7 @@ internal class LivePlayerModel(
 					val joins = takeBack || (available is TunerAvailability.Held && candidate.shares(next.number))
 					if (available is TunerAvailability.Held && !joins) return TuneChoice.Refused(available.message, "tuner_in_use")
 					if (!candidate.isLuma || joins || available == TunerAvailability.Free || available == TunerAvailability.Ours) {
-						plan.url?.let { candidate.open(it, next.number) }?.let { return TuneChoice.Direct(it, plan.handover) }
+						plan.url?.let { candidate.open(it, next.number, playback.prefersSmoothMotion) }?.let { return TuneChoice.Direct(it, plan.handover) }
 						"invalid_stream_origin"
 					} else "claim_not_verified"
 				}
@@ -291,7 +292,8 @@ internal class LivePlayerModel(
 					feed.tuner.declineTranscode()
 					Diag.info(
 						DiagCategory.Player, "live.direct.transcode", "asked" to feed.decision.profile?.name, "profile" to feed.decision.profile?.name,
-						"source" to (feed.decision.source ?: "unknown"), "got" to "none", "fallback" to "retried", "cause" to cause, "status" to refused?.status,
+						"source" to (feed.decision.source ?: "unknown"), "smooth" to feed.decision.smoothText, "interlaced" to feed.decision.interlacedText,
+						"got" to "none", "fallback" to "retried", "cause" to cause, "status" to refused?.status,
 					)
 					return@launch queueTune(next)
 				}
@@ -467,11 +469,17 @@ internal class LivePlayerModel(
 				val name = feed.decision.profile?.name ?: "none"
 				Diag.info(
 					DiagCategory.Player, "live.direct.transcode", "asked" to name, "profile" to name, "reason" to feed.decision.reason,
-					"source" to (feed.decision.source ?: "unknown"), "got" to video, "fallback" to if (feed.tuner.asksTranscode) "none" else "retried",
+					"source" to (feed.decision.source ?: "unknown"), "smooth" to feed.decision.smoothText, "interlaced" to feed.decision.interlacedText,
+					"got" to video, "fallback" to if (feed.tuner.asksTranscode) "none" else "retried",
 				)
 				// Only a tune that did not limit the picture says how tall the station is.
-				val height = tracks.groups.firstOrNull { it.type == C.TRACK_TYPE_VIDEO && it.length > 0 }?.getTrackFormat(0)?.height
+				val format = tracks.groups.firstOrNull { it.type == C.TRACK_TYPE_VIDEO && it.length > 0 }?.getTrackFormat(0)
+				val height = format?.height
 				if (height != null && height > 0 && feed.decision.profile?.maxHeight == null) feed.tuner.noteHeight(height, channel?.number ?: "")
+				// Only the original stream says whether the station is interlaced; a profile's output is already converted.
+				if (height != null && height > 0 && feed.decision.profile == null) {
+					TunerTranscode.looksInterlaced(height, format.frameRate)?.let { feed.tuner.noteScan(it, channel?.number ?: "") }
+				}
 			}
 			val seen = arrayOf("video" to tracks.describe(C.TRACK_TYPE_VIDEO), "audio" to tracks.describe(C.TRACK_TYPE_AUDIO))
 			val unplayable = tracks.unplayable()

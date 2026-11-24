@@ -49,5 +49,8 @@ class PlaybackPrefsTest {
 		stored.setPlaybackPrefs("a", PlaybackPrefs(readsTunerDirectly = false))
 		assertEquals(false, stored.playbackPrefs("a").readsTunerDirectly)
 		assertEquals(true, stored.playbackPrefs("b").readsTunerDirectly)
+		assertEquals(true, stored.playbackPrefs("a").prefersSmoothMotion)
+		stored.setPlaybackPrefs("a", PlaybackPrefs(prefersSmoothMotion = false))
+		assertEquals(false, stored.playbackPrefs("a").prefersSmoothMotion)
 	}
 }
