@@ -22,7 +22,7 @@ class TunerSharingTest {
 		assertEquals(TunerSharing.FULL_MESSAGE, TunerSharing.refusalMessage(status(listOf("2.1", "2.2", "2.1", "2.2")), "2.1"))
 		assertEquals(
 			TunerSharing.RECORDING_MESSAGE,
-			TunerSharing.refusalMessage(status(listOf("2.1"), """{"name":"Plex Media Server"}"""), "9.1"),
+			TunerSharing.refusalMessage(status(listOf("2.1"), """{"name":"Plex"}"""), "9.1"),
 		)
 	}
 

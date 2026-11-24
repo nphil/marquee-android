@@ -194,7 +194,7 @@ internal class LivePlayerModel(
 					val joins = takeBack || (available is TunerAvailability.Held && candidate.shares(next.number))
 					if (available is TunerAvailability.Held && !joins) return TuneChoice.Refused(available.message, "tuner_in_use")
 					if (!candidate.isLuma || joins || available == TunerAvailability.Free || available == TunerAvailability.Ours) {
-						plan.url?.let(candidate::open)?.let { return TuneChoice.Direct(it, plan.handover) }
+						plan.url?.let { candidate.open(it, next.number) }?.let { return TuneChoice.Direct(it, plan.handover) }
 						"invalid_stream_origin"
 					} else "claim_not_verified"
 				}
@@ -211,7 +211,7 @@ internal class LivePlayerModel(
 
 	/** What the channel needs that this tablet cannot decode. Asked before the tune, so the tuner is not given a stream that cannot play. */
 	private suspend fun undecodable(next: GuideChannel, candidate: TunerCandidate): List<String> {
-		val codecs = tunerCodecs(candidate.lineup(next.number), candidate.isLuma)
+		val codecs = tunerCodecs(candidate.lineup(next.number), candidate.isLuma, candidate.asksTranscode)
 		val (installed, names) = withContext(Dispatchers.Default) { DeviceDecoders.installed to codecs.video?.let(::decoderNames) }
 		val missing = codecs.missing { it !in container.live.undecodable && installed.canDecode(it) }
 		Diag.info(
@@ -279,8 +279,17 @@ internal class LivePlayerModel(
 			val taken = feed.tuner.takeover()
 			if (closed || mine != generation) return@launch
 			if (taken == null) {
-				val sentence = (recovery as? DirectProblem.Refused)?.takeIf { it.busy }?.let { feed.tuner.sharingRefusal(next.number) }
+				val refused = recovery as? DirectProblem.Refused
+				val sentence = refused?.takeIf { it.busy }?.let { feed.tuner.sharingRefusal(next.number) }
 				if (closed || mine != generation) return@launch
+				if (retriesWithoutTranscode(feed.asked, refused?.status, noVideo = cause == "no_video", sharingRefusal = sentence != null)) {
+					feed.tuner.declineTranscode()
+					Diag.info(
+						DiagCategory.Player, "live.direct.transcode", "asked" to feed.decision.profile?.name, "profile" to feed.decision.profile?.name,
+						"source" to (feed.decision.source ?: "unknown"), "got" to "none", "fallback" to "retried", "cause" to cause, "status" to refused?.status,
+					)
+					return@launch queueTune(next)
+				}
 				return@launch recovered(next, feed, cause, if (sentence != null) (recovery as DirectProblem.Refused).copy(message = sentence) else recovery)
 			}
 			Diag.info(
@@ -437,6 +446,19 @@ internal class LivePlayerModel(
 		override fun onTracksChanged(tracks: Tracks) {
 			if (loaded != generation || direct == null || tracks.isEmpty) return
 			timing?.mark(TuneTiming.Stage.Tracks)
+			val video = tracks.groups.firstOrNull { it.type == C.TRACK_TYPE_VIDEO && it.length > 0 }?.getTrackFormat(0)?.sampleMimeType
+			val feed = direct
+			if (feed != null && feed.tuner.isLuma) {
+				if (video == null && feed.asked) return recoverDirect("no_video")
+				val name = feed.decision.profile?.name ?: "none"
+				Diag.info(
+					DiagCategory.Player, "live.direct.transcode", "asked" to name, "profile" to name, "reason" to feed.decision.reason,
+					"source" to (feed.decision.source ?: "unknown"), "got" to video, "fallback" to if (feed.tuner.asksTranscode) "none" else "retried",
+				)
+				// Only a tune that did not limit the picture says how tall the station is.
+				val height = tracks.groups.firstOrNull { it.type == C.TRACK_TYPE_VIDEO && it.length > 0 }?.getTrackFormat(0)?.height
+				if (height != null && height > 0 && feed.decision.profile?.maxHeight == null) feed.tuner.noteHeight(height, channel?.number ?: "")
+			}
 			val seen = arrayOf("video" to tracks.describe(C.TRACK_TYPE_VIDEO), "audio" to tracks.describe(C.TRACK_TYPE_AUDIO))
 			val unplayable = tracks.unplayable()
 			if (unplayable.isEmpty()) {

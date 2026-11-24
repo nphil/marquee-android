@@ -29,6 +29,15 @@ class TunerCodecsTest {
 	}
 
 	@Test
+	fun aLumaTuneThatAsksForH264AcceptsEitherPicture() {
+		val codecs = tunerCodecs(entry(), isLuma = true, transcode = true)
+		val h264Only = Decoders { it != "video/mpeg2" }
+		assertEquals(emptyList<String>(), codecs.missing(h264Only))
+		assertEquals(emptyList<String>(), codecs.missing(Decoders { it != "video/avc" }))
+		assertEquals(listOf("video/mpeg2"), codecs.missing(Decoders { it == "audio/ac3" }))
+	}
+
+	@Test
 	fun aLineupThatNamesItsCodecsIsBelievedOverTheAtscDefault() {
 		val codecs = tunerCodecs(entry("H264", "AAC"), isLuma = true)
 		assertEquals("video/avc", codecs.video)

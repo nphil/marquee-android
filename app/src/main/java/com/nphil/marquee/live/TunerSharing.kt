@@ -23,7 +23,7 @@ internal object TunerSharing {
 	fun refusalMessage(status: JsonElement?, number: String): String? {
 		if (viewers(status, number) >= CAPACITY) return FULL_MESSAGE
 		val holder = (status as? JsonObject)?.get("holder") as? JsonObject ?: return null
-		return if (holder.text("name")?.contains("plex", ignoreCase = true) == true) RECORDING_MESSAGE else null
+		return if (holder.text("name") == "Plex") RECORDING_MESSAGE else null
 	}
 
 	/** Viewers on the RF of [number]: those watching it, or another channel of an RF group that carries it. */

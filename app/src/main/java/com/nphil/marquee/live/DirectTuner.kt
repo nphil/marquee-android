@@ -145,6 +145,7 @@ internal class TunerCandidate private constructor(
 
 	private fun availability(document: JsonElement?): TunerAvailability {
 		val status = document as? JsonObject ?: return TunerAvailability.Unreported
+		offer = TunerTranscode.offer(status)
 		val holder = status["holder"]
 		if (holder == JsonNull) return TunerAvailability.Free
 		if (holder !is JsonObject) return TunerAvailability.Unreported
@@ -180,11 +181,32 @@ internal class TunerCandidate private constructor(
 		state
 	} ?: TunerAvailability.Releasing
 
-	fun open(url: String): DirectTunerFeed? {
+	/** The profiles the TV last published in `status.json`; null when it publishes none. */
+	@Volatile private var offer: List<TunerTranscode.Profile>? = null
+
+	/** What a tune of [number] asks the tuner for: a conversion profile, or the broadcast as it is. */
+	fun transcodeDecision(number: String): TunerTranscode.Decision =
+		transcode.decide(isLuma, transcodeKey, number, offer, ::decodesVideo)
+
+	fun open(url: String, number: String): DirectTunerFeed? {
 		val stream = url.toHttpUrlOrNull()?.takeIf { it.sameOrigin(base) && it.username.isEmpty() && it.password.isEmpty() }
 			?: return null
-		return DirectTunerFeed(this, if (isLuma) TunerTakeover.named(stream, clientName) else stream)
+		val decision = transcodeDecision(number)
+		val named = if (isLuma) TunerTakeover.named(stream, clientName) else stream
+		return DirectTunerFeed(this, decision.profile?.let { TunerTranscode.ask(named, it) } ?: named, decision)
 	}
+
+	/** A picture of [height] lines reached the screen of an unconverted (or unlimited) tune of [number]. */
+	fun noteHeight(height: Int, number: String) = transcode.noted(height, transcodeKey, number)
+
+	/** The tuner answered a conversion request badly: for the rest of this app run it is asked for the broadcast as it is. */
+	fun declineTranscode() = transcode.decline(transcodeKey)
+
+	/** Whether the next tune may ask this tuner for a conversion, for the pre-tune decoder check. */
+	val asksTranscode: Boolean get() = isLuma && transcode.asks(transcodeKey)
+
+	private val transcodeKey = "${base.host}:${base.port}"
+	private val transcode get() = TunerTranscode.shared
 
 	fun streamClient(
 		admission: (Call) -> Unit, claim: (TunerAvailability) -> Unit, stamp: (TuneTiming.Stage) -> Unit,
@@ -259,7 +281,10 @@ internal sealed interface TunerAvailability {
 
 /** This one HTTP socket is the tuner lease; cancel it even if Media3 has not finished opening its source. */
 @OptIn(UnstableApi::class)
-internal class DirectTunerFeed(val tuner: TunerCandidate, private val url: HttpUrl) : Call.Factory {
+internal class DirectTunerFeed(
+	val tuner: TunerCandidate, private val url: HttpUrl, val decision: TunerTranscode.Decision = TunerTranscode.Decision(null, "not-luma", null),
+) : Call.Factory {
+	val asked: Boolean get() = decision.asked
 	private val client = tuner.streamClient(::trackCheck, { admission = it }, { timing?.mark(it) })
 	private var call: Call? = null
 	private var check: Call? = null
@@ -348,7 +373,9 @@ internal fun directProblem(errorCode: Int, cause: Throwable?): DirectProblem {
 		val marker = refused.headerFields.entries.firstOrNull { it.key.equals("X-HDHomeRun-Error", ignoreCase = true) }
 			?.value?.firstOrNull()
 		if (marker == null && refused.responseCode in 300..399) return DirectProblem.Fallback
-		return DirectProblem.Refused(tunerHttpRefusal(refused.responseCode, marker, refused.responseBody), busy = refused.responseCode == 503)
+		return DirectProblem.Refused(
+			tunerHttpRefusal(refused.responseCode, marker, refused.responseBody), busy = refused.responseCode == 503, status = refused.responseCode,
+		)
 	}
 	return if (errorCode in 2000..4999) DirectProblem.Fallback
 	else DirectProblem.Refused("The tuner stream stopped unexpectedly.", "unsupported_error")
@@ -373,7 +400,7 @@ internal fun tunerHttpRefusal(status: Int, marker: String?, body: ByteArray): St
 internal sealed interface DirectProblem {
 	data object Fallback : DirectProblem
 	/** [busy]: a 503, which a LumaTV tuner explains in `status.json`. */
-	data class Refused(val message: String, val reason: String = "http_refusal", val busy: Boolean = false) : DirectProblem
+	data class Refused(val message: String, val reason: String = "http_refusal", val busy: Boolean = false, val status: Int? = null) : DirectProblem
 }
 
 @Serializable

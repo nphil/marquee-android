@@ -16,17 +16,22 @@ import kotlinx.serialization.json.contentOrNull
  * through, whose picture is MPEG-2 and sound AC-3, and its slates are MPEG-2 as well. Any other tuner that names
  * nothing is not second-guessed.
  */
-internal class TunerCodecs(val video: String?, val audio: String?) {
-	/** What the channel needs and [decoders] cannot decode. */
-	fun missing(decoders: Decoders): List<String> = listOfNotNull(video, audio).filterNot(decoders::canDecode)
+internal class TunerCodecs(val video: String?, val audio: String?, private val videoAlternatives: List<String> = emptyList()) {
+	/** What the channel needs and [decoders] cannot decode; a picture with [videoAlternatives] is missing only when none decodes. */
+	fun missing(decoders: Decoders): List<String> = listOfNotNull(
+		video?.takeUnless { decoders.canDecode(it) || videoAlternatives.any(decoders::canDecode) },
+		audio?.takeUnless(decoders::canDecode),
+	)
 }
 
-internal fun tunerCodecs(entry: JsonObject?, isLuma: Boolean): TunerCodecs {
+/** [transcode]: the tune may ask a LumaTV for a conversion (H.264 or HEVC), which it may answer with the broadcast's MPEG-2 instead, so any of them plays. */
+internal fun tunerCodecs(entry: JsonObject?, isLuma: Boolean, transcode: Boolean = false): TunerCodecs {
 	val video = entry?.codec("VideoCodec")
 	val audio = entry?.codec("AudioCodec")
 	return TunerCodecs(
 		video = if (video != null) VIDEO[video] else MimeTypes.VIDEO_MPEG2.takeIf { isLuma },
 		audio = if (audio != null) AUDIO[audio] else MimeTypes.AUDIO_AC3.takeIf { isLuma },
+		videoAlternatives = if (isLuma && transcode && video == null) listOf(MimeTypes.VIDEO_H264, MimeTypes.VIDEO_H265) else emptyList(),
 	)
 }
 
@@ -71,3 +76,20 @@ private val AUDIO = mapOf(
 )
 
 private fun JsonObject.codec(key: String): String? = (this[key] as? JsonPrimitive)?.contentOrNull?.uppercase()
+
+/**
+ * Whether a decoder here plays [codec] (`h264` or `hevc`, as a tuner's profile names it) at [height] lines, the width
+ * being 16:9; an unknown height asks only for the codec. The size is the decoder's own limit, not a cap of the app's.
+ */
+internal fun decodesVideo(codec: String, height: Int?): Boolean {
+	val mime = when (codec) {
+		"h264" -> MimeTypes.VIDEO_H264
+		"hevc" -> MimeTypes.VIDEO_H265
+		else -> return false
+	}
+	if (height == null) return DeviceDecoders.installed.canDecode(mime)
+	return MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.any { info ->
+		!info.isEncoder && info.supportedTypes.any { it.equals(mime, ignoreCase = true) } &&
+			info.getCapabilitiesForType(mime).videoCapabilities?.isSizeSupported(height * 16 / 9, height) == true
+	}
+}

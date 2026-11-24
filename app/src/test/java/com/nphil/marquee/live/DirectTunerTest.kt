@@ -51,7 +51,7 @@ class DirectTunerTest {
 		server.enqueue(MockResponse().setHeader("Content-Type", "video/mp2t").setBody("slate"))
 		server.enqueue(MockResponse().setBody("""{"holder":null}"""))
 		val request = streamRequest()
-		val feed = checkNotNull(tuner.open(request.url.toString()))
+		val feed = checkNotNull(tuner.open(request.url.toString(), "2.1"))
 		val call = feed.newCall(request)
 		call.execute().use { assertEquals(200, it.code) }
 		val recovery = feed.recover(DirectProblem.Fallback) as DirectProblem.Refused
@@ -69,7 +69,7 @@ class DirectTunerTest {
 		server.enqueue(MockResponse().setHeader("Content-Type", "video/mp2t").setBody("terminal slate"))
 		server.enqueue(MockResponse().setBody(ourClaim))
 		val request = streamRequest()
-		val feed = checkNotNull(tuner.open(request.url.toString()))
+		val feed = checkNotNull(tuner.open(request.url.toString(), "2.1"))
 		val call = feed.newCall(request)
 		call.execute().use { assertEquals("terminal slate", it.body?.string()) }
 		assertNull(feed.refusal)
@@ -90,7 +90,7 @@ class DirectTunerTest {
 		server.enqueue(MockResponse().setBody("""{"holder":null}"""))
 		server.enqueue(MockResponse().setBody("playlist"))
 		val request = streamRequest()
-		val feed = checkNotNull(tuner.open(request.url.toString()))
+		val feed = checkNotNull(tuner.open(request.url.toString(), "2.1"))
 		val call = feed.newCall(request)
 		val failure = call.execute().use { runCatching { it.body?.bytes() }.exceptionOrNull() }
 		assertTrue(failure is IOException)
@@ -115,7 +115,7 @@ class DirectTunerTest {
 		val tuner = candidate()
 		server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
 		val request = streamRequest()
-		val feed = checkNotNull(tuner.open(request.url.toString()))
+		val feed = checkNotNull(tuner.open(request.url.toString(), "2.1"))
 		val finished = CompletableFuture<Boolean>()
 		val call = feed.newCall(request)
 		call.enqueue(object : Callback {
@@ -134,7 +134,7 @@ class DirectTunerTest {
 	fun bookingFromGuideWaitsForTheStoppedStreamClaim() = runBlocking {
 		val tuner = candidate()
 		val request = streamRequest()
-		val feed = checkNotNull(tuner.open(request.url.toString()))
+		val feed = checkNotNull(tuner.open(request.url.toString(), "2.1"))
 		val call = feed.newCall(request)
 		server.enqueue(MockResponse().setBody("video"))
 		server.enqueue(MockResponse().setBody(ourClaim))
