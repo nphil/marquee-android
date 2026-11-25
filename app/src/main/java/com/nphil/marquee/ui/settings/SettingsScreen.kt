@@ -56,6 +56,9 @@ import com.nphil.marquee.ui.theme.ThemeMode
 import com.nphil.marquee.ui.theme.Themes
 import com.nphil.marquee.ui.theme.Space
 import com.nphil.marquee.ui.theme.lucent
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 enum class SettingsPage(val title: String) {
@@ -79,6 +82,7 @@ enum class SettingsPage(val title: String) {
 	Chromecast("Chromecast"),
 	AirPlay("AirPlay"),
 	LinkedPhones("Linked Phones"),
+	BackupSync("Backup & Sync"),
 	DiagnosticLogs("Diagnostic Logs"),
 	Licences("Licences"),
 }
@@ -103,6 +107,12 @@ fun SettingsScreen(
 	val page = navigator.currentDestination?.contentKey ?: SettingsPage.Appearance
 	val shown = if (twoPane) page else navigator.currentDestination?.contentKey
 	LaunchedEffect(shown) { DiagScreen.path(shown?.title) }
+	// A backup opened from a file manager lands on its page.
+	val backup = LocalContext.current.container.backup
+	LaunchedEffect(backup) {
+		backup.state.map { it.hasPendingOpen }.distinctUntilChanged().filter { it }
+			.collect { navigator.navigateTo(ListDetailPaneScaffoldRole.Detail, SettingsPage.BackupSync) }
+	}
 
 	NavigableListDetailPaneScaffold(
 		navigator = navigator,
@@ -169,6 +179,7 @@ private fun SettingsList(
 		else -> "Not set up"
 	}
 	val posterSummary = LocalPosterLabels.current.summary
+	val backupSummary by remember(container) { container.backup.state.map { it.summary } }.collectAsStateWithLifecycle("Off")
 	BrowseScaffold(topBar = { TopAppBar(title = { Text("Settings") }) }) { padding ->
 		BrowseList(
 			modifier = Modifier.fillMaxSize(),
@@ -305,6 +316,13 @@ private fun SettingsList(
 					Labels(SettingsPage.LinkedPhones.title, linkSummary)
 				}
 			}
+			item(key = "backup") { Heading("Backup") }
+			item(key = "backupSync") {
+				PageRow(0, 1, SettingsPage.BackupSync, selected, onOpen) {
+					IconBadge(R.drawable.ic_restart_alt)
+					Labels("Backup & Sync", backupSummary)
+				}
+			}
 			item(key = "about") { Heading("About") }
 			item(key = "diagnostics") {
 				PageRow(0, 2, SettingsPage.DiagnosticLogs, selected, onOpen) {
@@ -417,6 +435,7 @@ private fun SettingsDetail(
 			SettingsPage.Chromecast -> CastSettingsPage(padding.plusInset(), CastProvider.Chromecast)
 			SettingsPage.AirPlay -> CastSettingsPage(padding.plusInset(), CastProvider.AirPlay)
 			SettingsPage.LinkedPhones -> LinkSettings(padding.plusInset())
+			SettingsPage.BackupSync -> BackupSyncPage(padding.plusInset())
 			SettingsPage.Licences -> LicencesPage(padding.plusInset())
 		}
 	}

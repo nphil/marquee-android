@@ -161,6 +161,12 @@ private fun ShellPages(
 			select(SETTINGS_KEY)
 		}
 	}
+	LaunchedEffect(container, navigator) {
+		container.backup.opens.collect {
+			navigator?.toRoot()
+			select(SETTINGS_KEY)
+		}
+	}
 	// A place that stopped being one (the layout was edited) must not come back if the layout is edited again.
 	LaunchedEffect(opened) { if (opened == null) savedPlace = null }
 	BackHandler(enabled = page != Destination.Home.name) { select(Destination.Home.name) }
