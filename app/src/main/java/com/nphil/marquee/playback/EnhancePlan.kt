@@ -13,14 +13,23 @@ import kotlin.math.sqrt
 /** The scaler Enhance Picture asks for. Off turns the whole feature off, whatever the strengths are. */
 enum class EnhanceUpscaler(val title: String) { Off("Off"), Automatic("Automatic"), LineArt("Line art") }
 
-/** The Enhance Picture setting. [sharpen] and [deband] are strengths from 0 to 1. */
+/**
+ * The Enhance Picture setting. Every strength is from 0 to 1 and 0 is off. [noiseReduction] is a small edge-preserving
+ * denoise, [deblock] smooths the seams of compression blocks and [vivid] lifts local contrast and colour for SDR.
+ */
 @Immutable
 data class PictureEnhance(
 	val upscaler: EnhanceUpscaler = EnhanceUpscaler.Off,
 	val sharpen: Float = DEFAULT_STRENGTH,
 	val deband: Float = DEFAULT_STRENGTH,
+	val noiseReduction: Float = 0f,
+	val deblock: Float = 0f,
+	val vivid: Float = 0f,
 ) {
 	val isOn: Boolean get() = upscaler != EnhanceUpscaler.Off
+
+	/** Whether any strength is above 0, so the finish pass has work even where there is nothing to scale. */
+	val touchesPicture: Boolean get() = sharpen > 0f || deband > 0f || noiseReduction > 0f || deblock > 0f || vivid > 0f
 
 	companion object {
 		const val DEFAULT_STRENGTH = 0.3f
@@ -38,10 +47,14 @@ internal enum class EnhanceScaler(val raw: String, val label: String, val kernel
 	;
 
 	companion object {
-		/** The scalers [upscaler] may use, best first: the governor steps down it before it gives the chain up. */
-		fun ladder(upscaler: EnhanceUpscaler): List<EnhanceScaler> = when (upscaler) {
+		/**
+		 * The scalers [upscaler] may use, best first: the governor steps down it before it gives the chain up. Automatic
+		 * has its strongest scaler for a low-resolution source ([sourceHeight] up to [LOW_RESOLUTION_LINES]), where the
+		 * upscale is seen; for a larger picture it takes the cheaper one.
+		 */
+		fun ladder(upscaler: EnhanceUpscaler, sourceHeight: Int): List<EnhanceScaler> = when (upscaler) {
 			EnhanceUpscaler.Off -> emptyList()
-			EnhanceUpscaler.Automatic -> listOf(Lanczos, Bicubic)
+			EnhanceUpscaler.Automatic -> if (sourceHeight <= LOW_RESOLUTION_LINES) listOf(Lanczos, Bicubic) else listOf(Bicubic)
 			EnhanceUpscaler.LineArt -> listOf(LineArt, Lanczos)
 		}
 	}
@@ -61,9 +74,15 @@ internal data class EnhancePlan(
 	val output: PixelSize,
 	val sharpen: Float,
 	val deband: Float,
+	val noiseReduction: Float,
+	val deblock: Float,
+	val vivid: Float,
 ) {
 	/** How far line art is steepened: 0 for any scaler that does not. */
 	val steepen: Float get() = if (scaler?.steepens == true) LINE_ART_STEEPEN else 0f
+
+	/** Whether the finish pass has anything to do. */
+	val finishes: Boolean get() = sharpen > 0f || deband > 0f || noiseReduction > 0f || deblock > 0f || vivid > 0f || steepen > 0f
 }
 
 /** Why the chain cannot run on this video; the video plays unchanged. */
@@ -113,7 +132,10 @@ internal fun EnhanceState.summary(): String = when (this) {
 	is EnhanceState.Idle -> "Waiting for a picture, or it already fills the screen"
 	is EnhanceState.Running ->
 		"Running · ${plan.scaler?.label ?: "No scaler"} · ${plan.source.words} → ${plan.output.words}" +
-			" · sharpen ${trimmed(plan.sharpen.toDouble(), 2)} · deband ${trimmed(plan.deband.toDouble(), 2)}"
+			" · sharpen ${trimmed(plan.sharpen.toDouble(), 2)} · deband ${trimmed(plan.deband.toDouble(), 2)}" +
+			(if (plan.noiseReduction > 0f) " · noise reduction ${trimmed(plan.noiseReduction.toDouble(), 2)}" else "") +
+			(if (plan.deblock > 0f) " · deblock ${trimmed(plan.deblock.toDouble(), 2)}" else "") +
+			(if (plan.vivid > 0f) " · vivid ${trimmed(plan.vivid.toDouble(), 2)}" else "")
 	is EnhanceState.Paused -> "Paused · ${reason.message}"
 	is EnhanceState.Unavailable -> "Unavailable · ${reason.message}"
 }
@@ -140,11 +162,16 @@ internal fun decideEnhance(options: PictureEnhance, facts: EnhanceFacts, ceiling
 	if (source.width < MIN_SIDE || source.height < MIN_SIDE) return EnhanceState.Unavailable(EnhanceUnavailable.UnsupportedPicture)
 	if (facts.powerShed) return EnhanceState.Paused(EnhancePause.PowerSaving)
 	if (overloaded) return EnhanceState.Paused(EnhancePause.DroppedFrames)
-	val ladder = EnhanceScaler.ladder(options.upscaler)
+	val ladder = EnhanceScaler.ladder(options.upscaler, source.height)
 	val output = upscaledSize(source, facts.display)
 	val scaler = if (output != null) ladder[min(ceiling, ladder.lastIndex)] else null
-	if (scaler == null && options.sharpen <= 0f && options.deband <= 0f) return EnhanceState.Idle("nothingToDo")
-	return EnhanceState.Running(EnhancePlan(scaler, source, output ?: source, options.sharpen, options.deband))
+	if (scaler == null && !options.touchesPicture) return EnhanceState.Idle("nothingToDo")
+	return EnhanceState.Running(
+		EnhancePlan(
+			scaler, source, output ?: source,
+			options.sharpen, options.deband, options.noiseReduction, options.deblock, options.vivid,
+		),
+	)
 }
 
 /**
@@ -160,11 +187,33 @@ internal fun upscaledSize(source: PixelSize, display: PixelSize?): PixelSize? {
 	return PixelSize((source.width * limit).roundToInt(), (source.height * limit).roundToInt())
 }
 
-/** The largest difference from the ring's average that deband still smooths, as a fraction of full scale: 1 to 6 levels of 255. */
-internal fun debandThreshold(strength: Float): Float = (1f + 5f * strength) / 255f
+/** The largest difference from the ring's average that deband still smooths, as a fraction of full scale: 2 to 12 levels of 255. */
+internal fun debandThreshold(strength: Float): Float = (2f + 10f * strength) / 255f
 
 /** How far the deband ring reaches, in output pixels: wider on a stretched picture, where one source step spans [scale] pixels. */
 internal fun debandRadius(strength: Float, scale: Float): Float = (4f + 12f * strength) * max(1f, scale)
+
+/**
+ * The sharpen weight the finish pass uses, 0 when off. A strength of 0.5 is the weight the old scale gave 1.0 (0.2) and 1.0
+ * is twice that strength; the shader holds the result to the local minimum and maximum, so the larger weight adds no halos.
+ */
+internal fun sharpenWeight(strength: Float): Float = if (strength > 0f) 0.02f + 0.36f * strength else 0f
+
+/** How far a neighbour may differ from the pixel (as a distance in RGB) and still be averaged in by Noise Reduction; 0 when off. */
+internal fun noiseSigma(strength: Float): Float = if (strength > 0f) 0.015f + 0.085f * strength else 0f
+
+/** How much of the filtered pixel Noise Reduction takes over the original. */
+internal fun noiseBlend(strength: Float): Float = 0.5f + 0.5f * strength
+
+/** The largest step across an 8x8 block boundary that Deblock still takes for a block edge, as a fraction of full scale: 3 to 20 levels of 255; 0 when off. */
+internal fun deblockThreshold(strength: Float): Float = if (strength > 0f) (3f + 17f * strength) / 255f else 0f
+
+/** Whether the picture is already about the size of the view, so that upscaling adds little. */
+internal fun nearScreenResolution(source: PixelSize?, display: PixelSize?): Boolean =
+	source != null && display != null && display.height > 0 && source.height >= display.height
+
+/** Sources up to this many lines are the ones Automatic gives its strongest scaler. */
+internal const val LOW_RESOLUTION_LINES = 720
 
 /**
  * The frame the effect chain is given, from the decoder's [width] and [height] and the file's pixel aspect ratio: Media3

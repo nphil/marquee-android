@@ -53,6 +53,18 @@ internal class EnhanceController(app: Context, private val rebuild: () -> Unit) 
 	var unavailable: EnhanceUnavailable? by mutableStateOf(null)
 		private set
 
+	/** The picture is already about the view's size, so upscaling adds little; the page says so. Read by the screen. */
+	var nearScreen: Boolean by mutableStateOf(false)
+		private set
+
+	private var pageOpen = false
+	private var redrawPending = false
+	private val redrawFrame = Runnable {
+		redrawPending = false
+		val engine = engine ?: return@Runnable
+		if (!engine.isPlaying && chain != EnhanceChain.NONE && engine.playbackState == Player.STATE_READY) engine.seekTo(engine.currentPosition)
+	}
+
 	/** The player was prepared with the pipeline in it; only then can a chain be set. */
 	private var installed = false
 	private var rebuilding = false
@@ -94,6 +106,7 @@ internal class EnhanceController(app: Context, private val rebuild: () -> Unit) 
 		probeWait = 0
 		lastRendered = 0
 		lastDropped = 0
+		tuning.split = false
 		timings.clear()
 		engine.addListener(this)
 		installed = setting.isOn && blocker == null
@@ -106,6 +119,7 @@ internal class EnhanceController(app: Context, private val rebuild: () -> Unit) 
 	fun detach() {
 		flushProbe()
 		handler.removeCallbacksAndMessages(null)
+		redrawPending = false
 		engine?.removeListener(this)
 		engine = null
 		installed = false
@@ -118,6 +132,7 @@ internal class EnhanceController(app: Context, private val rebuild: () -> Unit) 
 		if (setting.upscaler != options.upscaler) governor.reset()
 		options = setting
 		refresh("options")
+		redraw()
 	}
 
 	/** The title is on screen full size and the player is the page in front. */
@@ -220,10 +235,12 @@ internal class EnhanceController(app: Context, private val rebuild: () -> Unit) 
 	private fun refresh(why: String) {
 		val engine = engine ?: return
 		handler.removeCallbacks(settleSize)
-		val decided = if (awaitsPipeline) EnhanceState.Idle("restart") else decideEnhance(options, facts, governor.ceiling, governor.isPaused)
+		val overloaded = governor.isPaused && !pageOpen
+		val decided = if (awaitsPipeline) EnhanceState.Idle("restart") else decideEnhance(options, facts, governor.ceiling, overloaded)
 		val next = if (!isActive && (decided is EnhanceState.Running || decided is EnhanceState.Paused)) EnhanceState.Idle("inactive") else decided
 		val plan = (next as? EnhanceState.Running)?.plan
 		tuning.set(plan)
+		nearScreen = nearScreenResolution(facts.source, facts.display)
 		val wanted = EnhanceChain.of(plan, facts.display)
 		if (installed && wanted != chain) {
 			flushProbe()
@@ -239,6 +256,45 @@ internal class EnhanceController(app: Context, private val rebuild: () -> Unit) 
 			rebuilding = true
 			rebuild()
 		}
+	}
+
+	/**
+	 * The Enhance Picture page is open. While it is, a pause for dropped frames does not hold the chain back, so a slider
+	 * is seen at work; heat and Battery Saver still do.
+	 */
+	fun setPageOpen(on: Boolean) {
+		if (on == pageOpen) return
+		pageOpen = on
+		refresh(if (on) "page" else "pageClosed")
+	}
+
+	/**
+	 * A strength is being dragged ([on]) or was let go. While it is, both passes leave the left half of the picture as the
+	 * player would draw it, so the right half can be compared with it. Letting go logs every strength once.
+	 */
+	fun dragged(on: Boolean) {
+		tuning.split = on
+		redraw()
+		if (on) return
+		Diag.info(
+			DiagCategory.Player, "enhance.options",
+			"deband" to trimmed(options.deband.toDouble(), 2),
+			"deblock" to trimmed(options.deblock.toDouble(), 2),
+			"noiseReduction" to trimmed(options.noiseReduction.toDouble(), 2),
+			"sharpen" to trimmed(options.sharpen.toDouble(), 2),
+			"vivid" to trimmed(options.vivid.toDouble(), 2),
+		)
+	}
+
+	/**
+	 * A paused picture is not drawn again by itself, so a change to the chain would not show. Seeking to where the player
+	 * is makes it decode and draw its frame again through the chain; changes within 120 ms share one.
+	 */
+	private fun redraw() {
+		val engine = engine ?: return
+		if (redrawPending || engine.isPlaying || chain == EnhanceChain.NONE) return
+		redrawPending = true
+		handler.postDelayed(redrawFrame, REDRAW_MS)
 	}
 
 	private val isActive get() = visible && !background
@@ -274,7 +330,7 @@ internal class EnhanceController(app: Context, private val rebuild: () -> Unit) 
 		// A count that went down belongs to a new decoder: there is nothing to compare it with this time.
 		if (newRendered < 0 || newDropped < 0 || !engine.isPlaying) return
 		val plan = (state as? EnhanceState.Running)?.plan ?: return
-		val ladder = EnhanceScaler.ladder(options.upscaler)
+		val ladder = EnhanceScaler.ladder(options.upscaler, plan.source.height)
 		val rank = plan.scaler?.let(ladder::indexOf)
 		when (governor.record(newRendered, newDropped, rank, ladder.lastIndex, SystemClock.elapsedRealtime())) {
 			EnhanceGovernor.Verdict.None -> Unit
@@ -302,6 +358,9 @@ internal class EnhanceController(app: Context, private val rebuild: () -> Unit) 
 			add("output" to plan.output.toString())
 			add("sharpen" to trimmed(plan.sharpen.toDouble(), 2))
 			add("deband" to trimmed(plan.deband.toDouble(), 2))
+			if (plan.noiseReduction > 0f) add("noiseReduction" to trimmed(plan.noiseReduction.toDouble(), 2))
+			if (plan.deblock > 0f) add("deblock" to trimmed(plan.deblock.toDouble(), 2))
+			if (plan.vivid > 0f) add("vivid" to trimmed(plan.vivid.toDouble(), 2))
 			if (frameMs != null) add("frameMs" to trimmed(frameMs, 2))
 		}
 		Diag.info(DiagCategory.Player, "enhance-probe", *fields.sortedBy { it.first }.toTypedArray())
@@ -310,6 +369,7 @@ internal class EnhanceController(app: Context, private val rebuild: () -> Unit) 
 	private companion object {
 		const val SIZE_SETTLE_MS = 300L
 		const val PROBE_WAIT_TICKS = 4
+		const val REDRAW_MS = 120L
 	}
 }
 

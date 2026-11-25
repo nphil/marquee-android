@@ -215,7 +215,8 @@ internal fun PlayerScreen(
 	// The side panel: the trail of pages opened, or empty while it is closed. Closes when left alone, see PANEL_DWELL_MS.
 	var pages by remember { mutableStateOf(emptyList<TracksPage>()) }
 	var panelTouched by remember { mutableLongStateOf(0L) }
-	// A picture strength is being dragged in the panel: the panel's other parts and the controls fade away so the picture shows.
+	// A picture strength is being dragged in the panel: the panel and the controls step aside, leaving that slider in its
+	// capsule and the picture split into before and after.
 	var tuning by remember { mutableStateOf(false) }
 	var locked by rememberSaveable { mutableStateOf(false) }
 	var lockStamp by remember { mutableIntStateOf(0) }
@@ -646,6 +647,8 @@ internal fun PlayerScreen(
 				modifier = Modifier.align(Alignment.CenterEnd).safeDrawingPadding().padding(Space.s6),
 			)
 
+			// The picture shows before and after side by side while a strength is dragged.
+			if (tuning) EnhanceSplitOverlay(Modifier.matchParentSize())
 			if (panelOpen) {
 				// A tap outside the panel closes it. The picture stays in view, so a change of look is seen as it is made.
 				Box(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures(onTap = { pages = emptyList() }) })

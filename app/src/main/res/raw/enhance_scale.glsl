@@ -4,6 +4,7 @@
 //   BICUBIC: Catmull-Rom, 9 texture reads, no clamp. The cheaper step down when the GPU cannot keep up.
 // The input has to be sampled with linear filtering: two neighbours whose weights have the same sign are read as one
 // bilinear fetch placed at their weighted centre, which is exact and halves the reads of the kernel's outer taps.
+// uSplit is 1 while a slider is dragged: the left half of the picture is then left to the display's own bilinear stretch.
 #ifdef GL_FRAGMENT_PRECISION_HIGH
 precision highp float;
 #else
@@ -12,6 +13,7 @@ precision mediump float;
 
 uniform sampler2D uTexSampler;
 uniform vec2 uSourceSize;
+uniform float uSplit;
 varying vec2 vTexCoord;
 
 const float PI = 3.14159265;
@@ -46,6 +48,11 @@ vec3 fetch(vec2 p) {
 }
 
 void main() {
+	// While a slider is dragged the left half is the picture as the player would draw it: stretched by the display alone.
+	if (uSplit > 0.5 && vTexCoord.x < 0.5) {
+		gl_FragColor = vec4(fetch(vTexCoord), 1.0);
+		return;
+	}
 	vec2 inv = 1.0 / uSourceSize;
 	vec2 pos = vTexCoord * uSourceSize - 0.5;
 	vec2 origin = floor(pos);

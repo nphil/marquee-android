@@ -45,6 +45,9 @@ import com.nphil.marquee.playback.rememberPlaybackPrefs
 import com.nphil.marquee.ui.components.ChoiceRow
 import com.nphil.marquee.ui.components.GroupGap
 import com.nphil.marquee.ui.components.GroupRow
+import com.nphil.marquee.ui.player.Strength
+import com.nphil.marquee.ui.player.strength
+import com.nphil.marquee.ui.player.with
 import com.nphil.marquee.ui.theme.Space
 import com.nphil.marquee.ui.theme.lucent
 import kotlinx.coroutines.Dispatchers
@@ -79,8 +82,7 @@ fun VideoPlaybackPage(contentPadding: PaddingValues) {
 	val prefs = rememberPlaybackPrefs().value ?: return
 	// The slider follows the finger; the setting is saved when it lets go.
 	val volume = rememberSliderState(prefs.themeMusicVolume)
-	val sharpen = rememberSliderState(prefs.pictureEnhance.sharpen)
-	val deband = rememberSliderState(prefs.pictureEnhance.deband)
+	val strengths = Strength.entries.associateWith { rememberSliderState(prefs.pictureEnhance.strength(it)) }
 	// Written on the app's scope, so a change made as the page closes is still saved.
 	fun change(edit: (PlaybackPrefs) -> PlaybackPrefs) {
 		val id = profile ?: return
@@ -165,15 +167,16 @@ fun VideoPlaybackPage(contentPadding: PaddingValues) {
 		item(key = "enhance") {
 			ChoiceRow(
 				"Enhance Picture", prefs.pictureEnhance.upscaler, EnhanceUpscaler.entries, EnhanceUpscaler::title,
-				index = 0, count = if (prefs.pictureEnhance.isOn) 3 else 1,
+				index = 0, count = if (prefs.pictureEnhance.isOn) Strength.entries.size + 1 else 1,
 			) { upscaler -> change { it.copy(pictureEnhance = it.pictureEnhance.copy(upscaler = upscaler)) } }
 		}
 		if (prefs.pictureEnhance.isOn) {
-			item(key = "enhanceSharpen") {
-				StrengthRow("Sharpen", sharpen, index = 1) { value -> change { it.copy(pictureEnhance = it.pictureEnhance.copy(sharpen = value)) } }
-			}
-			item(key = "enhanceDeband") {
-				StrengthRow("Deband", deband, index = 2) { value -> change { it.copy(pictureEnhance = it.pictureEnhance.copy(deband = value)) } }
+			Strength.entries.forEachIndexed { position, which ->
+				item(key = "enhance${which.name}") {
+					StrengthRow(which.label, strengths.getValue(which), index = position + 1, count = Strength.entries.size + 1) { value ->
+						change { it.copy(pictureEnhance = it.pictureEnhance.with(which, value)) }
+					}
+				}
 			}
 		}
 		item(key = "enhanceNote") {
@@ -268,8 +271,8 @@ private fun directPlayTitle(mode: DirectPlayMode): String = when (mode) {
 
 /** A strength from 0 to 1. The slider follows the finger; the setting is saved when it lets go. */
 @Composable
-private fun StrengthRow(label: String, state: androidx.compose.material3.SliderState, index: Int, onDone: (Float) -> Unit) {
-	GroupRow(index = index, count = 3) {
+private fun StrengthRow(label: String, state: androidx.compose.material3.SliderState, index: Int, count: Int, onDone: (Float) -> Unit) {
+	GroupRow(index = index, count = count) {
 		Text(label, style = MaterialTheme.typography.titleMedium, color = lucent.ink, modifier = Modifier.weight(1f))
 		Slider(
 			state = state,

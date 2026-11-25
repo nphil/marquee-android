@@ -189,15 +189,19 @@ Each phase ends with a release installed on the tablet.
      A failed handoff leaves local playback running; returning from a receiver opens the title paused at its last position.
      Offline downloads stay on this device.
    - Enhance Picture (Settings › Video & Playback, off by default) follows the iPhone's names, defaults and log lines
-     (`enhance.state`, `enhance-probe`, the stats screen's Enhance line). The title player runs Media3 video effects: a
-     Lanczos (or bicubic) upscale to the display, then deband, a contrast-adaptive sharpen and, for Line art, an edge
-     steepening, in the app's own GLSL. SDR only: HDR and Dolby Vision, tunnelling, the software MPEG-2 renderer and
+     (`enhance.state`, `enhance-probe`, `enhance.options`, the stats screen's Enhance line). The title player runs Media3
+     video effects: a Lanczos (or bicubic) upscale to the display, then one finishing pass: Deblock (smooths 8x8 block
+     seams), Noise Reduction (small edge-preserving filter), deband, a sharpen held to the local range, for Line art an
+     edge steepening, and Vivid (local contrast and a colour lift favouring dull colours), in the app's own GLSL. The
+     strengths follow VideoEngine 3.0.3: Sharpen 0.5 is the old 1.0 and 1.0 is twice that, the deband threshold is
+     doubled; the new three are off by default. Automatic starts at Lanczos only for sources of 720 lines or fewer and
+     takes bicubic above that. SDR only: HDR and Dolby Vision, tunnelling, the software MPEG-2 renderer and
      protected video report unavailable and play unchanged. It is inactive in picture-in-picture, in the mini bar, in the
      background and on a glasses display, and it pauses on dropped frames, thermal status severe and Battery Saver, then
      returns. Differences from the iPhone: Lanczos-2 with a bicubic rung under it (fewer taps per frame), a windowed
      governor, the chain stays on a paused picture, and turning the setting on mid-title restarts the title once, since
      Media3 builds its effect pipeline only as the player prepares. The GPU cost on the tablet and on an onn-class box is
-     reasoned, not measured; nothing has run on a device.
+     reasoned, not measured; the shaders have not been compiled or run on a device.
    - A stall writes `player-stall` at once and again 4.5 s later with `again=yes` if the player is still buffering (the
      iPhone's line name): buffered ahead and in total, loading, state, play-when-ready, suppression, the last load error's
      type and HTTP status (never an address), the bandwidth estimate and dropped frames.
@@ -206,10 +210,14 @@ Each phase ends with a release installed on the tablet.
      opens a server session, so bytes read at the Up Next card would be fetched again. Media3's preload manager needs that
      same session first. Only a connection already open to the server would be saved, and the title playing keeps one.
    - Enhance Picture is also in the player's More menu (title player only, hidden while casting): Off, Automatic or
-     Line art, and with it on the Sharpen and Deband sliders, saved in the same profile setting Settings uses. A slider
-     applies live; a new scaler restarts the title once. When the title cannot be enhanced the row shows the reason and the
-     controls are off. While a slider is dragged the panel, the other rows and the player controls fade out, leaving that
-     slider; with a screen reader that explores by touch nothing hides.
+     Line art, and with it the Sharpen, Deband, Noise Reduction, Deblock and Vivid sliders, saved in the same profile
+     setting Settings uses. A slider applies live (also on a paused picture, which is drawn again by seeking to where it
+     is); a new scaler restarts the title once. When the title cannot be enhanced the row shows the reason and the
+     controls are off. A line says so when the video is already as tall as the view. While a slider is dragged the panel,
+     the other rows and the player controls hide, leaving that slider in a small capsule, and the picture splits (left
+     half as the player draws it, right half enhanced) with a divider and "Original" / "Enhanced" labels; letting go logs
+     `enhance.options` with every strength. With a screen reader that explores by touch nothing hides. While the page is
+     open a pause for dropped frames does not hold the chain back; heat and Battery Saver still do.
    - Text from picture subtitles (the iPhone's on-device recognition of PGS and VobSub) is not ported. Picture cues never
      reach the tablet's subtitle hook, Core marks embedded picture subtitles in-stream only when a route draws them, the
      menu's options are Core's, and cast senders have no text path.

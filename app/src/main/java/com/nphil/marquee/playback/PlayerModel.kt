@@ -484,6 +484,15 @@ class PlayerModel(
 	/** Why this title cannot be enhanced (HDR, tunnelling, software decoding, protected video); null when it can. */
 	internal val enhanceUnavailable: EnhanceUnavailable? get() = enhance.unavailable
 
+	/** The open picture is already about the view's size, so upscaling adds little. */
+	internal val enhanceNearScreen: Boolean get() = enhance.nearScreen
+
+	/** The Enhance Picture page is open: dropped frames do not hold the chain back while it is. */
+	fun enhancePageOpen(on: Boolean) = enhance.setPageOpen(on)
+
+	/** A picture strength is being dragged; the picture shows before and after side by side until it is let go. */
+	fun enhanceDragging(on: Boolean) = enhance.dragged(on)
+
 	/** A strength dragged in the player's menu applies to the picture at once; [saveEnhance] keeps it when the finger lets go. */
 	fun tuneEnhance(setting: PictureEnhance) = enhance.setOptions(setting)
 

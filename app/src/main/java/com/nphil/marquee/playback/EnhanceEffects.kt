@@ -22,19 +22,30 @@ import com.nphil.marquee.R
 
 /**
  * The strengths the finish pass reads at every frame, so a slider moves the picture without rebuilding the chain.
- * [scale] is how much the scale pass stretched the picture; it sets how far the deband ring reaches.
+ * [scale] is how much the scale pass stretched the picture; it sets how far the deband ring reaches. [source] is the
+ * picture's size before the scale pass, whose 8x8 blocks Deblock follows. [split] is on while a slider is dragged: both
+ * passes then leave the left half of the picture as the player would draw it.
  */
 internal class EnhanceTuning {
 	@Volatile var sharpen = 0f
 	@Volatile var deband = 0f
+	@Volatile var noiseReduction = 0f
+	@Volatile var deblock = 0f
+	@Volatile var vivid = 0f
 	@Volatile var steepen = 0f
 	@Volatile var scale = 1f
+	@Volatile var source = floatArrayOf(1f, 1f)
+	@Volatile var split = false
 
 	fun set(plan: EnhancePlan?) {
 		sharpen = plan?.sharpen ?: 0f
 		deband = plan?.deband ?: 0f
+		noiseReduction = plan?.noiseReduction ?: 0f
+		deblock = plan?.deblock ?: 0f
+		vivid = plan?.vivid ?: 0f
 		steepen = plan?.steepen ?: 0f
 		scale = if (plan?.scaler != null) plan.output.width.toFloat() / plan.source.width else 1f
+		plan?.let { source = floatArrayOf(it.source.width.toFloat(), it.source.height.toFloat()) }
 	}
 }
 
@@ -86,7 +97,7 @@ internal class EnhanceTimings {
 internal data class EnhanceChain(val kernel: ScaleKernel?, val display: PixelSize?, val finish: Boolean) {
 	@OptIn(UnstableApi::class)
 	fun effects(tuning: EnhanceTuning, timings: EnhanceTimings): List<Effect> = listOfNotNull(
-		kernel?.let { EnhanceScaleEffect(it, display, timings) },
+		kernel?.let { EnhanceScaleEffect(it, display, tuning, timings) },
 		if (finish) EnhanceFinishEffect(tuning, timings) else null,
 	)
 
@@ -96,7 +107,7 @@ internal data class EnhanceChain(val kernel: ScaleKernel?, val display: PixelSiz
 		fun of(plan: EnhancePlan?, display: PixelSize?): EnhanceChain {
 			if (plan == null) return NONE
 			val kernel = plan.scaler?.kernel
-			val finish = plan.sharpen > 0f || plan.deband > 0f || plan.steepen > 0f
+			val finish = plan.finishes
 			return EnhanceChain(kernel, display.takeIf { kernel != null }, finish)
 		}
 	}
@@ -107,14 +118,18 @@ internal data class EnhanceChain(val kernel: ScaleKernel?, val display: PixelSiz
 internal class EnhanceScaleEffect(
 	private val kernel: ScaleKernel,
 	private val display: PixelSize?,
+	private val tuning: EnhanceTuning,
 	private val timings: EnhanceTimings,
 ) : GlEffect {
 	// HDR frames arrive in a different colour space than the shaders are written for; they pass through untouched.
 	override fun toGlShaderProgram(context: Context, useHdr: Boolean): GlShaderProgram =
-		if (useHdr) PassthroughShaderProgram() else ScaleProgram(context, kernel, display, timings)
+		if (useHdr) PassthroughShaderProgram() else ScaleProgram(context, kernel, display, tuning, timings)
 }
 
-/** The finishing pass: deband, sharpen and, for line art, edge steepening, at the strengths in [tuning] at each frame. */
+/**
+ * The finishing pass: block seams, noise, banding, sharpness, line-art edges and vivid colour, at the strengths in
+ * [tuning] at each frame.
+ */
 @OptIn(UnstableApi::class)
 internal class EnhanceFinishEffect(
 	private val tuning: EnhanceTuning,
@@ -189,6 +204,7 @@ private class ScaleProgram(
 	context: Context,
 	kernel: ScaleKernel,
 	private val display: PixelSize?,
+	private val tuning: EnhanceTuning,
 	timings: EnhanceTimings,
 ) : EnhanceProgram(context, R.raw.enhance_scale, listOf(kernel.define), timings, EnhanceTimings.SCALE) {
 	private val sourceSize = FloatArray(2)
@@ -202,6 +218,7 @@ private class ScaleProgram(
 
 	override fun bind(program: GlProgram) {
 		program.setFloatsUniform("uSourceSize", sourceSize)
+		program.setFloatUniform("uSplit", if (tuning.split) 1f else 0f)
 	}
 }
 
@@ -221,11 +238,20 @@ private class FinishProgram(
 
 	override fun bind(program: GlProgram) {
 		val deband = tuning.deband
+		val noise = tuning.noiseReduction
+		val deblock = tuning.deblock
 		program.setFloatsUniform("uSize", size)
-		program.setFloatUniform("uSharpen", tuning.sharpen)
+		program.setFloatsUniform("uSourceSize", tuning.source)
+		program.setFloatUniform("uDeblock", deblockThreshold(deblock))
+		program.setFloatUniform("uNoiseSigma", noiseSigma(noise))
+		program.setFloatUniform("uNoiseBlend", noiseBlend(noise))
+		program.setFloatUniform("uSharpen", sharpenWeight(tuning.sharpen))
 		program.setFloatUniform("uSteepen", tuning.steepen)
+		program.setFloatUniform("uVivid", tuning.vivid)
 		program.setFloatUniform("uDebandThreshold", if (deband > 0f) debandThreshold(deband) else 0f)
 		program.setFloatUniform("uDebandRadius", debandRadius(deband, tuning.scale))
+		program.setFloatUniform("uDither", if (deband > 0f || noise > 0f || deblock > 0f) 1f else 0f)
+		program.setFloatUniform("uSplit", if (tuning.split) 1f else 0f)
 		program.setFloatUniform("uFrame", (frames % NOISE_FRAMES).toFloat())
 	}
 

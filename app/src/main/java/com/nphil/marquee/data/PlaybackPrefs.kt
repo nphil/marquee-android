@@ -72,6 +72,9 @@ private fun prefersSmoothMotion(profile: String) = booleanPreferencesKey("playba
 private fun enhanceUpscaler(profile: String) = stringPreferencesKey("playback.$profile.pictureEnhance.upscaler")
 private fun enhanceSharpen(profile: String) = floatPreferencesKey("playback.$profile.pictureEnhance.sharpen")
 private fun enhanceDeband(profile: String) = floatPreferencesKey("playback.$profile.pictureEnhance.deband")
+private fun enhanceNoiseReduction(profile: String) = floatPreferencesKey("playback.$profile.pictureEnhance.noiseReduction")
+private fun enhanceDeblock(profile: String) = floatPreferencesKey("playback.$profile.pictureEnhance.deblock")
+private fun enhanceVivid(profile: String) = floatPreferencesKey("playback.$profile.pictureEnhance.vivid")
 
 internal fun Preferences.playbackPrefs(profile: String?): PlaybackPrefs {
 	if (profile == null) return PlaybackPrefs()
@@ -96,6 +99,9 @@ internal fun Preferences.playbackPrefs(profile: String?): PlaybackPrefs {
 			upscaler = EnhanceUpscaler.entries.firstOrNull { it.name == this[enhanceUpscaler(profile)] } ?: defaults.pictureEnhance.upscaler,
 			sharpen = (this[enhanceSharpen(profile)] ?: defaults.pictureEnhance.sharpen).coerceIn(0f, 1f),
 			deband = (this[enhanceDeband(profile)] ?: defaults.pictureEnhance.deband).coerceIn(0f, 1f),
+			noiseReduction = (this[enhanceNoiseReduction(profile)] ?: defaults.pictureEnhance.noiseReduction).coerceIn(0f, 1f),
+			deblock = (this[enhanceDeblock(profile)] ?: defaults.pictureEnhance.deblock).coerceIn(0f, 1f),
+			vivid = (this[enhanceVivid(profile)] ?: defaults.pictureEnhance.vivid).coerceIn(0f, 1f),
 		),
 	)
 }
@@ -119,4 +125,7 @@ internal fun MutablePreferences.setPlaybackPrefs(profile: String, prefs: Playbac
 	this[enhanceUpscaler(profile)] = prefs.pictureEnhance.upscaler.name
 	this[enhanceSharpen(profile)] = prefs.pictureEnhance.sharpen.coerceIn(0f, 1f)
 	this[enhanceDeband(profile)] = prefs.pictureEnhance.deband.coerceIn(0f, 1f)
+	this[enhanceNoiseReduction(profile)] = prefs.pictureEnhance.noiseReduction.coerceIn(0f, 1f)
+	this[enhanceDeblock(profile)] = prefs.pictureEnhance.deblock.coerceIn(0f, 1f)
+	this[enhanceVivid(profile)] = prefs.pictureEnhance.vivid.coerceIn(0f, 1f)
 }

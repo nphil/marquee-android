@@ -26,7 +26,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/** The More menu's Enhance Picture row opens its page; choosing Automatic brings the Sharpen and Deband sliders. */
+/** The More menu's Enhance Picture row opens its page; choosing Automatic brings the strength sliders. */
 @RunWith(AndroidJUnit4::class)
 class EnhancePageTest {
 	@get:Rule
@@ -48,6 +48,11 @@ class EnhancePageTest {
 		rule.onNodeWithText("Automatic").performClick()
 		rule.onNodeWithContentDescription("Sharpen").assertIsDisplayed()
 		rule.onNodeWithContentDescription("Deband").assertIsDisplayed()
+		// The page may be taller than the test window; the others only need to be in the page.
+		rule.onNodeWithContentDescription("Noise Reduction").assertExists()
+		rule.onNodeWithContentDescription("Deblock").assertExists()
+		rule.onNodeWithContentDescription("Vivid").assertExists()
+		rule.onNodeWithText(ENHANCE_NEAR_SCREEN_NOTE).assertExists()
 	}
 
 	@Composable
@@ -59,11 +64,9 @@ class EnhancePageTest {
 				NavRow(0, 1, "Enhance Picture", enhanceRowValue(setting, null), R.drawable.ic_contrast) { open = true }
 			} else {
 				EnhancePage(
-					setting, unavailable = null, fade = 1f, onDragging = {},
+					setting, unavailable = null, nearScreen = true, fade = 1f, onDragging = {},
 					onUpscaler = { upscaler: EnhanceUpscaler -> setting = setting.copy(upscaler = upscaler) },
-					onStrength = { which, value, _ ->
-						setting = if (which == Strength.Sharpen) setting.copy(sharpen = value) else setting.copy(deband = value)
-					},
+					onStrength = { which, value, _ -> setting = setting.with(which, value) },
 				)
 			}
 		}

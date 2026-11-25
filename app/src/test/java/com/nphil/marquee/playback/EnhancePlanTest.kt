@@ -110,10 +110,75 @@ class EnhancePlanTest {
 
 	@Test
 	fun debandReachesFurtherOnAStretchedPicture() {
-		assertEquals(1f, debandThreshold(0f) * 255f, 1e-4f)
-		assertEquals(6f, debandThreshold(1f) * 255f, 1e-4f)
+		assertEquals(2f, debandThreshold(0f) * 255f, 1e-4f)
+		assertEquals(12f, debandThreshold(1f) * 255f, 1e-4f)
 		assertEquals(4f, debandRadius(0f, 0.5f), 1e-4f)
 		assertEquals(32f, debandRadius(1f, 2f), 1e-4f)
+	}
+
+	@Test
+	fun sharpenHalfIsTheOldFullStrengthAndFullIsTwiceThat() {
+		assertEquals(0f, sharpenWeight(0f))
+		// The old weight was 0.02 + 0.18 * strength, so 1.0 gave 0.2; 2.0 would have given 0.38.
+		assertEquals(0.2f, sharpenWeight(0.5f), 1e-6f)
+		assertEquals(0.38f, sharpenWeight(1f), 1e-6f)
+	}
+
+	@Test
+	fun theNewEffectsAreOffAtZeroAndGrowWithTheirStrength() {
+		assertEquals(0f, noiseSigma(0f))
+		assertEquals(0f, deblockThreshold(0f))
+		assertTrue(noiseSigma(1f) > noiseSigma(0.1f) && noiseSigma(0.1f) > 0f)
+		assertEquals(3f, deblockThreshold(0f + 1e-6f) * 255f, 1e-3f)
+		assertEquals(20f, deblockThreshold(1f) * 255f, 1e-4f)
+		assertEquals(1f, noiseBlend(1f))
+	}
+
+	@Test
+	fun theNewStrengthsAreOffByDefaultAndEachKeepsTheFinishPassGoing() {
+		val defaults = PictureEnhance()
+		assertEquals(0f, defaults.noiseReduction)
+		assertEquals(0f, defaults.deblock)
+		assertEquals(0f, defaults.vivid)
+		val full = ready.copy(source = screen)
+		val bare = PictureEnhance(EnhanceUpscaler.Automatic, sharpen = 0f, deband = 0f)
+		assertEquals(EnhanceState.Idle("nothingToDo"), decideEnhance(bare, full, 0, false))
+		for (one in listOf(bare.copy(noiseReduction = 0.4f), bare.copy(deblock = 0.4f), bare.copy(vivid = 0.4f))) {
+			val plan = running(decideEnhance(one, full, 0, false))
+			assertTrue(plan.finishes)
+			assertEquals(one.noiseReduction, plan.noiseReduction)
+			assertEquals(one.deblock, plan.deblock)
+			assertEquals(one.vivid, plan.vivid)
+			assertEquals(EnhanceChain(null, null, finish = true), EnhanceChain.of(plan, full.display))
+		}
+	}
+
+	@Test
+	fun automaticTakesItsStrongestScalerOnlyForLowResolutionSources() {
+		assertEquals(listOf(EnhanceScaler.Lanczos, EnhanceScaler.Bicubic), EnhanceScaler.ladder(EnhanceUpscaler.Automatic, 720))
+		assertEquals(listOf(EnhanceScaler.Lanczos, EnhanceScaler.Bicubic), EnhanceScaler.ladder(EnhanceUpscaler.Automatic, 480))
+		assertEquals(listOf(EnhanceScaler.Bicubic), EnhanceScaler.ladder(EnhanceUpscaler.Automatic, 721))
+		assertEquals(listOf(EnhanceScaler.LineArt, EnhanceScaler.Lanczos), EnhanceScaler.ladder(EnhanceUpscaler.LineArt, 1080))
+		val hd = ready.copy(source = PixelSize(1920, 1080), display = PixelSize(3840, 2160))
+		assertEquals(EnhanceScaler.Bicubic, running(decideEnhance(automatic, hd, 0, false)).scaler)
+	}
+
+	@Test
+	fun thePageNotesAPictureThatIsAlreadyAboutTheViewsSize() {
+		assertTrue(nearScreenResolution(PixelSize(1920, 1080), PixelSize(2000, 1080)))
+		assertTrue(nearScreenResolution(PixelSize(3840, 2160), PixelSize(2560, 1440)))
+		assertFalse(nearScreenResolution(PixelSize(1280, 720), PixelSize(2560, 1440)))
+		assertFalse(nearScreenResolution(null, PixelSize(2560, 1440)))
+		assertFalse(nearScreenResolution(PixelSize(1920, 1080), null))
+	}
+
+	@Test
+	fun theStatsLineNamesTheNewEffectsOnlyWhileTheyAreOn() {
+		val plan = running(decideEnhance(automatic.copy(noiseReduction = 0.5f, vivid = 0.25f), ready, 0, false))
+		assertEquals(
+			"Running · GPU Lanczos scaler · 1280×720 → 2560×1440 · sharpen 0.3 · deband 0.3 · noise reduction 0.5 · vivid 0.25",
+			EnhanceState.Running(plan).summary(),
+		)
 	}
 
 	@Test
