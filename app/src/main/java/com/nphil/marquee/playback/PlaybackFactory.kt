@@ -22,6 +22,7 @@ import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
+import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 import androidx.media3.exoplayer.video.VideoRendererEventListener
 import com.nphil.marquee.ffmpeg.FfmpegVideoRenderer
 import okhttp3.OkHttpClient
@@ -75,11 +76,18 @@ class PlaybackFactory(private val context: Context, private val http: OkHttpClie
 		return player
 	}
 
-	/** What [url] opens: the server's HLS conversion when [hls], else the file itself, fetched with [headers]. [about] is what the system's controls show for it. */
-	fun source(headers: Map<String, String>, url: String, hls: Boolean, about: MediaMetadata = MediaMetadata.EMPTY): MediaSource {
+	/**
+	 * What [url] opens: the server's HLS conversion when [hls], else the file itself, fetched with [headers]. [about] is what the
+	 * system's controls show for it. [reconnects] retries a load that fails on the link or the server's side ([ReconnectLoadErrorPolicy]).
+	 */
+	fun source(
+		headers: Map<String, String>, url: String, hls: Boolean, about: MediaMetadata = MediaMetadata.EMPTY, reconnects: Boolean = false,
+	): MediaSource {
 		val item = MediaItem.Builder().setUri(url).setMediaMetadata(about).build()
 		val factory = if (item.localConfiguration?.uri?.scheme == "file") DefaultDataSource.Factory(context) else data(headers)
-		return if (hls) HlsMediaSource.Factory(factory).createMediaSource(item) else ProgressiveMediaSource.Factory(factory).createMediaSource(item)
+		val policy = if (reconnects) ReconnectLoadErrorPolicy() else DefaultLoadErrorHandlingPolicy()
+		return if (hls) HlsMediaSource.Factory(factory).setLoadErrorHandlingPolicy(policy).createMediaSource(item)
+		else ProgressiveMediaSource.Factory(factory).setLoadErrorHandlingPolicy(policy).createMediaSource(item)
 	}
 
 	private fun data(headers: Map<String, String>) = OkHttpDataSource.Factory(http).setDefaultRequestProperties(headers)

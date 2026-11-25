@@ -226,6 +226,12 @@ class PlayerModel(
 	private var generation = 0
 	private var onDeviceFailed = false
 	private var everReady = false
+	private val reconnection = StreamReconnect()
+
+	/** From a failure to the restarted stream playing. No report goes out meanwhile, so the server sees neither a stop nor a stale position. */
+	private var reconnecting = false
+	private var reconnectBeganAt = 0L
+	private var reconnectJob: Job? = null
 	private var watched = false
 	private var reporting = false
 	private var lastMs = 0L
@@ -574,7 +580,11 @@ class PlayerModel(
 	}
 
 	/** Opens the title again from where it was, after a failure. */
-	fun retry() = reopen()
+	fun retry() {
+		reconnectJob?.cancel()
+		reconnection.reset()
+		reopen()
+	}
 
 	private fun reopen() {
 		if (castReceiver != null && castTransport?.connecting != null) return
@@ -618,6 +628,7 @@ class PlayerModel(
 			val kind = (e as? CoreException)?.kind
 			Diag.warning(DiagCategory.Player, "play.start.failed", "error" to (kind?.name ?: e.javaClass.simpleName))
 			if (gen == generation) {
+				if (receiver == null && reconnecting && kind == CoreException.Kind.Unreachable && reconnectOpen(startAt, autoplay)) return
 				val message = when {
 					e is DownloadFailure -> e.message ?: "This download is unavailable."
 					isOffline -> "This download could not be opened."
@@ -1078,7 +1089,7 @@ class PlayerModel(
 		engine.addAnalyticsListener(engineStats)
 		engine.setPlaybackSpeed(speed)
 		engine.setWakeMode(if (isOffline) C.WAKE_MODE_LOCAL else C.WAKE_MODE_NETWORK)
-		val source = factory.source(opens.headers, opens.url, hls, mediaMetadata(chosen))
+		val source = factory.source(opens.headers, opens.url, hls, mediaMetadata(chosen), reconnects = true)
 		if (hls) engine.setMediaSource(source) else engine.setMediaSource(source, (chosen.startAt * 1000).toLong())
 		enhance.attach(engine, chosen.item.ratingKey, prefs.pictureEnhance, chosen)
 		engine.playWhenReady = autoplay
@@ -1156,6 +1167,7 @@ class PlayerModel(
 	private fun uptime() = SystemClock.elapsedRealtime() / 1000.0
 
 	private fun ready() {
+		if (reconnecting) reconnected()
 		if (everReady) return
 		everReady = true
 		readyAt = SystemClock.elapsedRealtime()
@@ -1363,6 +1375,7 @@ class PlayerModel(
 		val chosen = plan
 		Diag.warning(DiagCategory.Player, "play.failed", "code" to error.errorCodeName, "route" to chosen?.route?.kind?.name)
 		if (enhance.failed(error)) return
+		if (reconnect(error)) return
 		if (!isOffline && chosen?.route?.kind == RouteKind.DirectPlay && !onDeviceFailed) {
 			// The tablet could not play the file itself: the server converts it, from where it stopped.
 			onDeviceFailed = true
@@ -1375,7 +1388,84 @@ class PlayerModel(
 		}
 	}
 
+	/**
+	 * A stream that fails while it plays starts again at the last played position, after a growing wait, and shows as
+	 * buffering throughout: on the same player, or by a new session when the server lost the conversion. False when
+	 * the failure is a refusal that stays or the budget is spent, and the failure then takes the way it always did.
+	 */
+	private fun reconnect(error: PlaybackException): Boolean {
+		val chosen = plan ?: return false
+		val engine = player ?: return false
+		if ((!everReady && !reconnecting) || isOffline || castReceiver != null) return false
+		val status = StreamReconnect.httpStatus(error)
+		val replan = stream?.kind == PlayStream.StreamKind.Hls && StreamReconnect.sessionLost(status)
+		if (!replan && !StreamReconnect.isRetryable(error.errorCode, status)) return false
+		// Read while the failed player still holds the position.
+		val at = movieMs()
+		val now = SystemClock.elapsedRealtime()
+		val step = reconnection.failed(now) as? StreamReconnect.Step.Reconnect
+		if (step == null) {
+			reconnecting = false
+			return false
+		}
+		Diag.warning(
+			DiagCategory.Player, "stream.reconnect",
+			"n" to step.attempt, "after" to step.afterMs / 1000.0, "reason" to "${error.errorCodeName} ${status ?: ""}".trim(),
+			"route" to chosen.route.kind.name, "at" to at / 1000.0,
+		)
+		if (!reconnecting) reconnectBeganAt = now
+		reconnecting = true
+		isBuffering = true
+		reconnectJob?.cancel()
+		val gen = generation
+		reconnectJob = viewModelScope.launch {
+			delay(step.afterMs)
+			if (gen != generation) return@launch
+			if (replan) open(startAt = at / 1000.0, autoplay = wantsPlay()) else reprepare(engine, chosen, at)
+		}
+		return true
+	}
+
+	/** The same stream again on the same player, from [atMs] on the title's clock. */
+	private fun reprepare(engine: ExoPlayer, chosen: PlayPlan, atMs: Long) {
+		val opens = stream ?: return
+		if (player !== engine) return
+		val hls = opens.kind == PlayStream.StreamKind.Hls
+		engine.setMediaSource(
+			factory.source(opens.headers, opens.url, hls, mediaMetadata(chosen), reconnects = true),
+			(atMs - (origin * 1000).toLong()).coerceAtLeast(0),
+		)
+		engine.prepare()
+	}
+
+	/** A new session that could not reach the server is tried again within the same budget. */
+	private fun reconnectOpen(startAt: Double?, autoplay: Boolean): Boolean {
+		val step = reconnection.failed(SystemClock.elapsedRealtime()) as? StreamReconnect.Step.Reconnect ?: return false
+		Diag.warning(
+			DiagCategory.Player, "stream.reconnect",
+			"n" to step.attempt, "after" to step.afterMs / 1000.0, "reason" to "server unreachable",
+			"route" to plan?.route?.kind?.name, "at" to startAt,
+		)
+		reconnectJob = viewModelScope.launch {
+			delay(step.afterMs)
+			open(startAt, autoplay)
+		}
+		return true
+	}
+
+	private fun reconnected() {
+		reconnecting = false
+		reconnection.landed(movieMs())
+		Diag.notice(
+			DiagCategory.Player, "stream.reconnected",
+			"n" to reconnection.attempts, "at" to movieMs() / 1000.0, "ms" to SystemClock.elapsedRealtime() - reconnectBeganAt,
+			"route" to plan?.route?.kind?.name,
+		)
+	}
+
 	private fun fail(message: String) {
+		reconnecting = false
+		reconnectJob?.cancel()
 		// Reads the position while the player still exists, so Try Again and the final stop know where it was.
 		movieMs()
 		if (castReceiver == null) cancelCastConnect()
@@ -1420,6 +1510,7 @@ class PlayerModel(
 			while (true) {
 				delay(REPORT_INTERVAL_MS)
 				report()
+				reconnection.playing(movieMs())
 				val chosen = plan
 				if (chosen != null && chosen.duration > 0 && movieMs() >= chosen.duration * WATCHED_AT * 1000) markWatched()
 				offers.tick(movieMs() / 1000.0)
@@ -1446,7 +1537,7 @@ class PlayerModel(
 			container.downloads.watched(id, offset = time, finished = false)
 			return
 		}
-		if (reporting || phase != PlayerPhase.Playing || !canControl) return
+		if (reporting || phase != PlayerPhase.Playing || !canControl || reconnecting) return
 		val state = when {
 			local?.let { it.playbackState == Player.STATE_BUFFERING } ?: isBuffering -> "buffering"
 			local?.isPlaying ?: isPlaying -> "playing"
