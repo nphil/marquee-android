@@ -188,6 +188,16 @@ Each phase ends with a release installed on the tablet.
    - Chromecast and AirPlay are separate per-device opt-ins under Integrations. The player has one receiver chooser.
      A failed handoff leaves local playback running; returning from a receiver opens the title paused at its last position.
      Offline downloads stay on this device.
+   - Enhance Picture (Settings › Video & Playback, off by default) follows the iPhone's names, defaults and log lines
+     (`enhance.state`, `enhance-probe`, the stats screen's Enhance line). The title player runs Media3 video effects: a
+     Lanczos (or bicubic) upscale to the display, then deband, a contrast-adaptive sharpen and, for Line art, an edge
+     steepening, in the app's own GLSL. SDR only: HDR and Dolby Vision, tunnelling, the software MPEG-2 renderer and
+     protected video report unavailable and play unchanged. It is inactive in picture-in-picture, in the mini bar, in the
+     background and on a glasses display, and it pauses on dropped frames, thermal status severe and Battery Saver, then
+     returns. Differences from the iPhone: Lanczos-2 with a bicubic rung under it (fewer taps per frame), a windowed
+     governor, the chain stays on a paused picture, and turning the setting on mid-title restarts the title once, since
+     Media3 builds its effect pipeline only as the player prepares. The GPU cost on the tablet and on an onn-class box is
+     reasoned, not measured; nothing has run on a device.
 5. **Android extras** (section 6).
 
 ## 5. Verification

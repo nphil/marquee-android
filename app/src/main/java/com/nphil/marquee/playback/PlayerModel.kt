@@ -83,8 +83,10 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -360,10 +362,14 @@ class PlayerModel(
 		override fun onPlayerError(error: PlaybackException) = failed(error)
 	}
 
+	/** Enhance Picture for the open title; the screen tells it when the picture is on show. */
+	private val enhance = EnhanceController(app) { reopen() }
+
 	init {
 		Diag.beginPlayback()
 		viewModelScope.launch { open(startAt = null) }
 		viewModelScope.launch { for (tap in taps) answerTap(tap) }
+		viewModelScope.launch { container.playbackPrefsFlow().map { it.pictureEnhance }.distinctUntilChanged().collect(enhance::setOptions) }
 	}
 
 	/** Where the title is, in milliseconds on the title's clock, regardless of which player is playing it. */
@@ -428,7 +434,8 @@ class PlayerModel(
 		val chosen = plan ?: return Stats(emptyList(), emptyList())
 		val reading = player?.let { engineStats.read(app, it, stalls) } ?: EngineReading(stalls = stalls)
 		val start = startSummary(plannedAt.takeIf { it > 0 }?.minus(openedAt), readyAt.takeIf { it > 0 }?.minus(openedAt))
-		return Stats(streamLines(chosen, fallback, reading), healthLines(start, reading, transcode?.words(), systemLines(app)))
+		val lines = streamLines(chosen, fallback, reading, enhance.summary())
+		return Stats(lines, healthLines(start, reading, transcode?.words(), systemLines(app)))
 	}
 
 	/** The stats overlay as text for a bug report. */
@@ -453,6 +460,7 @@ class PlayerModel(
 	 * buffer because the player keeps its last keyframe ([titleLoadControl]).
 	 */
 	fun background(on: Boolean) {
+		enhance.setBackground(on)
 		val engine = player ?: return
 		if (on && !prefs.keepsPlaying) {
 			engine.pause()
@@ -461,6 +469,9 @@ class PlayerModel(
 		engine.trackSelectionParameters = engine.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, on).build()
 		Diag.info(DiagCategory.Player, if (on) "background" else "foreground", "playing" to engine.isPlaying)
 	}
+
+	/** The picture is on show: the player is full size, in front and drawn by this screen. Enhance Picture runs only then. */
+	fun enhanceVisible(on: Boolean) = enhance.setVisible(on)
 
 	/** Skips by [by] seconds. Quick repeats add up and make one jump once the taps stop. */
 	fun skip(by: Int) {
@@ -1054,6 +1065,7 @@ class PlayerModel(
 		engine.setWakeMode(if (isOffline) C.WAKE_MODE_LOCAL else C.WAKE_MODE_NETWORK)
 		val source = factory.source(opens.headers, opens.url, hls, mediaMetadata(chosen))
 		if (hls) engine.setMediaSource(source) else engine.setMediaSource(source, (chosen.startAt * 1000).toLong())
+		enhance.attach(engine, chosen.item.ratingKey, prefs.pictureEnhance, chosen)
 		engine.playWhenReady = autoplay
 		engine.prepare()
 		player = engine
@@ -1335,6 +1347,7 @@ class PlayerModel(
 	private fun failed(error: PlaybackException) {
 		val chosen = plan
 		Diag.warning(DiagCategory.Player, "play.failed", "code" to error.errorCodeName, "route" to chosen?.route?.kind?.name)
+		if (enhance.failed(error)) return
 		if (!isOffline && chosen?.route?.kind == RouteKind.DirectPlay && !onDeviceFailed) {
 			// The tablet could not play the file itself: the server converts it, from where it stopped.
 			onDeviceFailed = true
@@ -1370,6 +1383,7 @@ class PlayerModel(
 		stalledAt = 0
 		// The media session goes before its player does.
 		container.playback.retract(app, stopService = !keepService)
+		enhance.detach()
 		player?.let {
 			it.removeListener(listener)
 			it.removeAnalyticsListener(engineStats)
@@ -1393,6 +1407,7 @@ class PlayerModel(
 				val chosen = plan
 				if (chosen != null && chosen.duration > 0 && movieMs() >= chosen.duration * WATCHED_AT * 1000) markWatched()
 				offers.tick(movieMs() / 1000.0)
+				enhance.tick(engineStats.videoDecoder)
 				ticks++
 				if (stream?.kind == PlayStream.StreamKind.Hls && (ticks == 2 || ticks % TRANSCODE_EVERY == 0)) pollTranscode()
 			}

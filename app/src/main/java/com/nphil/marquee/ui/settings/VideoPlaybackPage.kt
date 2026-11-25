@@ -40,6 +40,7 @@ import com.nphil.marquee.core.SkipTapMode
 import com.nphil.marquee.data.PlaybackPrefs
 import com.nphil.marquee.live.canReadLocalTuner
 import com.nphil.marquee.playback.DeviceDecoders
+import com.nphil.marquee.playback.EnhanceUpscaler
 import com.nphil.marquee.playback.rememberPlaybackPrefs
 import com.nphil.marquee.ui.components.ChoiceRow
 import com.nphil.marquee.ui.components.GroupGap
@@ -78,6 +79,8 @@ fun VideoPlaybackPage(contentPadding: PaddingValues) {
 	val prefs = rememberPlaybackPrefs().value ?: return
 	// The slider follows the finger; the setting is saved when it lets go.
 	val volume = rememberSliderState(prefs.themeMusicVolume)
+	val sharpen = rememberSliderState(prefs.pictureEnhance.sharpen)
+	val deband = rememberSliderState(prefs.pictureEnhance.deband)
 	// Written on the app's scope, so a change made as the page closes is still saved.
 	fun change(edit: (PlaybackPrefs) -> PlaybackPrefs) {
 		val id = profile ?: return
@@ -157,6 +160,27 @@ fun VideoPlaybackPage(contentPadding: PaddingValues) {
 				"Auto picks a quality for the connection and changes it as the connection does. A lower quality has the " +
 					"server convert the video. Direct Play plays a file as it is when the tablet can: Always tries it even " +
 					"where the tablet may not cope, Never has the server convert every title.",
+			)
+		}
+		item(key = "enhance") {
+			ChoiceRow(
+				"Enhance Picture", prefs.pictureEnhance.upscaler, EnhanceUpscaler.entries, ::enhanceTitle,
+				index = 0, count = if (prefs.pictureEnhance.isOn) 3 else 1,
+			) { upscaler -> change { it.copy(pictureEnhance = it.pictureEnhance.copy(upscaler = upscaler)) } }
+		}
+		if (prefs.pictureEnhance.isOn) {
+			item(key = "enhanceSharpen") {
+				StrengthRow("Sharpen", sharpen, index = 1) { value -> change { it.copy(pictureEnhance = it.pictureEnhance.copy(sharpen = value)) } }
+			}
+			item(key = "enhanceDeband") {
+				StrengthRow("Deband", deband, index = 2) { value -> change { it.copy(pictureEnhance = it.pictureEnhance.copy(deband = value)) } }
+			}
+		}
+		item(key = "enhanceNote") {
+			Footnote(
+				"Sharpens and upscales standard video on the tablet. HDR and Dolby Vision play unchanged. It pauses itself " +
+					"when the tablet is hot, in Battery Saver or when it cannot keep up. Turning it on while a title plays " +
+					"restarts the title once, from where it was.",
 			)
 		}
 		item(key = "trailers") {
@@ -240,6 +264,26 @@ private fun directPlayTitle(mode: DirectPlayMode): String = when (mode) {
 	DirectPlayMode.Auto -> "Auto"
 	DirectPlayMode.Force -> "Always"
 	DirectPlayMode.Disabled -> "Never"
+}
+
+private fun enhanceTitle(upscaler: EnhanceUpscaler): String = when (upscaler) {
+	EnhanceUpscaler.Off -> "Off"
+	EnhanceUpscaler.Automatic -> "Automatic"
+	EnhanceUpscaler.LineArt -> "Line art"
+}
+
+/** A strength from 0 to 1. The slider follows the finger; the setting is saved when it lets go. */
+@Composable
+private fun StrengthRow(label: String, state: androidx.compose.material3.SliderState, index: Int, onDone: (Float) -> Unit) {
+	GroupRow(index = index, count = 3) {
+		Text(label, style = MaterialTheme.typography.titleMedium, color = lucent.ink, modifier = Modifier.weight(1f))
+		Slider(
+			state = state,
+			onValueChange = { state.value = it },
+			onValueChangeFinished = { onDone(state.value) },
+			modifier = Modifier.weight(2f).semantics { contentDescription = label },
+		)
+	}
 }
 
 private fun seconds(value: Int) = "$value seconds"

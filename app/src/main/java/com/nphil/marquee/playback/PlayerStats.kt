@@ -188,8 +188,8 @@ internal fun infoSections(plan: PlayPlan, fallback: String?, audioLabel: String?
 	).filter { it.lines.isNotEmpty() }
 }
 
-/** What plays, and why: the left column of the stats overlay. */
-internal fun streamLines(plan: PlayPlan, fallback: String?, reading: EngineReading): List<StatLine> = buildList {
+/** What plays, and why: the left column of the stats overlay. [enhance] is the Enhance Picture line, shown while the setting is on. */
+internal fun streamLines(plan: PlayPlan, fallback: String?, reading: EngineReading, enhance: String? = null): List<StatLine> = buildList {
 	val route = plan.route
 	add(StatLine("Route", route.title()))
 	if (route.reasons.isNotEmpty()) add(StatLine("Why", route.reasons.joinToString(", ")))
@@ -219,6 +219,7 @@ internal fun streamLines(plan: PlayPlan, fallback: String?, reading: EngineReadi
 		}
 		add(StatLine("Picture", picture.joinToString(" · ")))
 	}
+	enhance?.let { add(StatLine("Enhance", it)) }
 	plan.audioStream()?.let { audio ->
 		add(StatLine("Audio", listOfNotNull(audio.codec?.uppercase(Locale.ROOT), audio.channels?.let { "$it ch" }).joinToString(" ")))
 	}

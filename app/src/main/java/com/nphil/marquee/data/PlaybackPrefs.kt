@@ -11,6 +11,8 @@ import com.nphil.marquee.core.CreditsAutoplay
 import com.nphil.marquee.core.DirectPlayMode
 import com.nphil.marquee.core.QualityPreset
 import com.nphil.marquee.core.SkipTapMode
+import com.nphil.marquee.playback.EnhanceUpscaler
+import com.nphil.marquee.playback.PictureEnhance
 import com.nphil.marquee.playback.ThemeFade
 
 /** A Home profile's choices for the hero trailer, a show's theme music and how titles play (Settings › Video & Playback). */
@@ -40,6 +42,8 @@ data class PlaybackPrefs(
 	val readsTunerDirectly: Boolean = true,
 	/** Interlaced channels play the original broadcast (about 60 pictures a second) instead of the tuner's 30. */
 	val prefersSmoothMotion: Boolean = true,
+	/** Enhance Picture: upscales, sharpens and debands standard video in the title player. Off until it is chosen. */
+	val pictureEnhance: PictureEnhance = PictureEnhance(),
 ) {
 	companion object {
 		val SKIP_INTERVALS = listOf(5, 10, 15, 30, 60)
@@ -65,6 +69,9 @@ private fun nextEpisodeDelay(profile: String) = intPreferencesKey("playback.$pro
 private fun keepsPlaying(profile: String) = booleanPreferencesKey("playback.$profile.keepsPlaying")
 private fun readsTunerDirectly(profile: String) = booleanPreferencesKey("playback.$profile.readsTunerDirectly")
 private fun prefersSmoothMotion(profile: String) = booleanPreferencesKey("playback.$profile.prefersSmoothMotion")
+private fun enhanceUpscaler(profile: String) = stringPreferencesKey("playback.$profile.pictureEnhance.upscaler")
+private fun enhanceSharpen(profile: String) = floatPreferencesKey("playback.$profile.pictureEnhance.sharpen")
+private fun enhanceDeband(profile: String) = floatPreferencesKey("playback.$profile.pictureEnhance.deband")
 
 internal fun Preferences.playbackPrefs(profile: String?): PlaybackPrefs {
 	if (profile == null) return PlaybackPrefs()
@@ -85,6 +92,11 @@ internal fun Preferences.playbackPrefs(profile: String?): PlaybackPrefs {
 		keepsPlaying = this[keepsPlaying(profile)] ?: defaults.keepsPlaying,
 		readsTunerDirectly = this[readsTunerDirectly(profile)] ?: defaults.readsTunerDirectly,
 		prefersSmoothMotion = this[prefersSmoothMotion(profile)] ?: defaults.prefersSmoothMotion,
+		pictureEnhance = PictureEnhance(
+			upscaler = EnhanceUpscaler.entries.firstOrNull { it.name == this[enhanceUpscaler(profile)] } ?: defaults.pictureEnhance.upscaler,
+			sharpen = (this[enhanceSharpen(profile)] ?: defaults.pictureEnhance.sharpen).coerceIn(0f, 1f),
+			deband = (this[enhanceDeband(profile)] ?: defaults.pictureEnhance.deband).coerceIn(0f, 1f),
+		),
 	)
 }
 
@@ -104,4 +116,7 @@ internal fun MutablePreferences.setPlaybackPrefs(profile: String, prefs: Playbac
 	this[keepsPlaying(profile)] = prefs.keepsPlaying
 	this[readsTunerDirectly(profile)] = prefs.readsTunerDirectly
 	this[prefersSmoothMotion(profile)] = prefs.prefersSmoothMotion
+	this[enhanceUpscaler(profile)] = prefs.pictureEnhance.upscaler.name
+	this[enhanceSharpen(profile)] = prefs.pictureEnhance.sharpen.coerceIn(0f, 1f)
+	this[enhanceDeband(profile)] = prefs.pictureEnhance.deband.coerceIn(0f, 1f)
 }

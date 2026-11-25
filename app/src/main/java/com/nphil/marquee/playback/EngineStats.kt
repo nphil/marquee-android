@@ -24,7 +24,8 @@ internal data class LoadSummary(val count: Int, val kbps: Int, val realtime: Dou
 internal class EngineStats : AnalyticsListener {
 	private class Load(val bytes: Long, val loadMs: Long, val mediaMs: Long)
 
-	private var videoDecoder: String? = null
+	var videoDecoder: String? = null
+		private set
 	private var droppedFrames = 0
 	private var errors = 0
 	private var lastError: String? = null

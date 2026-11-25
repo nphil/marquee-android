@@ -411,6 +411,10 @@ internal fun PlayerScreen(
 	LaunchedEffect(brightness, full) { if (full) brightness.reclaim() else brightness.release() }
 	DisposableEffect(model) { onDispose { if (held) model.setSpeed(heldSpeed) } }
 	BackgroundPlaybackEffect(model, pip)
+	// Enhance Picture runs only while this screen draws the title full size; the bar, picture-in-picture and a glasses display do not.
+	val drawsHere = !container.glasses.drawsPicture
+	LaunchedEffect(model, full, pip.active, drawsHere) { model.enhanceVisible(full && !pip.active && drawsHere) }
+	DisposableEffect(model) { onDispose { model.enhanceVisible(false) } }
 	// While a display shows Marquee's own screen, it draws the picture and the remote drives this player.
 	DisposableEffect(model, container) {
 		container.glasses.attachPlayer(model, onClose)
