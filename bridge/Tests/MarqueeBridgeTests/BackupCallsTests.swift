@@ -144,6 +144,11 @@ import Testing
         #expect(adopted.secret == (try JSONDecoder().decode(BackupKeyring.self, from: JSONSerialization.data(withJSONObject: fresh))).secret)
     }
 
+    @Test func theSentencesOfTheAppsOwnRefusalsAreCoresOwn() async throws {
+        #expect(try await call("backup.message", ["failure": "restoreFailed"])["message"] as? String == BackupError.restoreFailed.message)
+        #expect(try await call("backup.message", ["failure": "noAccount"])["message"] as? String == BackupError.noAccount.message)
+    }
+
     @Test func aPassphraseMustBeTwelveTo256CharactersAndCanBeRemoved() async throws {
         let keyring = try object(Self.keyring())
         for (phrase, failure) in [("short", "passphraseTooShort"), (String(repeating: "x", count: 257), "passphraseTooLong")] {

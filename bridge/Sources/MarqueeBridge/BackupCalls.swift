@@ -14,6 +14,16 @@ enum BackupCalls {
         case "backup.account":
             let call = try decoder.decode(AccountCall.self, from: payload)
             return try Reply.ok(Account(id: BackupAccount.id(user: call.user, homeUsers: call.homeUsers)))
+        case "backup.message":
+            // The sentences of the refusals the app itself raises, so every platform words them as Core does.
+            let which = try decoder.decode(MessageCall.self, from: payload).failure
+            let errors: [String: BackupError] = [
+                "noAccount": .noAccount, "restoreFailed": .restoreFailed, "restoreIncomplete": .restoreIncomplete,
+                "notABackup": .notABackup, "damaged": .damaged, "wrongAccount": .wrongAccount,
+                "passphraseTooShort": .passphraseTooShort, "passphraseTooLong": .passphraseTooLong,
+            ]
+            guard let error = errors[which] else { throw BridgeError.unknownMethod("backup.message \(which)") }
+            return try Reply.ok(Message(message: error.message))
         case "backup.keyring.create":
             return try Reply.ok(KeyringReply(BackupKeyring.create()))
         case "backup.keyring.setPassphrase":
@@ -61,6 +71,14 @@ enum BackupCalls {
     private struct AccountCall: Decodable {
         let user: PlexHomeUser?
         let homeUsers: [PlexHomeUser]
+    }
+
+    private struct MessageCall: Decodable {
+        let failure: String
+    }
+
+    private struct Message: Encodable {
+        let message: String
     }
 
     private struct KeyringCall: Decodable {
