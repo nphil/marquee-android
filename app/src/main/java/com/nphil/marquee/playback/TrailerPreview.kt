@@ -49,22 +49,35 @@ fun TrailerPreview(trailer: PlexItem, visible: Boolean, modifier: Modifier = Mod
 	val http = LocalPlaybackHttp.current ?: container.http
 	val factory = remember(http) { PlaybackFactory(context, http) }
 
-	val verdict by remember {
+	val conditions by remember {
 		derivedStateOf {
-			TrailerAutoplay.decide(
-				TrailerAutoplay.Conditions(
-					enabled = prefs?.playsTrailers == true,
-					powerSaver = signals.powerSaver,
-					reduceMotion = signals.reduceMotion,
-					metered = signals.metered,
-					appActive = signals.appActive,
-					heroVisible = onTop,
-					playerOpen = coordinator.playerOpen,
-					// A theme tune that is heard keeps the sound, as another app's audio does.
-					otherAudioPlaying = signals.otherAudio || coordinator.themeHeard,
-				),
+			TrailerAutoplay.Conditions(
+				enabled = prefs?.playsTrailers == true,
+				powerSaver = signals.powerSaver,
+				reduceMotion = signals.reduceMotion,
+				metered = signals.metered,
+				appActive = signals.appActive,
+				heroVisible = onTop,
+				playerOpen = coordinator.playerOpen,
+				// A theme tune that is heard keeps the sound, as another app's audio does.
+				otherAudioPlaying = signals.otherAudio || coordinator.themeHeard,
 			)
 		}
+	}
+	val verdict = TrailerAutoplay.decide(conditions)
+	// What holds a trailer back is otherwise invisible: nothing is logged until it starts.
+	LaunchedEffect(conditions) {
+		Diag.info(
+			DiagCategory.Player, "trailer.conditions",
+			"verdict" to verdict::class.simpleName,
+			"enabled" to conditions.enabled,
+			"powerSaver" to conditions.powerSaver,
+			"reduceMotion" to conditions.reduceMotion,
+			"metered" to conditions.metered,
+			"appActive" to conditions.appActive,
+			"heroVisible" to conditions.heroVisible,
+			"playerOpen" to conditions.playerOpen,
+		)
 	}
 	// It played to its end or failed: this page does not start it again.
 	var finished by remember(trailer.ratingKey) { mutableStateOf(false) }
@@ -97,6 +110,7 @@ fun TrailerPreview(trailer: PlexItem, visible: Boolean, modifier: Modifier = Mod
 		}
 		val source = container.playbackSource(part.key)
 		if (source == null) {
+			Diag.info(DiagCategory.Player, "trailer.unplayable", "versions" to trailer.media.size, "reason" to "noSource")
 			finished = true
 			return@LaunchedEffect
 		}
