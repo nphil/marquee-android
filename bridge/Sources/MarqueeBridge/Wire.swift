@@ -136,6 +136,11 @@ struct Failure: Encodable {
         case let error as SeerrAddressInvalid:
             kind = "badRequest"
             message = "invalid Seerr address: \(error.problem)"
+        case let error as BackupError:
+            kind = "backup"
+            // The case without its number, which the app tells apart; `message` is the sentence to show.
+            failure = String(String(describing: error).prefix { $0 != "(" })
+            message = error.message
         case let error as RemoteFailure:
             kind = "remote"
             message = error.message

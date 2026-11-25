@@ -113,6 +113,8 @@ final class Methods: Sendable {
             return try await PlayCalls.handle(method, payload, using: playServices)
         case _ where SubtitleCalls.handles(method):
             return try await SubtitleCalls.handle(method, payload, using: playServices)
+        case _ where BackupCalls.handles(method):
+            return try await BackupCalls.handle(method, payload)
         case _ where HomeLabberCalls.handles(method):
             return try await HomeLabberCalls.handle(method, payload)
         case _ where method.hasPrefix("download."):
