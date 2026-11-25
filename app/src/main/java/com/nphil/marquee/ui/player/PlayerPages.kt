@@ -28,6 +28,7 @@ import com.nphil.marquee.core.Chapter
 import com.nphil.marquee.core.MediaType
 import com.nphil.marquee.core.QualityPreset
 import com.nphil.marquee.playback.PlayerModel
+import com.nphil.marquee.playback.rememberPlaybackPrefs
 import com.nphil.marquee.ui.components.GroupGap
 import com.nphil.marquee.ui.components.GroupRow
 import com.nphil.marquee.ui.components.PlexArt
@@ -73,9 +74,11 @@ internal fun MorePage(
 	onClose: () -> Unit,
 ) {
 	val local = model.castReceiver == null
+	val enhance = rememberPlaybackPrefs().value?.pictureEnhance
 	val settings = buildList {
 		if (!model.isOffline) add(NavEntry(R.drawable.ic_tune, "Quality", QualityPreset.title(model.quality), TracksPage.Quality))
 		if (local) {
+			if (enhance != null) add(NavEntry(R.drawable.ic_contrast, "Enhance Picture", enhanceRowValue(enhance, model.enhanceUnavailable), TracksPage.Enhance))
 			add(NavEntry(R.drawable.ic_aspect_ratio, "Aspect Ratio", aspect.label, TracksPage.Aspect))
 			add(NavEntry(R.drawable.ic_speed, "Playback Speed", speedTitle(model.speed), TracksPage.Speed))
 		}

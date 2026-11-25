@@ -6,6 +6,9 @@ import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
 import androidx.annotation.OptIn
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.media3.common.C
 import androidx.media3.common.ColorInfo
 import androidx.media3.common.Format
@@ -45,6 +48,10 @@ internal class EnhanceController(app: Context, private val rebuild: () -> Unit) 
 
 	/** What the title proved unfit for the chain while it played; it holds until another title opens. */
 	private var blocked: EnhanceUnavailable? = null
+
+	/** Why the open title cannot be enhanced, for the menu; null when it can. Read by the screen. */
+	var unavailable: EnhanceUnavailable? by mutableStateOf(null)
+		private set
 
 	/** The player was prepared with the pipeline in it; only then can a chain be set. */
 	private var installed = false
@@ -165,6 +172,7 @@ internal class EnhanceController(app: Context, private val rebuild: () -> Unit) 
 			return false
 		}
 		blocked = EnhanceUnavailable.NoGpu
+		unavailable = EnhanceUnavailable.NoGpu
 		changed(EnhanceState.Unavailable(EnhanceUnavailable.NoGpu), error.errorCodeName)
 		rebuilding = true
 		rebuild()
@@ -225,6 +233,7 @@ internal class EnhanceController(app: Context, private val rebuild: () -> Unit) 
 			engine.setVideoEffects(wanted.effects(tuning, timings))
 		}
 		if (next != state) changed(next, why)
+		unavailable = blocked ?: facts.blocker
 		// A prepared player takes its effect pipeline neither in nor out: either way the title opens again, from where it was.
 		if (!rebuilding && ((installed && blocked != null) || (awaitsPipeline && isActive))) {
 			rebuilding = true

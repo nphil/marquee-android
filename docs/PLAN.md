@@ -205,6 +205,14 @@ Each phase ends with a release installed on the tablet.
      OkHttp data source with no cache, and the next episode's address and headers exist only after Core's `startPlay`
      opens a server session, so bytes read at the Up Next card would be fetched again. Media3's preload manager needs that
      same session first. Only a connection already open to the server would be saved, and the title playing keeps one.
+   - Enhance Picture is also in the player's More menu (title player only, hidden while casting): Off, Automatic or
+     Line art, and with it on the Sharpen and Deband sliders, saved in the same profile setting Settings uses. A slider
+     applies live; a new scaler restarts the title once. When the title cannot be enhanced the row shows the reason and the
+     controls are off. While a slider is dragged the panel, the other rows and the player controls fade out, leaving that
+     slider; with a screen reader that explores by touch nothing hides.
+   - Text from picture subtitles (the iPhone's on-device recognition of PGS and VobSub) is not ported. Picture cues never
+     reach the tablet's subtitle hook, Core marks embedded picture subtitles in-stream only when a route draws them, the
+     menu's options are Core's, and cast senders have no text path.
 5. **Android extras** (section 6).
 
 ## 5. Verification

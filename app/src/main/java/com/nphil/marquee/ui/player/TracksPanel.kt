@@ -1,12 +1,16 @@
 package com.nphil.marquee.ui.player
 
+import android.provider.Settings
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -24,10 +28,14 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import com.nphil.marquee.R
@@ -56,6 +64,10 @@ import com.nphil.marquee.ui.theme.lucent
 /** How long the panel stays up with no touch on it, then it closes: a bright panel does not sit on the picture. */
 internal const val PANEL_DWELL_MS = 30_000L
 
+/** How long the panel and the controls take to fade away and back while a picture strength is dragged; with animations off, a quick fade. */
+internal const val DRAG_FADE_MS = 200
+internal const val QUICK_FADE_MS = 90
+
 private val PANEL_WIDTH = 380.dp
 
 /** The pages of the player's side panel. */
@@ -66,6 +78,7 @@ internal enum class TracksPage(val title: String) {
 	Advanced("Advanced"),
 	More("More"),
 	Quality("Quality"),
+	Enhance("Enhance Picture"),
 	Speed("Playback Speed"),
 	Aspect("Aspect Ratio"),
 	Chapters("Chapters"),
@@ -79,6 +92,8 @@ internal enum class TracksPage(val title: String) {
  * and the playback info. [pages] is the trail of pages opened, the last one showing; a page opened from another has a
  * way back. A pick takes effect at once. [onTouch] hears every touch on the panel, for the dwell. The panel keeps the
  * app's theme, not the player's dark one: it is a sheet, and it is on screen only while the viewer is reading it.
+ * While [dragging] a picture strength the sheet and everything on it but that slider fades out, so the picture shows
+ * as it is; [onDragging] reports the drag from the Enhance Picture page.
  */
 @Composable
 internal fun TracksPanel(
@@ -90,6 +105,8 @@ internal fun TracksPanel(
 	onAspect: (PlayerAspect) -> Unit,
 	sleep: SleepTimer,
 	pip: PictureInPicture,
+	dragging: Boolean,
+	onDragging: (Boolean) -> Unit,
 	onPush: (TracksPage) -> Unit,
 	onPop: () -> Unit,
 	onClose: () -> Unit,
@@ -98,43 +115,43 @@ internal fun TracksPanel(
 ) {
 	val page = pages.last()
 	val fade = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
-	Column(
-		modifier
-			.fillMaxHeight()
-			.widthIn(max = PANEL_WIDTH)
-			.safeDrawingPadding()
-			.padding(Space.s3)
-			.background(lucent.canvas, RoundedCornerShape(Radius.sheet))
-			.padding(Space.s3)
-			.watchesTouch(onTouch),
-		verticalArrangement = Arrangement.spacedBy(Space.s3),
-	) {
-		Header(page, onBack = if (pages.size > 1) onPop else null, onClose = onClose)
-		AnimatedContent(
-			page,
-			Modifier.weight(1f),
-			transitionSpec = { fadeIn(fade) togetherWith fadeOut(fade) },
-			label = "panel page",
-		) { shown ->
-			// The episodes are a list that scrolls on its own, which a scrolling column cannot hold.
-			if (shown == TracksPage.Episodes) {
-				EpisodesPage(model, EpisodeLayout.Side, onClose, Modifier.fillMaxSize())
-				return@AnimatedContent
-			}
-			Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Space.s3)) {
-				when (shown) {
-					TracksPage.Subtitles -> SubtitlesPage(model, look, onPush, onClose)
-					TracksPage.Audio -> AudioPage(model)
-					TracksPage.Style -> StylePage(look, onLook)
-					TracksPage.Advanced -> AdvancedPage(model, onClose)
-					TracksPage.More -> MorePage(model, pip, aspect, sleep, onPush, onClose)
-					TracksPage.Quality -> QualityPage(model)
-					TracksPage.Speed -> SpeedPage(model)
-					TracksPage.Aspect -> AspectPage(aspect, onAspect)
-					TracksPage.Chapters -> ChaptersPage(model, onClose)
-					TracksPage.Sleep -> SleepPage(model, sleep)
-					TracksPage.Info -> PlaybackInfoPage(model)
-					TracksPage.Episodes -> Unit
+	val resolver = LocalContext.current.contentResolver
+	val reduceMotion = remember { Settings.Global.getFloat(resolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f }
+	val dim by animateFloatAsState(if (dragging) 0f else 1f, tween(if (reduceMotion) QUICK_FADE_MS else DRAG_FADE_MS), label = "panel dim")
+	Box(modifier.fillMaxHeight().widthIn(max = PANEL_WIDTH).safeDrawingPadding().padding(Space.s3)) {
+		Box(Modifier.matchParentSize().graphicsLayer { alpha = dim }.background(lucent.canvas, RoundedCornerShape(Radius.sheet)))
+		Column(
+			Modifier.fillMaxHeight().padding(Space.s3).watchesTouch(onTouch),
+			verticalArrangement = Arrangement.spacedBy(Space.s3),
+		) {
+			Box(Modifier.graphicsLayer { alpha = dim }) { Header(page, onBack = if (pages.size > 1) onPop else null, onClose = onClose) }
+			AnimatedContent(
+				page,
+				Modifier.weight(1f),
+				transitionSpec = { fadeIn(fade) togetherWith fadeOut(fade) },
+				label = "panel page",
+			) { shown ->
+				// The episodes are a list that scrolls on its own, which a scrolling column cannot hold.
+				if (shown == TracksPage.Episodes) {
+					EpisodesPage(model, EpisodeLayout.Side, onClose, Modifier.fillMaxSize())
+					return@AnimatedContent
+				}
+				Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Space.s3)) {
+					when (shown) {
+						TracksPage.Subtitles -> SubtitlesPage(model, look, onPush, onClose)
+						TracksPage.Audio -> AudioPage(model)
+						TracksPage.Style -> StylePage(look, onLook)
+						TracksPage.Advanced -> AdvancedPage(model, onClose)
+						TracksPage.More -> MorePage(model, pip, aspect, sleep, onPush, onClose)
+						TracksPage.Quality -> QualityPage(model)
+						TracksPage.Enhance -> EnhanceMenu(model, dim, onDragging)
+						TracksPage.Speed -> SpeedPage(model)
+						TracksPage.Aspect -> AspectPage(aspect, onAspect)
+						TracksPage.Chapters -> ChaptersPage(model, onClose)
+						TracksPage.Sleep -> SleepPage(model, sleep)
+						TracksPage.Info -> PlaybackInfoPage(model)
+						TracksPage.Episodes -> Unit
+					}
 				}
 			}
 		}

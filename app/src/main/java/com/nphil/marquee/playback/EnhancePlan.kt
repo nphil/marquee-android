@@ -11,7 +11,7 @@ import kotlin.math.sqrt
 // rules can be tested. The names (scalers, pause and unavailable reasons, the stats words) are the iPhone's.
 
 /** The scaler Enhance Picture asks for. Off turns the whole feature off, whatever the strengths are. */
-enum class EnhanceUpscaler { Off, Automatic, LineArt }
+enum class EnhanceUpscaler(val title: String) { Off("Off"), Automatic("Automatic"), LineArt("Line art") }
 
 /** The Enhance Picture setting. [sharpen] and [deband] are strengths from 0 to 1. */
 @Immutable
@@ -67,13 +67,13 @@ internal data class EnhancePlan(
 }
 
 /** Why the chain cannot run on this video; the video plays unchanged. */
-internal enum class EnhanceUnavailable(val raw: String, val message: String) {
-	HighDynamicRange("highDynamicRange", "HDR and Dolby Vision play without enhancement."),
-	NoGpu("noGPU", "This device cannot run the enhancement shaders."),
-	UnsupportedPicture("unsupportedPicture", "This video's picture format is not supported by the enhancer."),
-	SoftwareRenderer("softwareRenderer", "Video decoded in software plays without enhancement."),
-	Tunnelling("tunnelling", "Tunnelled playback plays without enhancement."),
-	SecureSurface("secureSurface", "Protected video plays without enhancement."),
+internal enum class EnhanceUnavailable(val raw: String, val message: String, val short: String) {
+	HighDynamicRange("highDynamicRange", "HDR and Dolby Vision play without enhancement.", "HDR"),
+	NoGpu("noGPU", "This device cannot run the enhancement shaders.", "No GPU"),
+	UnsupportedPicture("unsupportedPicture", "This video's picture format is not supported by the enhancer.", "Unsupported picture"),
+	SoftwareRenderer("softwareRenderer", "Video decoded in software plays without enhancement.", "Software decoding"),
+	Tunnelling("tunnelling", "Tunnelled playback plays without enhancement.", "Tunnelling"),
+	SecureSurface("secureSurface", "Protected video plays without enhancement.", "Protected video"),
 }
 
 /** Why the chain stands aside for a while; it comes back by itself. */

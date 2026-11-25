@@ -164,7 +164,7 @@ fun VideoPlaybackPage(contentPadding: PaddingValues) {
 		}
 		item(key = "enhance") {
 			ChoiceRow(
-				"Enhance Picture", prefs.pictureEnhance.upscaler, EnhanceUpscaler.entries, ::enhanceTitle,
+				"Enhance Picture", prefs.pictureEnhance.upscaler, EnhanceUpscaler.entries, EnhanceUpscaler::title,
 				index = 0, count = if (prefs.pictureEnhance.isOn) 3 else 1,
 			) { upscaler -> change { it.copy(pictureEnhance = it.pictureEnhance.copy(upscaler = upscaler)) } }
 		}
@@ -264,12 +264,6 @@ private fun directPlayTitle(mode: DirectPlayMode): String = when (mode) {
 	DirectPlayMode.Auto -> "Auto"
 	DirectPlayMode.Force -> "Always"
 	DirectPlayMode.Disabled -> "Never"
-}
-
-private fun enhanceTitle(upscaler: EnhanceUpscaler): String = when (upscaler) {
-	EnhanceUpscaler.Off -> "Off"
-	EnhanceUpscaler.Automatic -> "Automatic"
-	EnhanceUpscaler.LineArt -> "Line art"
 }
 
 /** A strength from 0 to 1. The slider follows the finger; the setting is saved when it lets go. */

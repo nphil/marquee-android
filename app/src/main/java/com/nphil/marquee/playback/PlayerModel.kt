@@ -475,6 +475,18 @@ class PlayerModel(
 	/** The picture is on show: the player is full size, in front and drawn by this screen. Enhance Picture runs only then. */
 	fun enhanceVisible(on: Boolean) = enhance.setVisible(on)
 
+	/** Why this title cannot be enhanced (HDR, tunnelling, software decoding, protected video); null when it can. */
+	internal val enhanceUnavailable: EnhanceUnavailable? get() = enhance.unavailable
+
+	/** A strength dragged in the player's menu applies to the picture at once; [saveEnhance] keeps it when the finger lets go. */
+	fun tuneEnhance(setting: PictureEnhance) = enhance.setOptions(setting)
+
+	/** Saves the Enhance Picture setting in the profile, where Settings reads it too; a new scaler restarts the title once. */
+	fun saveEnhance(change: (PictureEnhance) -> PictureEnhance) {
+		val profile = container.session.state.value.user?.uuid ?: return
+		container.scope.launch { container.settings.updatePlayback(profile) { it.copy(pictureEnhance = change(it.pictureEnhance)) } }
+	}
+
 	/** Skips by [by] seconds. Quick repeats add up and make one jump once the taps stop. */
 	fun skip(by: Int) {
 		offers.interrupt()

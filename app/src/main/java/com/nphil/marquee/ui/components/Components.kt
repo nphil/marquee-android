@@ -118,7 +118,8 @@ fun RetryButton(text: String, onClick: () -> Unit) {
 
 /**
  * One row of a group: rows sit on sheet with a 2 dp gap, the group's outer corners at the card radius and
- * the corners between rows tight, as Android's own settings lists are drawn.
+ * the corners between rows tight, as Android's own settings lists are drawn. [surface] is how much of the row's
+ * background shows, 1 for all of it; the content is drawn in full either way.
  */
 @Composable
 fun GroupRow(
@@ -127,6 +128,7 @@ fun GroupRow(
 	modifier: Modifier = Modifier,
 	selected: Boolean = false,
 	onClick: (() -> Unit)? = null,
+	surface: Float = 1f,
 	content: @Composable RowScope.() -> Unit,
 ) {
 	val top = if (index == 0) Radius.card else Space.s1
@@ -136,7 +138,7 @@ fun GroupRow(
 		modifier = modifier
 			.fillMaxWidth()
 			.clip(shape)
-			.background(if (selected) MaterialTheme.colorScheme.secondaryContainer else lucent.sheet)
+			.background((if (selected) MaterialTheme.colorScheme.secondaryContainer else lucent.sheet).let { it.copy(alpha = it.alpha * surface) })
 			.then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
 			.heightIn(min = Size.rowMin)
 			.padding(horizontal = Space.s4, vertical = Space.s3),

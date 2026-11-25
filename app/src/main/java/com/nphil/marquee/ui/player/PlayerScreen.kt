@@ -215,6 +215,8 @@ internal fun PlayerScreen(
 	// The side panel: the trail of pages opened, or empty while it is closed. Closes when left alone, see PANEL_DWELL_MS.
 	var pages by remember { mutableStateOf(emptyList<TracksPage>()) }
 	var panelTouched by remember { mutableLongStateOf(0L) }
+	// A picture strength is being dragged in the panel: the panel's other parts and the controls fade away so the picture shows.
+	var tuning by remember { mutableStateOf(false) }
 	var locked by rememberSaveable { mutableStateOf(false) }
 	var lockStamp by remember { mutableIntStateOf(0) }
 	var unlockStamp by remember { mutableIntStateOf(0) }
@@ -472,13 +474,14 @@ internal fun PlayerScreen(
 		if (!panelOpen) return@LaunchedEffect
 		panelTouched = SystemClock.elapsedRealtime()
 		while (true) {
+			if (tuning) panelTouched = SystemClock.elapsedRealtime()
 			val left = PANEL_DWELL_MS - (SystemClock.elapsedRealtime() - panelTouched)
 			if (left <= 0) break
 			delay(left)
 		}
 		pages = emptyList()
 	}
-	val chromeOn = (shown || scrub.active) && !locked && !pip.active && full
+	val chromeOn = (shown || scrub.active) && !locked && !pip.active && full && !tuning
 	// The bar's position is read from the player only while the bar is on screen.
 	LaunchedEffect(model, chromeOn) {
 		if (!chromeOn) return@LaunchedEffect
@@ -662,6 +665,8 @@ internal fun PlayerScreen(
 					onAspect = { changeAspect(it) },
 					sleep = sleep,
 					pip = pip,
+					dragging = tuning,
+					onDragging = { tuning = it },
 					onPush = { page -> pages = pages + page },
 					onPop = { pages = pages.dropLast(1) },
 					onClose = { pages = emptyList() },
