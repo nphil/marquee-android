@@ -213,6 +213,27 @@ Each phase ends with a release installed on the tablet.
 - Downloads through the system's background work scheduler, surviving restarts.
 - Later: a Google TV build from the same code.
 
+### Backup & Sync
+
+Settings › Backup & Sync, with the iPhone's rows and words (its DESIGN §8.13). Core makes, seals and opens the
+file (`backup.*` bridge calls); Kotlin (`backup/`) decides what goes in and applies a restore.
+
+- The file holds the settings, the integrations and their keys, and the paired TVs. The Plex sign-in, the
+  client identifier, Seerr's session, linked phones and caches are not in it; anything added later is in until
+  listed out in `BackupScope`.
+- Restore is all or nothing: every value is checked first, secrets are written first, and a failure puts back
+  what was touched. An iPhone's backup applies only its integrations, and an Android backup is read by an
+  iPhone the same way. A restore ends with Close Marquee, because running models hold the old values.
+- The sealing key is in the Keystore and does not leave the device, so a backup opens elsewhere, or on an
+  iPhone, only with the recovery passphrase (12–256 characters). Automatic backup cannot be turned on without
+  one, and removing it stops automatic backup.
+- Back Up Now and Restore use the system's document pickers. Automatic backup keeps one file in a folder
+  chosen with the folder picker (a persisted grant, so Drive and network providers work), 20 s after a change
+  and when Marquee leaves the foreground, and keeps the previous copy beside it.
+- Needs a device: the pickers and the persisted folder grant on Drive and a network share, opening a
+  `.marqueebackup` from a file manager, the Keystore keyring, the write when the app is stopped, the restore
+  and restart, and a restore both ways between an iPhone and this app.
+
 ## 7. Facts measured
 
 - 2026-11-21: MarqueeCore builds unchanged for `aarch64-unknown-linux-android28` (Swift 6.4.1 with its
