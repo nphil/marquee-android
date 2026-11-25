@@ -188,6 +188,31 @@ Each phase ends with a release installed on the tablet.
    - Chromecast and AirPlay are separate per-device opt-ins under Integrations. The player has one receiver chooser.
      A failed handoff leaves local playback running; returning from a receiver opens the title paused at its last position.
      Offline downloads stay on this device.
+   - Enhance Picture (Settings › Video & Playback, off by default) follows the iPhone's names, defaults and log lines
+     (`enhance.state`, `enhance-probe`, the stats screen's Enhance line). The title player runs Media3 video effects: a
+     Lanczos (or bicubic) upscale to the display, then deband, a contrast-adaptive sharpen and, for Line art, an edge
+     steepening, in the app's own GLSL. SDR only: HDR and Dolby Vision, tunnelling, the software MPEG-2 renderer and
+     protected video report unavailable and play unchanged. It is inactive in picture-in-picture, in the mini bar, in the
+     background and on a glasses display, and it pauses on dropped frames, thermal status severe and Battery Saver, then
+     returns. Differences from the iPhone: Lanczos-2 with a bicubic rung under it (fewer taps per frame), a windowed
+     governor, the chain stays on a paused picture, and turning the setting on mid-title restarts the title once, since
+     Media3 builds its effect pipeline only as the player prepares. The GPU cost on the tablet and on an onn-class box is
+     reasoned, not measured; nothing has run on a device.
+   - A stall writes `player-stall` at once and again 4.5 s later with `again=yes` if the player is still buffering (the
+     iPhone's line name): buffered ahead and in total, loading, state, play-when-ready, suppression, the last load error's
+     type and HTTP status (never an address), the bandwidth estimate and dropped frames.
+   - The iPhone's early read of the next episode (`prewarm`) is not ported: the tablet's players read through a plain
+     OkHttp data source with no cache, and the next episode's address and headers exist only after Core's `startPlay`
+     opens a server session, so bytes read at the Up Next card would be fetched again. Media3's preload manager needs that
+     same session first. Only a connection already open to the server would be saved, and the title playing keeps one.
+   - Enhance Picture is also in the player's More menu (title player only, hidden while casting): Off, Automatic or
+     Line art, and with it on the Sharpen and Deband sliders, saved in the same profile setting Settings uses. A slider
+     applies live; a new scaler restarts the title once. When the title cannot be enhanced the row shows the reason and the
+     controls are off. While a slider is dragged the panel, the other rows and the player controls fade out, leaving that
+     slider; with a screen reader that explores by touch nothing hides.
+   - Text from picture subtitles (the iPhone's on-device recognition of PGS and VobSub) is not ported. Picture cues never
+     reach the tablet's subtitle hook, Core marks embedded picture subtitles in-stream only when a route draws them, the
+     menu's options are Core's, and cast senders have no text path.
 5. **Android extras** (section 6).
 
 ## 5. Verification

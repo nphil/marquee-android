@@ -14,6 +14,7 @@ import com.nphil.marquee.data.PlaybackPrefs
 import com.nphil.marquee.diagnostics.Diag
 import com.nphil.marquee.diagnostics.DiagCategory
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
@@ -29,16 +30,15 @@ internal suspend fun AppContainer.playbackSource(path: String): MediaUrl? = try 
 	null
 }
 
-/** The active profile's trailer and theme music choices; null until they are read, so nothing plays on a guess. */
+/** The active profile's playback settings, following a change of profile. */
 @OptIn(ExperimentalCoroutinesApi::class)
+internal fun AppContainer.playbackPrefsFlow(): Flow<PlaybackPrefs> =
+	session.state.map { it.user?.uuid }.distinctUntilChanged().flatMapLatest { settings.playback(it) }
+
+/** The active profile's trailer and theme music choices; null until they are read, so nothing plays on a guess. */
 @Composable
 fun rememberPlaybackPrefs(): State<PlaybackPrefs?> {
 	val container = LocalContext.current.container
-	val prefs = remember(container) {
-		container.session.state
-			.map { it.user?.uuid }
-			.distinctUntilChanged()
-			.flatMapLatest { container.settings.playback(it) }
-	}
+	val prefs = remember(container) { container.playbackPrefsFlow() }
 	return prefs.collectAsStateWithLifecycle(null)
 }
