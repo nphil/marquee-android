@@ -5,6 +5,7 @@ import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.source.LoadEventInfo
@@ -12,9 +13,16 @@ import androidx.media3.exoplayer.source.MediaLoadData
 import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter
 import com.nphil.marquee.diagnostics.Diag
 import com.nphil.marquee.diagnostics.DiagCategory
+import java.io.IOException
 
 /** What the last few loads of media delivered: how many, the rate they came at in kbit/s, and how fast against playing them. */
 internal data class LoadSummary(val count: Int, val kbps: Int, val realtime: Double?)
+
+/** A failed load as the log may carry it: the exception's type and the HTTP status, never the address or its token. */
+internal data class LoadFailure(val type: String, val status: Int?)
+
+internal fun loadFailure(error: IOException): LoadFailure =
+	LoadFailure(error.javaClass.simpleName, (error as? HttpDataSource.InvalidResponseCodeException)?.responseCode)
 
 /**
  * What a title's engine reports as it goes, for the stats overlay and the diagnostics: the decoder it picked, the frames
@@ -26,9 +34,14 @@ internal class EngineStats : AnalyticsListener {
 
 	var videoDecoder: String? = null
 		private set
-	private var droppedFrames = 0
+	var droppedFrames = 0
+		private set
 	private var errors = 0
 	private var lastError: String? = null
+
+	/** The last media or playlist load that failed, kept for the stall line. */
+	var lastLoadError: LoadFailure? = null
+		private set
 	private val recent = ArrayDeque<Load>()
 
 	override fun onVideoDecoderInitialized(
@@ -47,6 +60,16 @@ internal class EngineStats : AnalyticsListener {
 	override fun onPlayerError(eventTime: AnalyticsListener.EventTime, error: PlaybackException) {
 		errors++
 		lastError = error.errorCodeName
+	}
+
+	override fun onLoadError(
+		eventTime: AnalyticsListener.EventTime,
+		loadEventInfo: LoadEventInfo,
+		mediaLoadData: MediaLoadData,
+		error: IOException,
+		wasCanceled: Boolean,
+	) {
+		lastLoadError = loadFailure(error)
 	}
 
 	override fun onLoadCompleted(eventTime: AnalyticsListener.EventTime, loadEventInfo: LoadEventInfo, mediaLoadData: MediaLoadData) {
@@ -73,6 +96,7 @@ internal class EngineStats : AnalyticsListener {
 		droppedFrames = 0
 		errors = 0
 		lastError = null
+		lastLoadError = null
 		recent.clear()
 	}
 

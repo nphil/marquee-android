@@ -22,6 +22,7 @@ import androidx.media3.common.Tracks
 import androidx.media3.common.text.CueGroup
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter
 import com.nphil.marquee.AppContainer
 import com.nphil.marquee.BuildConfig
 import com.nphil.marquee.cast.CastEvent
@@ -300,6 +301,7 @@ class PlayerModel(
 	private val engineStats = EngineStats()
 	private var stalls = 0
 	private var stalledAt = 0L
+	private var stallAgain: Job? = null
 	private var seekedAt = 0L
 	private var openedAt = 0L
 	private var plannedAt = 0L
@@ -1038,6 +1040,7 @@ class PlayerModel(
 		seekedAt = plannedAt
 		stalls = 0
 		stalledAt = 0
+		stallAgain?.cancel()
 		ticks = 0
 		transcode = null
 		title = chosen.item.grandparentTitle ?: chosen.item.title
@@ -1381,6 +1384,7 @@ class PlayerModel(
 		previews = null
 		transcode = null
 		stalledAt = 0
+		stallAgain?.cancel()
 		// The media session goes before its player does.
 		container.playback.retract(app, stopService = !keepService)
 		enhance.detach()
@@ -1452,17 +1456,40 @@ class PlayerModel(
 	/** A stall is the picture waiting for data after it had started, apart from the wait that follows a seek. */
 	private fun watchStall(state: Int) {
 		val engine = player ?: return
+		if (state != Player.STATE_BUFFERING) stallAgain?.cancel()
 		val now = SystemClock.elapsedRealtime()
 		if (state == Player.STATE_BUFFERING) {
 			if (!beginsStall(everReady, stalledAt != 0L, now, seekedAt)) return
 			stalledAt = now
 			stalls++
 			Diag.warning(DiagCategory.Player, "stall", *stallFields(engine, "n" to stalls))
+			logStall(engine, again = false)
+			stallAgain?.cancel()
+			stallAgain = viewModelScope.launch {
+				delay(STALL_AGAIN_MS)
+				if (player === engine && engine.playbackState == Player.STATE_BUFFERING) logStall(engine, again = true)
+			}
 		} else if (state == Player.STATE_READY && stalledAt != 0L) {
 			val waited = now - stalledAt
 			stalledAt = 0
 			Diag.warning(DiagCategory.Player, "stall.recovered", *stallFields(engine, "waitedMs" to waited))
 		}
+	}
+
+	/** One line of the engine's own state for a stall; a failed load keeps its type and status, never its address. */
+	private fun logStall(engine: ExoPlayer, again: Boolean) {
+		val reading = StallReading(
+			aheadMs = engine.bufferedPosition - engine.currentPosition,
+			totalMs = engine.totalBufferedDuration,
+			isLoading = engine.isLoading,
+			playbackState = engine.playbackState,
+			playWhenReady = engine.playWhenReady,
+			suppression = engine.playbackSuppressionReason,
+			loadError = engineStats.lastLoadError,
+			estimateBps = DefaultBandwidthMeter.getSingletonInstance(app).bitrateEstimate,
+			droppedFrames = engineStats.droppedFrames,
+		)
+		Diag.notice(DiagCategory.Player, "player-stall", *stallLineFields(reading, again))
 	}
 
 	/** What says whether a stall is the link's or the server's: the buffer, the link, the segments and the conversion's speed. */

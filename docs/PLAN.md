@@ -198,6 +198,9 @@ Each phase ends with a release installed on the tablet.
      governor, the chain stays on a paused picture, and turning the setting on mid-title restarts the title once, since
      Media3 builds its effect pipeline only as the player prepares. The GPU cost on the tablet and on an onn-class box is
      reasoned, not measured; nothing has run on a device.
+   - A stall writes `player-stall` at once and again 4.5 s later with `again=yes` if the player is still buffering (the
+     iPhone's line name): buffered ahead and in total, loading, state, play-when-ready, suppression, the last load error's
+     type and HTTP status (never an address), the bandwidth estimate and dropped frames.
 5. **Android extras** (section 6).
 
 ## 5. Verification
