@@ -62,6 +62,15 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="lumaremote" android:host="pair" />
             </intent-filter>
+            <!-- A backup file opened from a file manager. The file's type is rarely known, so it is matched by its name. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" android:mimeType="*/*" android:pathPattern=".*\\.marqueebackup" />
+                <data android:pathPattern=".*\\..*\\.marqueebackup" />
+                <data android:pathPattern=".*\\..*\\..*\\.marqueebackup" />
+                <data android:pathPattern=".*\\..*\\..*\\..*\\.marqueebackup" />
+            </intent-filter>
             <!-- The size and place of the window when it is free-form on a tablet or a desktop display. -->
             <layout
                 android:defaultWidth="70%"

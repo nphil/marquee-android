@@ -147,6 +147,8 @@ import Testing
     @Test func theSentencesOfTheAppsOwnRefusalsAreCoresOwn() async throws {
         #expect(try await call("backup.message", ["failure": "restoreFailed"])["message"] as? String == BackupError.restoreFailed.message)
         #expect(try await call("backup.message", ["failure": "noAccount"])["message"] as? String == BackupError.noAccount.message)
+        // Android words the profile line's count itself and finds the line by this title.
+        #expect(BackupGroup.profiles.title == "Profile settings")
     }
 
     @Test func aPassphraseMustBeTwelveTo256CharactersAndCanBeRemoved() async throws {

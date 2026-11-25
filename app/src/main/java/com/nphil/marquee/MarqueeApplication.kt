@@ -13,6 +13,9 @@ import com.nphil.marquee.browse.BrowseEnvironment
 import com.nphil.marquee.browse.SessionBrowseSource
 import com.nphil.marquee.browse.Snapshots
 import com.nphil.marquee.cast.Casting
+import com.nphil.marquee.backup.AndroidBackupStore
+import com.nphil.marquee.backup.BackupCenter
+import com.nphil.marquee.core.ArrKind
 import com.nphil.marquee.core.ClientIdentity
 import com.nphil.marquee.core.LibraryChanges
 import com.nphil.marquee.bigscreen.GlassesCenter
@@ -45,6 +48,7 @@ import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import okio.Path.Companion.toOkioPath
@@ -69,6 +73,19 @@ class AppContainer(
 	internal val homeLabber = HomeLabberStore(SecretStore(context, "homelabber"), scope)
 	internal val arrServices = ArrServices(SecretStore(context, "arr_services"), scope)
 	internal val tvRemote by lazy { TvRemote(context.applicationContext, scope) }
+
+	/** Settings › Backup & Sync: one encrypted file of the settings, saved by hand or kept up to date in a folder. */
+	internal val backup = BackupCenter(
+		context.applicationContext, core, session,
+		AndroidBackupStore(settings.store, Diag.settings.store, context.getSharedPreferences("tv_remote", Context.MODE_PRIVATE), context.applicationContext),
+		changes = {
+			merge(
+				settings.store.data, Diag.settings.store.data, homeLabber.link, subtitleServices.bazarr, seerr.config,
+				arrServices.saved(ArrKind.Radarr), arrServices.saved(ArrKind.Sonarr),
+			)
+		},
+		scope,
+	)
 
 	/** The big-screen plugin: off until Settings turns it on; it watches displays only while it is on and the app is open. */
 	internal val glasses by lazy { GlassesCenter(this, scope) }
@@ -102,6 +119,7 @@ class AppContainer(
 	init {
 		NativeCore.install(NativeTransport(http))
 		scope.launch { session.restore() }
+		backup.start()
 		watchNetworkChanges(context.applicationContext, scope, session)
 		scope.launch { session.state.map { it.user?.title }.distinctUntilChanged().collect { Diag.profile(it) } }
 		scope.launch { Snapshots.forgetWhenLeft(session, core, browse.snapshots) }

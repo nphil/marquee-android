@@ -29,7 +29,7 @@ import java.util.UUID
 
 /** What the app keeps that is not secret: themes, the chosen server, server addresses and how browsing is set up. */
 class AppSettings(context: Context) : BrowsePreferences {
-	private val store = PreferenceDataStoreFactory.create { context.preferencesDataStoreFile("settings") }
+	internal val store = PreferenceDataStoreFactory.create { context.preferencesDataStoreFile("settings") }
 
 	val themeChoice: Flow<ThemeChoice> = store.data.map { it.themeChoice() }.distinctUntilChanged()
 

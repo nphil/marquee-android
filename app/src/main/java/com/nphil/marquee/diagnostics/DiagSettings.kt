@@ -37,7 +37,7 @@ data class DiagConfig(
  */
 class DiagSettings(context: Context) {
 	private val secrets = SecretStore(context, "diagnostics")
-	private val store = PreferenceDataStoreFactory.create { context.preferencesDataStoreFile("diagnostics") }
+	internal val store = PreferenceDataStoreFactory.create { context.preferencesDataStoreFile("diagnostics") }
 	private val writing = Mutex()
 	private val mutable = MutableStateFlow<DiagConfig?>(null)
 

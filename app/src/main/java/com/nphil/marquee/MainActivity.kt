@@ -53,6 +53,7 @@ class MainActivity : ComponentActivity() {
 		container.glasses.attach(this)
 		var ready = false
 		openRemoteInvite(intent)
+		openBackup(intent)
 		// The splash stays until the first frame can show the chosen theme on the screen the kept sign-in
 		// leads to, so neither flashes.
 		splash.setKeepOnScreenCondition { !ready }
@@ -87,6 +88,7 @@ class MainActivity : ComponentActivity() {
 
 	override fun onStop() {
 		container.link.setForeground(false)
+		container.backup.flush()
 		super.onStop()
 	}
 
@@ -98,12 +100,22 @@ class MainActivity : ComponentActivity() {
 	override fun onNewIntent(intent: Intent) {
 		super.onNewIntent(intent)
 		openRemoteInvite(intent)
+		openBackup(intent)
 	}
 
 	private fun openRemoteInvite(intent: Intent) {
 		val data = intent.data ?: return
 		if (intent.action == Intent.ACTION_VIEW && data.scheme == "lumaremote" && data.host == "pair") {
 			container.tvRemote.openInvite(data.toString())
+			intent.data = null
+		}
+	}
+
+	/** A backup file opened from a file manager goes to Settings › Backup & Sync, which offers to restore it. */
+	private fun openBackup(intent: Intent) {
+		val data = intent.data ?: return
+		if (intent.action == Intent.ACTION_VIEW && data.scheme == "content") {
+			container.backup.open(data)
 			intent.data = null
 		}
 	}
