@@ -201,6 +201,10 @@ Each phase ends with a release installed on the tablet.
    - A stall writes `player-stall` at once and again 4.5 s later with `again=yes` if the player is still buffering (the
      iPhone's line name): buffered ahead and in total, loading, state, play-when-ready, suppression, the last load error's
      type and HTTP status (never an address), the bandwidth estimate and dropped frames.
+   - The iPhone's early read of the next episode (`prewarm`) is not ported: the tablet's players read through a plain
+     OkHttp data source with no cache, and the next episode's address and headers exist only after Core's `startPlay`
+     opens a server session, so bytes read at the Up Next card would be fetched again. Media3's preload manager needs that
+     same session first. Only a connection already open to the server would be saved, and the title playing keeps one.
 5. **Android extras** (section 6).
 
 ## 5. Verification
