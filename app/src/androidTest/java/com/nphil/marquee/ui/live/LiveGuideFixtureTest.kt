@@ -62,6 +62,24 @@ class LiveGuideFixtureTest {
 	val rule = createAndroidComposeRule<ComponentActivity>()
 
 	@Test
+	fun editingARecordingShowsTheNewEpisodesSummary() {
+		val container = app.container
+		val model = runBlocking { withTimeout(10_000) { container.live.guide.filterNotNull().first().dvr } }
+		rule.setContent {
+			MarqueeTheme(container.themes.resolve(LucentTheme.DEFAULT_LIGHT, ThemeMode.Light), container.typography) {
+				RecordingBrowserScreen(model, Modifier.fillMaxSize()) {}
+			}
+		}
+		rule.onNodeWithText("Rules").performClick()
+		rule.waitUntil(10_000) { rule.onAllNodesWithText("Wild Coasts").fetchSemanticsNodes().isNotEmpty() }
+		rule.onNodeWithText("Wild Coasts").performClick()
+		rule.onNodeWithText("Edit rule").performClick()
+		rule.waitUntil(10_000) { rule.onAllNodesWithText("New Episodes").fetchSemanticsNodes().isNotEmpty() }
+		rule.onNodeWithText("New Episodes").performClick()
+		rule.waitUntil(5_000) { rule.onAllNodesWithText("Records new episodes of Wild Coasts", substring = true).fetchSemanticsNodes().isNotEmpty() }
+	}
+
+	@Test
 	fun narrowGuideShowsNowAndNextAndKeepsItsSelectionAfterWidening() {
 		val fixture = schedule()
 		var width by mutableStateOf(580.dp)

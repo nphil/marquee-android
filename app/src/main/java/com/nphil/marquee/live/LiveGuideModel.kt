@@ -66,7 +66,7 @@ internal class DvrTunerRelease {
 @Stable
 internal class LiveGuideModel(private val container: AppContainer, val place: BrowsePlace, cache: File) {
 	val key = storageKey(place)
-	private val directory = cache.resolve(key).path
+	val directory = cache.resolve(key).path
 	val lists = container.settings.liveLists(key)
 	val remembered: String? get() = container.session.state.value.addresses[place.server.id]
 	val dvr = DvrModel(container, this)

@@ -58,7 +58,7 @@ enum DvrCalls {
         return try Reply.ok(Empty())
     }
 
-    private static var changed: PlexError { .server(status: 409, message: "The recording schedule changed.") }
+    static var changed: PlexError { .server(status: 409, message: "The recording schedule changed.") }
 
     private static func schedule(_ live: PlexLiveTV) async throws -> LiveRecordings {
         async let rules = live.rules()

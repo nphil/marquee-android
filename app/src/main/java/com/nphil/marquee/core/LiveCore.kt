@@ -43,6 +43,8 @@ internal class GuideProgramme(
 	val art: String? = null,
 	val contentRating: String? = null,
 	val guid: String = "",
+	val movie: Boolean = false,
+	val liveEvent: Boolean = false,
 ) {
 	fun isOn(at: Double): Boolean = start <= at && at < end
 	fun progress(at: Double): Float = ((at - start) / (end - start)).coerceIn(0.0, 1.0).toFloat()

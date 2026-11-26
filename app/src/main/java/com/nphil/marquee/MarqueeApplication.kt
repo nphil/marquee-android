@@ -107,6 +107,7 @@ class AppContainer(
 	val browse = BrowseEnvironment(
 		SessionBrowseSource(session, core, scope), settings, changes, toasts, Snapshots.directory(context.cacheDir), scope,
 	)
+	internal val recordingAlerts = com.nphil.marquee.live.RecordingAlerts(context.applicationContext)
 	internal val live = LiveTv(this, context.cacheDir.resolve("live-tv"))
 
 	/** What the trailer, the theme tune and the extras viewer tell each other (who is sounding, whether a player is open). */

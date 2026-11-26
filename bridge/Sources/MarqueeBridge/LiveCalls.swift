@@ -9,7 +9,8 @@ final class LiveCalls: Sendable {
         "live.cached", "live.guide", "live.extend", "live.genre", "live.direct", "live.open", "live.report", "live.close",
     ]
 
-    static func handles(_ method: String) -> Bool { methods.contains(method) || DvrCalls.handles(method) }
+    private let recordings = RecordingCalls()
+    static func handles(_ method: String) -> Bool { methods.contains(method) || DvrCalls.handles(method) || RecordingCalls.handles(method) }
 
     private struct GuideRun: Sendable {
         let id = UUID().uuidString
@@ -74,6 +75,9 @@ final class LiveCalls: Sendable {
             let stream = streams.withLock { $0.removeValue(forKey: call.session) }
             try await stream?.finish()
             return try Reply.ok(Empty())
+        case _ where RecordingCalls.handles(method):
+            let live = PlexLiveTV(library: try library(decoder.decode(ServerCall.self, from: payload)))
+            return try await recordings.handle(method, payload, through: live)
         case _ where DvrCalls.handles(method):
             let live = PlexLiveTV(library: try library(decoder.decode(ServerCall.self, from: payload)))
             return try await DvrCalls.handle(method, payload, through: live)
@@ -197,6 +201,8 @@ private struct AiringWire: Encodable {
     let end: TimeInterval
     let isNew: Bool
     let isHD: Bool
+    let movie: Bool
+    let liveEvent: Bool
     let thumb: String?
     let art: String?
     let contentRating: String?
@@ -212,6 +218,8 @@ private struct AiringWire: Encodable {
         end = airing.end.timeIntervalSince1970
         isNew = airing.isNew
         isHD = airing.isHD
+        movie = airing.kind == .movie
+        liveEvent = airing.isLiveEvent
         thumb = airing.thumb
         art = airing.art
         contentRating = airing.contentRating

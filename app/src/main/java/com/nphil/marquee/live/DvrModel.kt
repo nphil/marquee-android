@@ -32,6 +32,7 @@ internal class DvrModel(private val container: AppContainer, private val guide: 
 	private val server get() = guide.place.server
 	private val remembered get() = guide.remembered
 	private val scheduleLock = Mutex()
+	val recordings = RecordingBrowser(container, guide)
 
 	var schedule by mutableStateOf<DvrSchedule?>(null)
 		private set

@@ -45,23 +45,9 @@ internal fun DvrProgrammeActions(model: DvrModel, channel: String, programme: Gu
 	val requested = model.requested(channel, programme)
 	val recordable = airing == null && !requested && programme.guid.isNotBlank() && programme.end > now
 	val loadOptions = recordable && model.canRecord
-	var options by remember(programme.id) { mutableStateOf<List<DvrOption>?>(null) }
-	var optionsError by remember(programme.id) { mutableStateOf<String?>(null) }
 	var actionError by remember(programme.id) { mutableStateOf<String?>(null) }
-	var retry by remember(programme.id) { mutableStateOf(0) }
-	var selected by remember(programme.id) { mutableStateOf<DvrOption?>(null) }
+	var selected by remember(programme.id) { mutableStateOf(false) }
 	var cancelling by remember(programme.id) { mutableStateOf<DvrAiring?>(null) }
-	LaunchedEffect(programme.guid, loadOptions, retry) {
-		if (loadOptions) {
-			options = null
-			optionsError = null
-			try {
-				options = model.options(programme)
-			} catch (error: CoreException) {
-				optionsError = model.problem(error, "load recording options")
-			}
-		}
-	}
 	when {
 		airing != null -> {
 			DvrNotice(airing.mark.label, isError = airing.mark == DvrMark.Failed)
@@ -73,99 +59,18 @@ internal fun DvrProgrammeActions(model: DvrModel, channel: String, programme: Gu
 			}
 		}
 		requested -> DvrNotice("Recording requested", isError = false)
-		loadOptions -> {
-			val choices = options
-			val problem = optionsError
-			when {
-				problem != null -> {
-					DvrNotice(problem)
-					TextAction("Try again", { retry++ })
-				}
-				choices == null -> DvrNotice("Loading recording options…", isError = false)
-				choices.isEmpty() -> DvrNotice("Plex has no recording options for this programme.", isError = false)
-				else -> for (option in choices) {
-					DvrButton(option.title, !model.working) {
-						actionError = null
-						selected = option
-					}
-				}
-			}
-		}
+		loadOptions -> DvrButton("Record…", !model.working) { selected = true }
 		recordable -> {
 			val problem = model.scheduleError
 			DvrNotice(problem ?: "Checking recording options…", isError = problem != null)
 		}
 	}
-	if (selected == null) actionError?.let { DvrNotice(it) }
-	selected?.let { option ->
-		DvrSettingsDialog(
-			option.title, option.library?.let { "Saves to $it." }, option.settings,
-			confirmLabel = if (option.isSeries) "Schedule series" else "Schedule recording",
-			busy = model.working || !recordable || !model.canRecord, error = actionError, dismiss = { selected = null },
-		) { values ->
-			actionError = null
-			model.record(channel, programme, option, values) { error ->
-				actionError = error
-				if (error == null) selected = null
-			}
-		}
-	}
+	if (!selected) actionError?.let { DvrNotice(it) }
+	if (selected) RecordEditor(model, programme, channel, null) { selected = false }
 	cancelling?.let { target ->
 		DvrCancelDialog(model, target, dismiss = { cancelling = null }) { deletingSeries ->
 			cancelling = null
 			model.unschedule(target, deletingSeries) { actionError = it }
-		}
-	}
-}
-
-@Composable
-internal fun DvrSettingsDialog(
-	title: String, message: String?, settings: List<DvrSetting>, confirmLabel: String,
-	busy: Boolean, error: String?, dismiss: () -> Unit, confirm: (Map<String, String>) -> Unit,
-) {
-	var edits by remember(settings) { mutableStateOf(emptyMap<String, String>()) }
-	AlertDialog(
-		onDismissRequest = dismiss,
-		containerColor = lucent.sheet,
-		title = { Text(title) },
-		text = {
-			Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Space.s2)) {
-				message?.let { Text(it) }
-				error?.let { DvrNotice(it) }
-				for (setting in settings) {
-					val value = edits[setting.id] ?: setting.value
-					DvrSettingField(setting, value) { changed ->
-						edits = if (changed == setting.value) edits - setting.id else edits + (setting.id to changed)
-					}
-				}
-			}
-		},
-		confirmButton = { TextButton({ confirm(edits) }, enabled = !busy) { Text(confirmLabel) } },
-		dismissButton = { TextButton(dismiss) { Text("Back") } },
-	)
-}
-
-@Composable
-private fun DvrSettingField(setting: DvrSetting, value: String, set: (String) -> Unit) {
-	if (setting.id == "onlyNewAirings") {
-		val bool = setting.type == "bool"
-		val checked = value == "true" || value == "1"
-		DvrCheck("New episodes only", checked) { set(if (bool) it.toString() else if (it) "1" else "0") }
-		return
-	}
-	val starts = setting.id == "startOffsetMinutes"
-	val label = if (starts) "Starts" else "Ends"
-	val choices = setting.choices.ifEmpty {
-		remember(setting) {
-			(listOf(0, 1, 2, 5, 10, 15, 30, 60) + listOfNotNull(setting.value.toIntOrNull())).distinct().sorted()
-				.map { DvrSetting.Choice(it.toString(), if (it == 0) "On time" else "$it min ${if (starts) "early" else "late"}") }
-		}
-	}
-	var menu by remember(setting.id) { mutableStateOf(false) }
-	Box {
-		TextAction("$label: ${choices.firstOrNull { it.value == value }?.label ?: value}", { menu = true })
-		DropdownMenu(menu, { menu = false }) {
-			for (choice in choices) DropdownMenuItem({ Text(choice.label) }, onClick = { set(choice.value); menu = false })
 		}
 	}
 }

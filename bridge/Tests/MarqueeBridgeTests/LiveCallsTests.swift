@@ -114,6 +114,24 @@ import Testing
         #expect(server.playbackRequests.last?.method == .delete)
     }
 
+    @Test func changingScopePreviewsTheRuleWithoutWritingUntilSaved() async throws {
+        struct Form: Decodable { let scope: String; let summary: String }
+        let server = Server()
+        let bridge = LiveCalls()
+        let params: [String: Any] = [
+            "airing": ["id": "one", "guid": "plex://episode/template", "title": "City Desk", "start": Self.now, "end": Self.now + 3600] as [String: Any],
+            "steps": [["scope": "new"]]
+        ]
+        let form: Form = try await server.call(bridge, "live.dvr.sheet", params)
+        #expect(form.scope == "new")
+        #expect(form.summary.contains("new episodes of City Desk"))
+        #expect(!server.requests.contains { $0.method == .post })
+        let _: EmptyReply = try await server.call(bridge, "live.dvr.save", params)
+        let write = try #require(server.requests.last { $0.method == .post })
+        #expect(write.url.path == "/media/subscriptions")
+        #expect(write.url.query("type") == "2")
+    }
+
     @Test func guideProgrammeCreatesPlexEpisodeAndExplicitSeriesRules() async throws {
         let server = Server()
         let bridge = LiveCalls()

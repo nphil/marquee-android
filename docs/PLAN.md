@@ -179,6 +179,8 @@ Each phase ends with a release installed on the tablet.
      software renderer) and goes to Plex when one is missing; a stream the renderers or a decoder then refuse
      is remembered for the run, and a tuner whose stream cannot connect or times out is not tried again for a
      minute, as on the iPhone. Each fallback to Plex logs its cause and the stream's tracks.
+     Recordings groups upcoming airings by day, offers alternate airings for tuner conflicts, orders rules by priority,
+     and keeps recording history per profile. Notifications are opt-in; Android controls background refresh timing.
    - LumaTV Remote is opt-in. A TV can pair by QR link or a code on the local network. It opens from a round
      button beside the profile button (sidebar footer on a tablet, following the sidebar's width; Home header
      on a phone) or from the Mini Bar above the pages, which stays reachable above a minimised playback's bar;
