@@ -208,6 +208,7 @@ private fun DetailPage(
 		var version by rememberSaveable { mutableIntStateOf(0) }
 		val versionIndex = version.coerceIn(0, maxOf(0, (item?.media?.size ?: 1) - 1))
 		var tracksOpen by rememberSaveable { mutableStateOf(false) }
+		var showAirings by rememberSaveable(item?.ratingKey) { mutableStateOf(false) }
 		var deleting by remember { mutableStateOf<DeleteTarget?>(null) }
 		val trailer = remember(state.extras, item?.primaryExtraKey) { trailerOf(state.extras, item?.primaryExtraKey) }
 		val heroPx = with(LocalDensity.current) { (maxWidth * 9 / 16).toPx() }
@@ -226,6 +227,7 @@ private fun DetailPage(
 				onWatchlist = model::toggleWatchlist,
 				onTrailer = trailer?.let { extra -> { navigator.openExtra(extra) } },
 				onTracks = { tracksOpen = true },
+				onRecord = if (page.type == MediaType.Show) ({ showAirings = true }) else null,
 				onShare = { share(context, page) },
 				download = download,
 				onDeleteVersion = { deleting = DeleteTarget.Version(page, versionIndex) },
@@ -260,6 +262,9 @@ private fun DetailPage(
 			item?.media?.getOrNull(versionIndex)?.parts?.firstOrNull()?.let { part ->
 				TracksSheet(part, onDismiss = { tracksOpen = false })
 			}
+		}
+		if (showAirings && item != null) {
+			com.nphil.marquee.ui.live.ShowRecordingAirings(container, item.title) { showAirings = false }
 		}
 		deleting?.let { target ->
 			val arrLink by container.arrServices.saved(DeleteWording.arrKind(target.item)).collectAsStateWithLifecycle()
@@ -303,6 +308,7 @@ private class ItemActions(
 	val onWatchlist: () -> Unit,
 	val onTrailer: (() -> Unit)?,
 	val onTracks: () -> Unit,
+	val onRecord: (() -> Unit)?,
 	val onShare: () -> Unit,
 	val download: DownloadAction?,
 	val onDeleteVersion: () -> Unit,
@@ -572,6 +578,7 @@ private fun MoreMenu(actions: ItemActions) {
 			actions.onPlayFromStart?.let { entry("Play from Beginning", R.drawable.ic_replay, it) }
 			actions.download?.let { entry(it.label, it.icon, it.open) }
 			actions.onTrailer?.let { entry("Play Trailer", R.drawable.ic_play_arrow, it) }
+			actions.onRecord?.let { entry("Record on Live TV…", R.drawable.ic_tv, it) }
 			if (hasTracks && state.onServer) entry("Audio & Subtitles", R.drawable.ic_closed_caption, actions.onTracks)
 			if (shareable) entry("Share", R.drawable.ic_share, actions.onShare)
 			if (deletable && item.media.size > 1 && (item.type == MediaType.Movie || item.type == MediaType.Episode)) {
