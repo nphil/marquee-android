@@ -395,7 +395,17 @@ private fun LiveChrome(
 		}
 		Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
 			when (val phase = model.phase) {
-				is LivePlayerPhase.Failed -> StatusCard(phase.message, if (phase.displaced) "Watch here" else "Try again", model::retry)
+				is LivePlayerPhase.Failed -> if (phase.displaced) {
+					var confirm by remember(model, phase, model.channel?.id) { mutableStateOf(false) }
+					StatusCard(phase.message, "Watch here", { confirm = true })
+					if (confirm) androidx.compose.material3.AlertDialog(
+						onDismissRequest = { confirm = false },
+						title = { Text("Switch the tuner here?") },
+						text = { Text("${phase.message} Switching will interrupt that viewer.") },
+						dismissButton = { androidx.compose.material3.TextButton({ confirm = false }) { Text("Cancel") } },
+						confirmButton = { androidx.compose.material3.TextButton({ confirm = false; model.retry() }) { Text("Switch here") } },
+					)
+				} else StatusCard(phase.message, "Try again", model::retry)
 				LivePlayerPhase.Away -> StatusCard("Live TV stopped while the player was away.", "Watch again", model::retry)
 				LivePlayerPhase.Tuning -> StatusCard(model.status ?: "Tuning ${model.channel?.label.orEmpty()}", loading = true)
 				LivePlayerPhase.Buffering -> StatusCard(model.status ?: "Buffering…", loading = true)
