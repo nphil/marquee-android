@@ -7,6 +7,7 @@ enum DvrCalls {
     private static let methods: Set<String> = [
         "live.dvr.schedule", "live.dvr.options", "live.dvr.record", "live.dvr.update",
         "live.dvr.unschedule", "live.dvr.delete", "live.dvr.recorded",
+        "live.dvr.skipUpcoming",
     ]
 
     static func handles(_ method: String) -> Bool { methods.contains(method) }
@@ -30,6 +31,11 @@ enum DvrCalls {
             guard let rule = try await live.rules().first(where: { $0.id == call.id }) else { throw changed }
             let values = prefs(call.values ?? [:], for: rule.settings)
             if !values.isEmpty { try await live.update(rule, values: values) }
+        case "live.dvr.skipUpcoming":
+            let call = try decoder.decode(RuleCall.self, from: payload)
+            guard let airing = try await live.scheduled().first(where: { $0.id == call.id && $0.isUpcoming && $0.start > Date() && $0.status != .inprogress }) else { throw changed }
+            try Task.checkCancellation()
+            try await live.cancel(airing)
         case "live.dvr.unschedule":
             let call = try decoder.decode(UnscheduleCall.self, from: payload)
             let snapshot = try await schedule(live)

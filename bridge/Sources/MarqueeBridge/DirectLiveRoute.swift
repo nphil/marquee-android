@@ -19,6 +19,8 @@ struct DirectLiveRoute: Decodable {
         let releaseAt: TimeInterval
         let number: String?
         let sameChannel: Bool
+        let id: String
+        let title: String
     }
 
     func plan(using live: PlexLiveTV) async throws -> Plan {
@@ -76,7 +78,7 @@ struct DirectLiveRoute: Decodable {
             }
             guard busy >= channel.device.tunerCount else { continue }
             return Handover(releaseAt: recording.start.timeIntervalSince1970 - 5,
-                            number: recording.channelNumber, sameChannel: sameChannel)
+                            number: recording.channelNumber, sameChannel: sameChannel, id: recording.id, title: recording.title)
         }
         return nil
     }

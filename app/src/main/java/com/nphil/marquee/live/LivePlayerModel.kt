@@ -23,6 +23,7 @@ import com.nphil.marquee.core.CoreException
 import com.nphil.marquee.core.GuideChannel
 import com.nphil.marquee.core.LiveStream
 import com.nphil.marquee.core.closeLive
+import com.nphil.marquee.core.skipUpcoming
 import com.nphil.marquee.core.openLive
 import com.nphil.marquee.core.reportLive
 import com.nphil.marquee.diagnostics.Diag
@@ -90,6 +91,8 @@ internal class LivePlayerModel(
 	var paused by mutableStateOf(false)
 		private set
 	var phase by mutableStateOf<LivePlayerPhase>(LivePlayerPhase.Tuning)
+		private set
+	var recordingWarning by mutableStateOf<RecordingHandover?>(null)
 		private set
 	var position by mutableStateOf(LivePosition())
 		private set
@@ -240,7 +243,7 @@ internal class LivePlayerModel(
 	private fun guardRecordings(next: GuideChannel, candidate: TunerCandidate, initial: RecordingHandover?, mine: Int) {
 		recordingGuard = container.scope.launch {
 			var handover = initial
-			var warned: Double? = null
+			var warned: String? = null
 			while (mine == generation) {
 				val left = handover?.remainingMs() ?: Long.MAX_VALUE
 				if (handover != null && left <= 0) {
@@ -252,9 +255,10 @@ internal class LivePlayerModel(
 					}
 					return@launch
 				}
-				if (handover != null && left <= 60_000 && warned != handover.releaseAt) {
-					warned = handover.releaseAt
-					announce(handover.number?.let { "Recording on $it starts soon." } ?: "A recording starts soon.")
+				if (handover?.id != recordingWarning?.id) recordingWarning = null
+				if (handover != null && !handover.sameChannel && left <= 60_000 && warned != handover.id) {
+					warned = handover.id
+					recordingWarning = handover
 				}
 				delay(minOf(60_000L, if (left in 60_001L..120_000L) left - 60_000L else left))
 				val remaining = handover?.remainingMs() ?: Long.MAX_VALUE
@@ -272,6 +276,30 @@ internal class LivePlayerModel(
 			}
 		}
 	}
+
+	fun answerRecording(airing: RecordingHandover, skip: Boolean) {
+		if (recordingWarning !== airing) return
+		recordingWarning = null
+		if (!skip || airing.remainingMs() <= 0) return
+		val next = channel ?: return
+		val candidate = direct?.tuner ?: return
+		val mine = generation
+		container.scope.launch {
+			try {
+				val current = readPlan(next, candidate, minOf(4_000L, airing.remainingMs()))?.handover
+				if (mine != generation || current?.id != airing.id || current.releaseAt != airing.releaseAt || current.remainingMs() <= 0) return@launch
+				container.core.skipUpcoming(guide.place.server, guide.remembered, airing.id)
+				val plan = readPlan(next, candidate, 4_000) ?: return@launch
+				if (mine == generation && direct?.tuner === candidate && plan.path == DirectPlan.Path.Direct) {
+					recordingGuard?.cancel()
+					guardRecordings(next, candidate, plan.handover, mine)
+				}
+			} catch (e: CoreException) {
+				if (mine == generation) announce("Couldn’t skip this airing. The recording keeps priority.")
+			}
+		}
+	}
+
 
 	/** [cause] is what ended the direct stream, for the log: `tracks`, `error`, `ended` or `timeout`. */
 	private fun recoverDirect(cause: String, problem: DirectProblem = DirectProblem.Fallback) {
@@ -621,6 +649,7 @@ internal class LivePlayerModel(
 	}
 
 	private fun stopMedia() {
+		recordingWarning = null
 		resolving?.cancel()
 		resolving = null
 		recordingGuard?.cancel()

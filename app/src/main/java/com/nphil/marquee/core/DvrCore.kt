@@ -91,6 +91,10 @@ internal suspend fun MarqueeCore.dvrUpdate(server: PlexServer, remembered: Strin
 	call<JsonObject>("live.dvr.update", serverParams(server, remembered) { put("id", id); put("values", dvrValues(values)) })
 }
 
+internal suspend fun MarqueeCore.skipUpcoming(server: PlexServer, remembered: String?, id: String) {
+	call<JsonObject>("live.dvr.skipUpcoming", serverParams(server, remembered) { put("id", id) })
+}
+
 internal suspend fun MarqueeCore.dvrUnschedule(server: PlexServer, remembered: String?, airing: DvrAiring, deletingSeries: Boolean) {
 	call<JsonObject>("live.dvr.unschedule", serverParams(server, remembered) {
 		put("id", airing.id)

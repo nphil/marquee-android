@@ -188,6 +188,15 @@ private fun LivePlayer(model: LivePlayerModel, preferences: PlaybackPrefs, dock:
 	var fits by rememberSaveable { mutableStateOf(true) }
 	var action by remember { mutableStateOf(0) }
 	var details by remember { mutableStateOf<Pair<GuideChannel, GuideProgramme>?>(null) }
+	model.recordingWarning?.let { airing ->
+		androidx.compose.material3.AlertDialog(
+			onDismissRequest = { model.answerRecording(airing, false) },
+			title = { Text("A recording needs the tuner") },
+			text = { Text("Live TV will stop so ${airing.title} can record. If you don’t choose, the recording starts.") },
+			confirmButton = { androidx.compose.material3.TextButton({ model.answerRecording(airing, false) }) { Text("Let recording start") } },
+			dismissButton = { androidx.compose.material3.TextButton({ model.answerRecording(airing, true) }) { Text("Skip this airing and keep watching") } },
+		)
+	}
 	val notice = model.phase
 	val controlsDwell = LocalAccessibilityManager.current?.calculateRecommendedTimeoutMillis(
 		3_000L, containsIcons = true, containsText = true, containsControls = true,

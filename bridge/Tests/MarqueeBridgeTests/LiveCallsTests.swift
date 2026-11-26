@@ -209,6 +209,13 @@ import Testing
             #expect(status == 409)
         }
         #expect(!server.requests.contains { $0.method == .delete })
+        do {
+            let _: EmptyReply = try await server.call(LiveCalls(), "live.dvr.skipUpcoming", ["id": "grab-41"])
+            Issue.record("The live viewer's skip must not stop a recording already in progress")
+        } catch let PlexError.server(status, _) {
+            #expect(status == 409)
+        }
+        #expect(!server.requests.contains { $0.method == .delete })
     }
 
     @Test func recordedListOpensTheNewestCompletedVersionAfterPlexReordersMedia() async throws {

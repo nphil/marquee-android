@@ -421,7 +421,7 @@ internal class DirectPlan(val path: Path, val reason: String, val url: String? =
 }
 
 @Serializable
-internal class RecordingHandover(val releaseAt: Double, val number: String? = null, val sameChannel: Boolean)
+internal class RecordingHandover(val releaseAt: Double, val number: String? = null, val sameChannel: Boolean, val id: String, val title: String)
 
 internal suspend fun MarqueeCore.planDirect(
 	server: PlexServer, remembered: String?, channel: GuideChannel, tuner: TunerCandidate,
