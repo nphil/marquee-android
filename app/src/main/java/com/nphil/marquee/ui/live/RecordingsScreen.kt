@@ -71,7 +71,8 @@ internal fun RecordingsDestination(container: AppContainer, route: Recordings, b
 	// The player's bar, while it shows, sits above the navigation bar and takes the room under the page.
 	val room = LocalDockRoom.current
 	BrowseScaffold(topBar = {
-		TopAppBar(title = { Text("Recordings", Modifier.semantics { heading() }) }, navigationIcon = { BackArrow(back) })
+		TopAppBar(title = { Text("Recordings", Modifier.semantics { heading() }) }, navigationIcon = { BackArrow(back) },
+			colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(containerColor = lucent.canvas, scrolledContainerColor = lucent.canvas))
 	}) { padding ->
 		if (model == null) {
 			EmptyState(R.drawable.ic_tv, "Recordings unavailable", "Open Live TV on the active profile.", Modifier.fillMaxSize().padding(padding).padding(bottom = room))

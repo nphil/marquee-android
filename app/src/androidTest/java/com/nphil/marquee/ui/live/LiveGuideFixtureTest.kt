@@ -66,14 +66,22 @@ class LiveGuideFixtureTest {
 	fun editingARecordingShowsTheNewEpisodesSummary() {
 		val container = app.container
 		val model = runBlocking { withTimeout(10_000) { container.live.guide.filterNotNull().first().dvr } }
+		var mode by mutableStateOf(ThemeMode.Dark)
+		val display = InstrumentationRegistry.getInstrumentation().uiAutomation
 		rule.setContent {
-			MarqueeTheme(container.themes.resolve(LucentTheme.DEFAULT_LIGHT, ThemeMode.Light), container.typography) {
+			val palette = if (mode == ThemeMode.Dark) LucentTheme.DEFAULT_DARK else LucentTheme.DEFAULT_LIGHT
+			MarqueeTheme(container.themes.resolve(palette, mode), container.typography) {
 				RecordingBrowserScreen(model, Modifier.fillMaxSize()) {}
 			}
 		}
+		rule.waitUntil(10_000) { rule.onAllNodesWithText("News 7 Tonight").fetchSemanticsNodes().isNotEmpty() }
+		rule.waitForIdle()
+		display.takeScreenshot().saveScreenshot("recording-upcoming-dark")
+		rule.runOnIdle { mode = ThemeMode.Light }
+		rule.waitForIdle()
+		display.takeScreenshot().saveScreenshot("recording-upcoming-light")
 		rule.onNodeWithText("Rules").performClick()
 		rule.waitUntil(10_000) { rule.onAllNodesWithText("Wild Coasts").fetchSemanticsNodes().isNotEmpty() }
-		val display = InstrumentationRegistry.getInstrumentation().uiAutomation
 		rule.waitForIdle()
 		display.takeScreenshot().saveScreenshot("recording-rules-light")
 		rule.onNodeWithText("Wild Coasts").performClick()

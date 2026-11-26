@@ -5,6 +5,7 @@ import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.*
@@ -56,13 +57,22 @@ import kotlin.math.roundToInt
         }
     }
     LaunchedEffect(tab, refresh) { if (tab == "Recorded") model.loadRecorded(true) }
-    Column(modifier.testTag("live-recordings")) {
+    var options by remember { mutableStateOf(false) }
+    Column(modifier.background(lucent.canvas).testTag("live-recordings").padding(horizontal = Space.inset)) {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.s1)) { listOf("Upcoming", "Rules", "Recorded", "History").forEach {
             FilterChip(tab == it, { tab = it }, { Text(it) })
         } }
-        Row(horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
-            TextButton({ if (alerts) { browser.alerts.enable(browser.key, false); alerts = false } else if (Build.VERSION.SDK_INT >= 33) permission.launch(Manifest.permission.POST_NOTIFICATIONS) else enable() }, enabled = !busy) { Text(if (alerts) "Alerts on" else "Alerts off") }
-            TextButton({ refresh++ }) { Text("Refresh") }
+        Box {
+            TextButton({ options = true }) { Text("Recording options") }
+            DropdownMenu(expanded = options, onDismissRequest = { options = false }, containerColor = MaterialTheme.colorScheme.surface) {
+                DropdownMenuItem(text = { Text(if (alerts) "Turn alerts off" else "Turn alerts on") }, enabled = !busy, onClick = {
+                    options = false
+                    if (alerts) { browser.alerts.enable(browser.key, false); alerts = false }
+                    else if (Build.VERSION.SDK_INT >= 33) permission.launch(Manifest.permission.POST_NOTIFICATIONS) else enable()
+                })
+                DropdownMenuItem(text = { Text("Refresh schedule") }, onClick = { options = false; refresh++ })
+                page?.storage?.let { Text(it, Modifier.widthIn(max = 280.dp).padding(Space.inset), color = lucent.ink2, style = MaterialTheme.typography.bodySmall) }
+            }
         }
         (error ?: if (tab == "Recorded") model.recordedError else null)?.let { DvrNotice(it) }
         val data = page
@@ -70,18 +80,20 @@ import kotlin.math.roundToInt
             val wide = maxWidth >= data.splitMinWidth.dp
             BackHandler(!wide && selected != null && edit == null && cancel == null && remove == null) { selected = null }
             Row(Modifier.fillMaxSize()) {
-                if (wide || selected == null) LazyColumn(Modifier.weight(1f)) {
+                if (wide || selected == null) LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Space.s1)) {
                     when (tab) {
                         "Upcoming" -> {
                             if (data.days.isEmpty()) item { Text("Nothing scheduled") }
-                            data.days.forEach { day -> item { Text(day.heading, style = MaterialTheme.typography.titleLarge) }; items(day.items, key = { it.id }) { grab ->
+                            data.days.forEach { day -> item { Text(day.heading, Modifier.padding(vertical = Space.s2), color = lucent.ink, style = MaterialTheme.typography.titleMedium) }; items(day.items, key = { it.id }) { grab ->
                                 val target = model.schedule?.scheduled?.find { it.id == grab.id }
                                 val dismiss = rememberSwipeToDismissBoxState(confirmValueChange = { value ->
                                     if (value != SwipeToDismissBoxValue.Settled) cancel = target
                                     false
                                 })
                                 SwipeToDismissBox(dismiss, backgroundContent = { Text(if (grab.isRecording) "Stop" else "Skip") }, enableDismissFromStartToEnd = false) {
-                                    BrowserRow(grab.title, listOfNotNull(grab.episodeTitle, rememberGuideTime(grab.start), grab.channel, grab.freshness, grab.status).joinToString(" · "), { selected = grab.id }, { edit = grab.ruleID }, conflict = grab.conflictID != null)
+                                    val time = "${rememberGuideTime(grab.start)} – ${rememberGuideTime(grab.end)}"
+                                    BrowserRow(grab.title, listOfNotNull(time, grab.channel).joinToString(" · "), { selected = grab.id }, { edit = grab.ruleID }, conflict = grab.conflictID != null,
+                                        metadata = listOfNotNull(grab.episodeTitle, grab.freshness, grab.status).joinToString(" · "))
                                 }
                             } }
                         }
@@ -128,16 +140,17 @@ import kotlin.math.roundToInt
                 }
             }
         }
-        page?.storage?.let { Text(it, Modifier.padding(horizontal = Space.inset), style = MaterialTheme.typography.bodySmall) }
     }
     edit?.let { RecordEditor(model, null, null, it) { edit = null; refresh++ } }
     cancel?.let { grab -> DvrCancelDialog(model, grab, { cancel = null }) { series -> cancel = null; model.unschedule(grab, series) { error = it; if (it == null) { selected = null; refresh++ } } } }
     remove?.let { rule -> DvrConfirm("Delete rule", model.working, { remove = null }, { remove = null; model.delete(rule) { error = it; if (it == null) { selected = null; refresh++ } } }) { Text("Existing recordings stay in the library.") } }
 }
 
-@Composable private fun BrowserRow(title: String, subtitle: String, select: () -> Unit, hold: (() -> Unit)? = null, conflict: Boolean = false, tag: String = "") {
-    Surface { Column(Modifier.fillMaxWidth().testTag(tag).combinedClickable(onClick = select, onLongClick = hold).padding(Space.s3)) {
-        Text(title, style = MaterialTheme.typography.titleMedium); Text(subtitle, style = MaterialTheme.typography.bodySmall)
+@Composable private fun BrowserRow(title: String, subtitle: String, select: () -> Unit, hold: (() -> Unit)? = null, conflict: Boolean = false, tag: String = "", metadata: String = "") {
+    Surface(color = MaterialTheme.colorScheme.surface, shape = MaterialTheme.shapes.medium) { Column(Modifier.fillMaxWidth().testTag(tag).combinedClickable(onClick = select, onLongClick = hold).padding(Space.s3), verticalArrangement = Arrangement.spacedBy(Space.s1)) {
+        Text(title, color = lucent.ink, style = MaterialTheme.typography.titleMedium)
+        if (subtitle.isNotBlank()) Text(subtitle, color = lucent.ink, style = MaterialTheme.typography.bodyMedium)
+        if (metadata.isNotBlank()) Text(metadata, color = lucent.ink2, style = MaterialTheme.typography.bodySmall)
         if (conflict) Text("Conflict", color = lucent.danger)
     } }
 }
