@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import com.nphil.marquee.core.GuideWindow
 import com.nphil.marquee.core.liveGuide
 import com.nphil.marquee.data.LiveLists
@@ -72,13 +73,16 @@ class LiveGuideFixtureTest {
 		}
 		rule.onNodeWithText("Rules").performClick()
 		rule.waitUntil(10_000) { rule.onAllNodesWithText("Wild Coasts").fetchSemanticsNodes().isNotEmpty() }
-		rule.saveWindow("recording-rules-light")
+		val display = InstrumentationRegistry.getInstrumentation().uiAutomation
+		rule.waitForIdle()
+		display.takeScreenshot().saveScreenshot("recording-rules-light")
 		rule.onNodeWithText("Wild Coasts").performClick()
 		rule.onNodeWithText("Edit rule").performClick()
 		rule.waitUntil(10_000) { rule.onAllNodesWithText("New Episodes").fetchSemanticsNodes().isNotEmpty() }
 		rule.onNodeWithText("New Episodes").performClick()
 		rule.waitUntil(5_000) { rule.onAllNodesWithText("Records new episodes of Wild Coasts", substring = true).fetchSemanticsNodes().isNotEmpty() }
-		rule.saveWindow("recording-editor-new-episodes-light")
+		rule.waitForIdle()
+		display.takeScreenshot().saveScreenshot("recording-editor-new-episodes-light")
 	}
 
 	@Test
