@@ -179,12 +179,14 @@ Each phase ends with a release installed on the tablet.
      software renderer) and goes to Plex when one is missing; a stream the renderers or a decoder then refuse
      is remembered for the run, and a tuner whose stream cannot connect or times out is not tried again for a
      minute, as on the iPhone. Each fallback to Plex logs its cause and the stream's tracks.
-   - LumaTV Remote is opt-in. A TV can pair by QR link or a code on the local network. The remote is a
-     floating button: it can be dragged anywhere, docks beside the profile button in the sidebar's footer
-     and follows the sidebar's width, and can be pulled out again. It opens as a panel that zooms out of
-     the button, can be moved and resized, and lays its controls out for the shape. Holding an empty part
-     of the panel edits which controls show. The pad is a D-pad, a joystick or a touchpad. Pairing and
-     encrypted commands use the same LumaRemoteCore as iOS.
+   - LumaTV Remote is opt-in. A TV can pair by QR link or a code on the local network. It opens from a round
+     button beside the profile button (sidebar footer on a tablet, following the sidebar's width; Home header
+     on a phone) or from the Mini Bar above the pages, which stays reachable above a minimised playback's bar;
+     Settings › LumaTV Remote picks Button by Profile (default; a saved floating choice becomes it) or Mini Bar.
+     There is no floating button. The panel zooms out of the button, can be moved and resized, and lays its
+     controls out for the shape. Standby, offline and unpaired states replace the pad with the notice and its
+     one button. Holding an empty part of the panel edits which controls show. The pad is a D-pad, a joystick
+     or a touchpad. Pairing and encrypted commands use the same LumaRemoteCore as iOS. Not yet device-tested.
    - Chromecast and AirPlay are separate per-device opt-ins under Integrations. The player has one receiver chooser.
      A failed handoff leaves local playback running; returning from a receiver opens the title paused at its last position.
      Offline downloads stay on this device.

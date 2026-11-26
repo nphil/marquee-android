@@ -49,9 +49,9 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.layout
-import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
@@ -108,6 +108,7 @@ fun MarqueeSidebar(
 	bigScreen: BigScreenEntry? = null,
 	onLink: (() -> Unit)? = null,
 	linkLabel: String = "Control phone",
+	remoteButton: (@Composable () -> Unit)? = null,
 ) {
 	val theme = lucent
 	val scope = rememberCoroutineScope()
@@ -179,21 +180,7 @@ fun MarqueeSidebar(
 						Icon(painterResource(R.drawable.ic_smartphone), contentDescription = null, modifier = Modifier.size(IconSize), tint = tint)
 					}
 				}
-				// The floating remote keeps this much free above Settings while it docks there, and follows each frame.
-				Box(
-					Modifier.layout { measurable, constraints ->
-						val room = metrics.dockRoom.roundToInt()
-						val row = measurable.measure(constraints)
-						layout(row.width, row.height + room) { row.place(0, room) }
-					},
-				) {
-					SidebarItem(
-						SETTINGS_KEY, SettingsLabel, selected == SETTINGS_KEY, labelAlpha, onSelect,
-						slot = Modifier.onGloballyPositioned { metrics.profileBounds = it.boundsInWindow() },
-					) {
-						SettingsAvatar(settingsProfile)
-					}
-				}
+				ProfileFoot(settingsProfile, selected == SETTINGS_KEY, labelAlpha, onSelect, remoteButton)
 			}
 		}
 		ResizeHandle(
@@ -258,6 +245,33 @@ internal fun CompactSettingsButton(profile: PlexHomeUser?, onClick: () -> Unit) 
 		SettingsAvatar(profile)
 	}
 }
+
+/**
+ * The Settings row and, beside it, the TV remote's button. A sidebar wide enough to hold both puts the button at the
+ * row's end; a narrower one stacks it directly above the avatar, on the same line. It follows the width as it moves.
+ */
+@Composable
+private fun ProfileFoot(
+	profile: PlexHomeUser?, selected: Boolean, labelAlpha: () -> Float, onSelect: (String) -> Unit, remoteButton: (@Composable () -> Unit)?,
+) {
+	val inlineMin = with(LocalDensity.current) { InlineMin.roundToPx() }
+	Layout(content = {
+		SidebarItem(SETTINGS_KEY, SettingsLabel, selected, labelAlpha, onSelect) { SettingsAvatar(profile) }
+		remoteButton?.invoke()
+	}) { measurables, constraints ->
+		val row = measurables[0].measure(constraints)
+		val button = measurables.getOrNull(1)?.measure(Constraints.fixed(Size.target.roundToPx(), Size.target.roundToPx()))
+		val inline = constraints.maxWidth >= inlineMin
+		val above = if (button != null && !inline) button.height else 0
+		layout(row.width, row.height + above) {
+			row.placeRelative(0, above)
+			if (button != null) button.placeRelative(if (inline) row.width - button.width else 0, if (inline) (row.height - button.height) / 2 else 0)
+		}
+	}
+}
+
+/** The sidebar width from which the remote's button sits in the profile row rather than above it. */
+private val InlineMin = 204.dp
 
 @Composable
 private fun SettingsAvatar(profile: PlexHomeUser?) {

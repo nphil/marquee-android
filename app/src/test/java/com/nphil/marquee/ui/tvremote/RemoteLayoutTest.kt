@@ -45,8 +45,8 @@ class RemoteLayoutTest {
 		assertEquals(RemoteShape.Compact, layout(300f, 280f).shape)
 		assertEquals(RemoteShape.Column, layout(300f, 284f).shape)
 		// A row needs the area 1.25 times wider than tall, and a pad beside a strip.
-		assertEquals(RemoteShape.Row, layout(380f, 348f).shape)
-		assertEquals(RemoteShape.Column, layout(380f, 352f).shape)
+		assertEquals(RemoteShape.Row, layout(400f, 360f).shape)
+		assertEquals(RemoteShape.Column, layout(400f, 364f).shape)
 	}
 
 	@Test

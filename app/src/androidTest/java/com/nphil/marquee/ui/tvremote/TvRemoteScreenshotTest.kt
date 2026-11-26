@@ -15,6 +15,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
@@ -35,6 +36,7 @@ import com.nphil.marquee.testing.DeviceWindow
 import com.nphil.marquee.testing.SignedInToFake
 import com.nphil.marquee.testing.saveScreenshot
 import com.nphil.marquee.testing.saveWindow
+import com.nphil.marquee.tvremote.RemoteAccess
 import com.nphil.marquee.tvremote.RemoteRequest
 import com.nphil.marquee.tvremote.SavedTv
 import com.nphil.marquee.tvremote.TvStatus
@@ -55,7 +57,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import kotlin.math.abs
 
-private const val Orb = "tv-remote-orb"
+private const val Button = RemoteEntryTags.Button
 private const val Panel = "tv-remote-panel"
 
 private val DpRect.centerX get() = (left + right).value / 2
@@ -69,35 +71,67 @@ class TvRemoteScreenshotTest {
 	private val tv = SavedTv("5a1c0ffee0ddba11", "Living Room TV", "", "fixture", "", "127.0.0.1", 18733, pairedAt = 0.0)
 	private val status = TvStatus(tv, "connected", volume = 30.5, volumeMax = 72.5, keyboard = true, pointer = true)
 
-	@Test fun orbDocksBesideTheProfileButtonAndFollowsTheSidebar() {
+	@Test fun buttonSitsBesideTheProfileButtonFollowsTheSidebarAndOpensThePanel() {
 		val container = fake.container
 		val wasEnabled = container.tvRemote.state.value.enabled
+		val wasAccess = container.tvRemote.state.value.access
 		val device = mutableStateOf(Device.Tablet)
 		fake.prefer { setSidebarExpanded(true) }
 		val theme = container.themes.resolve(LucentTheme.DEFAULT_DARK, ThemeMode.Dark)
 		try {
-			rule.runOnIdle { container.tvRemote.enable(true) }
+			rule.runOnIdle { container.tvRemote.enable(true); container.tvRemote.setAccess(RemoteAccess.ProfileButton) }
 			rule.setContent {
 				DeviceWindow(device.value) {
 					MarqueeTheme(theme, container.typography) { MarqueeApp(container, ThemeChoice(), onTheme = {}) }
 				}
 			}
-			rule.waitUntilAtLeastOneExists(hasTestTag(Orb), 15_000)
+			rule.waitUntilAtLeastOneExists(hasTestTag(Button), 15_000)
 			rule.waitForIdle()
 			assertBesideProfile()
-			rule.saveWindow("tv-remote-orb-sidebar-expanded")
+			rule.saveWindow("tv-remote-button-sidebar-expanded")
 			rule.onNodeWithTag(SidebarTags.Brand).performClick()
 			rule.waitForIdle()
 			assertAboveProfile()
-			rule.saveWindow("tv-remote-orb-sidebar-collapsed")
+			rule.saveWindow("tv-remote-button-sidebar-collapsed")
 			rule.runOnIdle { device.value = Device.Phone }
-			rule.waitUntilAtLeastOneExists(hasTestTag(Orb), 15_000)
+			rule.waitUntilAtLeastOneExists(hasTestTag(Button), 15_000)
 			rule.waitForIdle()
-			// The phone's toolbar no longer carries a second entry: the floating button is the only one.
+			// The phone's Home header carries the one button, left of the avatar.
 			rule.onAllNodesWithContentDescription("TV Remote").assertCountEquals(1)
-			rule.saveWindow("tv-remote-orb-phone")
+			rule.onAllNodesWithTag(RemoteEntryTags.MiniBar).assertCountEquals(0)
+			val button = rule.onNodeWithTag(Button).getUnclippedBoundsInRoot()
+			val avatar = rule.onNodeWithContentDescription("Settings").getUnclippedBoundsInRoot()
+			assertTrue("left of the avatar, same size", button.right <= avatar.left + 1.dp && abs((button.right - button.left).value - (avatar.right - avatar.left).value) <= 1f)
+			rule.saveWindow("tv-remote-button-phone")
+			rule.onNodeWithTag(Button).performClick()
+			rule.waitUntilAtLeastOneExists(hasTestTag(Panel), 5_000)
+			rule.saveWindow("tv-remote-panel-from-button-phone")
+			rule.onNodeWithContentDescription("Close remote").performClick()
+			rule.waitUntil(5_000) { rule.onAllNodesWithTag(Panel).fetchSemanticsNodes().isEmpty() }
 		} finally {
-			rule.runOnIdle { container.tvRemote.enable(wasEnabled) }
+			rule.runOnIdle { container.tvRemote.setAccess(wasAccess); container.tvRemote.enable(wasEnabled) }
+		}
+	}
+
+	@Test fun miniBarReplacesTheButtonAndOpensThePanel() {
+		val container = fake.container
+		val wasEnabled = container.tvRemote.state.value.enabled
+		val wasAccess = container.tvRemote.state.value.access
+		val theme = container.themes.resolve(LucentTheme.DEFAULT_DARK, ThemeMode.Dark)
+		try {
+			rule.runOnIdle { container.tvRemote.enable(true); container.tvRemote.setAccess(RemoteAccess.MiniBar) }
+			rule.setContent {
+				DeviceWindow(Device.Phone) {
+					MarqueeTheme(theme, container.typography) { MarqueeApp(container, ThemeChoice(), onTheme = {}) }
+				}
+			}
+			rule.waitUntilAtLeastOneExists(hasTestTag(RemoteEntryTags.MiniBar), 15_000)
+			rule.onAllNodesWithTag(Button).assertCountEquals(0)
+			rule.saveWindow("tv-remote-minibar-phone")
+			rule.onNodeWithTag(RemoteEntryTags.MiniBar).performClick()
+			rule.waitUntilAtLeastOneExists(hasTestTag(Panel), 5_000)
+		} finally {
+			rule.runOnIdle { container.tvRemote.close(); container.tvRemote.setAccess(wasAccess); container.tvRemote.enable(wasEnabled) }
 		}
 	}
 
@@ -182,7 +216,7 @@ class TvRemoteScreenshotTest {
 		rule.onAllNodesWithContentDescription("Volume up").assertCountEquals(0)
 	}
 
-	/** The panel as the floating remote draws it, without the button it grows from. */
+	/** The panel as the remote's host draws it, without the button it grows from. */
 	@Composable
 	private fun PanelFixture(
 		size: DpSize, modules: MutableState<Set<RemoteModule>>, editing: MutableState<Boolean>, mode: MutableState<PadMode>,
@@ -200,17 +234,17 @@ class TvRemoteScreenshotTest {
 	}
 
 	private fun assertBesideProfile() {
-		val orb = rule.onNodeWithTag(Orb).getUnclippedBoundsInRoot()
+		val button = rule.onNodeWithTag(Button).getUnclippedBoundsInRoot()
 		val row = rule.onNodeWithTag(SidebarTags.item(SETTINGS_KEY)).getUnclippedBoundsInRoot()
 		val sidebar = rule.onNodeWithTag(SidebarTags.Root).getUnclippedBoundsInRoot()
-		assertTrue("centred on the profile row: ${orb.centerY} vs ${row.centerY}", abs(orb.centerY - row.centerY) <= 4f)
-		assertTrue("inside the sidebar, after the avatar", orb.right <= sidebar.right && orb.left > row.left)
+		assertTrue("centred on the profile row: ${button.centerY} vs ${row.centerY}", abs(button.centerY - row.centerY) <= 4f)
+		assertTrue("inside the sidebar, after the avatar", button.right <= sidebar.right && button.left > row.left)
 	}
 
 	private fun assertAboveProfile() {
-		val orb = rule.onNodeWithTag(Orb).getUnclippedBoundsInRoot()
+		val button = rule.onNodeWithTag(Button).getUnclippedBoundsInRoot()
 		val row = rule.onNodeWithTag(SidebarTags.item(SETTINGS_KEY)).getUnclippedBoundsInRoot()
-		assertTrue("directly above the profile row", orb.bottom <= row.top + 1.dp && row.top - orb.bottom <= 16.dp)
-		assertTrue("over the avatar's line: ${orb.centerX} vs ${row.centerX}", abs(orb.centerX - row.centerX) <= 4f)
+		assertTrue("directly above the profile row", button.bottom <= row.top + 1.dp && row.top - button.bottom <= 16.dp)
+		assertTrue("over the avatar's line: ${button.centerX} vs ${row.centerX}", abs(button.centerX - row.centerX) <= 4f)
 	}
 }

@@ -2,14 +2,12 @@ package com.nphil.marquee.ui.shell
 
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
-import androidx.compose.ui.geometry.Rect
 
 /**
- * Where the tablet's sidebar and its profile button are, for whatever floats over the shell. Read these only inside
+ * Where the tablet's sidebar is, for whatever floats over the shell. Read these only inside
  * layout and draw lambdas (`Modifier.layout`, `offset { }`, `graphicsLayer { }`): a drag or the toggle then moves the
  * reader in the same frame, and nothing recomposes.
  */
@@ -23,25 +21,12 @@ class ShellMetrics {
 	 */
 	val sidebarWidth: Float get() = sidebar?.widthPx ?: 0f
 
-	/**
-	 * The Settings avatar's slot in window px. It keeps its place while the sidebar changes width. Null while there is
-	 * no sidebar.
-	 */
-	var profileBounds: Rect? by mutableStateOf(null)
-		internal set
-
-	/** The height in px the sidebar's foot keeps free directly above the Settings row. The floating remote sets it. */
-	var dockRoom: Float by mutableFloatStateOf(0f)
-
 	internal fun attach(size: SidebarSize) {
 		sidebar = size
 	}
 
 	internal fun detach(size: SidebarSize) {
-		if (sidebar === size) {
-			sidebar = null
-			profileBounds = null
-		}
+		if (sidebar === size) sidebar = null
 	}
 }
 

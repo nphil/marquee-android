@@ -31,10 +31,11 @@ internal enum class RemoteShape { Column, Row, Compact }
 /** All measures are dp on a 4 grid, relative to the panel's top-left corner. */
 internal object RemoteMetrics {
 	const val Grid = 4f
-	const val Margin = 16f
+	/** Space between the card's edge and everything on its face. */
+	const val Inset = 20f
 	const val Gap = 12f
 	const val Key = 56f
-	const val Header = 56f
+	const val Header = 52f
 	const val PadMin = 144f
 	const val StripWidth = 192f
 	const val Tray = 56f
@@ -78,7 +79,7 @@ internal fun remoteLayout(width: Float, height: Float, visible: Set<RemoteModule
 	val m = RemoteMetrics
 	val w = grid(max(width, m.MinPanel))
 	val h = grid(max(height, m.MinPanel))
-	val area = Rect(m.Margin, m.Header, w - m.Margin, h - m.Margin - tray)
+	val area = Rect(m.Inset, m.Header, w - m.Inset, h - m.Inset - tray)
 	val wanted = RemoteStrip.entries.filter { strip -> strip.modules.any { it in visible } }
 	val shape = when {
 		area.width >= 1.25f * area.height && area.width >= m.PadMin + m.Gap + m.StripWidth -> RemoteShape.Row

@@ -36,12 +36,9 @@ class RemotePanelGeometryTest {
 	}
 
 	@Test
-	fun theOpeningPanelGrowsAwayFromTheOrbIntoTheLargerSide() {
-		val bottomRight = Rect(740f, 540f, 796f, 596f)
-		assertEquals(Rect(416f, 8f, 796f, 608f), defaultPanel(bounds, bottomRight, 380f, 660f))
-		val topLeft = Rect(16f, 16f, 72f, 72f)
-		assertEquals(Rect(16f, 8f, 396f, 608f), defaultPanel(bounds, topLeft, 380f, 660f))
-		assertEquals(Rect(416f, 308f, 796f, 596f), defaultPanel(bounds, bottomRight, 380f, 288f))
+	fun theOpeningPanelIsCentredAtTheTopAndNeverLargerThanTheBounds() {
+		assertEquals(Rect(218f, 8f, 598f, 608f), defaultPanel(bounds, 380f, 660f))
+		assertEquals(Rect(218f, 8f, 598f, 296f), defaultPanel(bounds, 380f, 288f))
 	}
 
 	@Test

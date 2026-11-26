@@ -38,13 +38,11 @@ internal data class PanelHandle(val left: Boolean = false, val top: Boolean = fa
 	}
 }
 
-/** The size and place the panel opens at before the user has moved it: it grows away from the orb into the larger side. */
-internal fun defaultPanel(bounds: Rect, orb: Rect, width: Float, height: Float): Rect {
+/** The size and place the panel opens at before the user has moved it: centred across [bounds], at its top. */
+internal fun defaultPanel(bounds: Rect, width: Float, height: Float): Rect {
 	val w = min(width, bounds.width)
 	val h = min(height, bounds.height)
-	val x = if (orb.center.x < bounds.center.x) orb.left else orb.right - w
-	val y = if (orb.center.y > bounds.center.y) orb.bottom - h else orb.top
-	return Rect(Offset(x.coerceIn(bounds.left, bounds.right - w), y.coerceIn(bounds.top, bounds.bottom - h)), Size(w, h))
+	return Rect(Offset(bounds.center.x - w / 2, bounds.top), Size(w, h))
 }
 
 /** Keeps [rect] inside [bounds], shrinking it only when it cannot fit even at [minSize]. */

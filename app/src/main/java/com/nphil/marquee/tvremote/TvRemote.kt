@@ -2,6 +2,7 @@ package com.nphil.marquee.tvremote
 
 import android.content.Context
 import android.os.Build
+import androidx.compose.ui.geometry.Rect
 import androidx.core.content.edit
 import com.nphil.marquee.BuildConfig
 import com.nphil.marquee.core.NativeCore
@@ -30,6 +31,18 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.util.UUID
+
+/** Where the remote opens from. */
+internal enum class RemoteAccess(val id: String, val title: String) {
+	ProfileButton("profile", "Button by Profile"),
+	MiniBar("miniBar", "Mini Bar"),
+	;
+
+	companion object {
+		/** The Mini Bar is the only choice kept by name; a saved floating button, or no choice, is the profile button. */
+		fun decoded(id: String?) = if (id == MiniBar.id) MiniBar else ProfileButton
+	}
+}
 
 @Serializable
 internal data class SavedTv(
@@ -88,7 +101,7 @@ internal class TvRemote(private val context: Context, private val scope: Corouti
 		val enabled: Boolean, val opened: Boolean = false, val paired: List<SavedTv> = emptyList(), val selected: String? = null,
 		val status: TvStatus? = null, val discovery: TvDiscovery = TvDiscovery(), val invite: TvInvite? = null,
 		val busy: Boolean = false, val notice: String? = null, val phoneName: String = Build.MODEL,
-		val loaded: Boolean = false,
+		val loaded: Boolean = false, val access: RemoteAccess = RemoteAccess.ProfileButton, val origin: Rect? = null,
 	) {
 		val current: SavedTv? get() = paired.firstOrNull { it.id == selected }
 	}
@@ -97,6 +110,7 @@ internal class TvRemote(private val context: Context, private val scope: Corouti
 	private val secrets = SecretStore(context, "tv_remote_pairing")
 	private val storage = Mutex()
 	private val mutable = MutableStateFlow(State(enabled = settings.getBoolean("enabled", false),
+		access = RemoteAccess.decoded(settings.getString("access", null)),
 		phoneName = settings.getString("phoneName", null) ?: Build.MODEL))
 	val state = mutable.asStateFlow()
 	private var available = false
@@ -114,13 +128,19 @@ internal class TvRemote(private val context: Context, private val scope: Corouti
 		if (!enabled) networkAvailable(false)
 	}
 
-	fun open() {
-		if (mutable.value.enabled) mutable.update { it.copy(opened = true, notice = null) }
+	/** Opens the panel, growing out of [origin] (the button's bounds in window px) when a button opened it. */
+	fun open(origin: Rect? = null) {
+		if (mutable.value.enabled) mutable.update { it.copy(opened = true, origin = origin, notice = null) }
+	}
+
+	fun setAccess(access: RemoteAccess) {
+		settings.edit { putString("access", access.id) }
+		mutable.update { it.copy(access = access) }
 	}
 
 	fun close() {
 		if (mutable.value.busy) return
-		mutable.update { it.copy(opened = false, invite = null, notice = null) }
+		mutable.update { it.copy(opened = false, origin = null, invite = null, notice = null) }
 		networkAvailable(false)
 	}
 
@@ -130,7 +150,7 @@ internal class TvRemote(private val context: Context, private val scope: Corouti
 			try {
 				val invite = TvCore.call<TvInvite>("invite", RemoteRequest(url = url))
 				enable(true)
-				mutable.update { it.copy(opened = true, invite = invite, notice = null) }
+				mutable.update { it.copy(opened = true, origin = null, invite = invite, notice = null) }
 			} catch (e: CancellationException) { throw e }
 			catch (e: Exception) { showError(e) }
 		}

@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
@@ -26,7 +27,10 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -63,9 +67,8 @@ internal fun RemoteFaceBody(
 ) {
 	val ready = status?.ready == true
 	Box(modifier) {
-		RemotePad(mode, onMode, ready, status == null || status.pointer, input, Modifier.rect(layout.pad))
+		PadRegion(status, mode, onMode, input, actions, editing, Modifier.rect(layout.pad))
 		for (placement in layout.strips) StripKeys(placement, status, ready, input, actions)
-		if (!editing) FaceNotice(status, layout.pad, actions)
 		if (editing) {
 			// Swallows touches so keys do not fire while arranging, and carries the drag that moves the panel.
 			Box(Modifier.fillMaxSize().then(editSurface).pointerInput(Unit) {})
@@ -76,16 +79,33 @@ internal fun RemoteFaceBody(
 	}
 }
 
-/** What the pad's area says when the TV cannot take a key yet. */
+/** Why the pad does not answer and the one thing that fixes it. Null while the pad answers. */
+private class PadNotice(val text: String, val action: String?, val perform: () -> Unit = {}, val emphasized: Boolean = false)
+
+private fun padNotice(status: TvStatus?, actions: RemoteFaceActions): PadNotice? = when {
+	status == null -> null
+	status.status == "offline" -> PadNotice("The TV can’t be reached.", "Reconnect", actions.onReconnect)
+	status.status == "unpaired" -> PadNotice("This phone is no longer paired with the TV.", "Pair again", actions.onPair, emphasized = true)
+	status.status == "incompatible" -> PadNotice("The TV needs a compatible version.", null)
+	status.status == "connected" && status.standby -> PadNotice("The TV is in standby.", "Wake TV", actions.onPower, emphasized = true)
+	else -> null
+}
+
+/** The pad's region: the pad and its switch, or, while the pad does not answer, the reason and its one button, alone and centred. */
 @Composable
-private fun FaceNotice(status: TvStatus?, pad: Rect, actions: RemoteFaceActions) {
-	val label = when (status?.status) {
-		"offline" -> "Reconnect"
-		"unpaired" -> "Pair again"
-		else -> null
-	} ?: return
-	Box(Modifier.rect(pad), contentAlignment = Alignment.Center) {
-		RemoteButton(label, onClick = if (status?.status == "offline") actions.onReconnect else actions.onPair, emphasized = status?.status == "unpaired")
+private fun PadRegion(
+	status: TvStatus?, mode: PadMode, onMode: (PadMode) -> Unit, input: (RemoteRequest) -> Unit, actions: RemoteFaceActions,
+	editing: Boolean, modifier: Modifier,
+) {
+	val notice = if (editing) null else padNotice(status, actions)
+	if (notice == null) {
+		RemotePad(mode, onMode, status?.ready == true, status == null || status.pointer, input, modifier)
+		return
+	}
+	Column(modifier.semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite }, horizontalAlignment = Alignment.CenterHorizontally,
+		verticalArrangement = Arrangement.spacedBy(Space.s3, Alignment.CenterVertically)) {
+		Text(notice.text, color = lucent.ink2, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
+		notice.action?.let { RemoteButton(it, onClick = notice.perform, emphasized = notice.emphasized) }
 	}
 }
 

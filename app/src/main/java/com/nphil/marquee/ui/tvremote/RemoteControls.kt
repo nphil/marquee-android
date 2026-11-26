@@ -51,6 +51,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.nphil.marquee.R
 import com.nphil.marquee.tvremote.RemoteRequest
@@ -97,7 +98,7 @@ internal fun KeyCap(
 				onLongClick = onLongClick, onClick = onClick),
 		contentAlignment = Alignment.Center,
 	) {
-		if (text != null) Text(text, Modifier.clearAndSetSemantics {}, color = ink, style = MaterialTheme.typography.titleMedium, maxLines = 1)
+		if (text != null) Text(text, Modifier.clearAndSetSemantics {}, color = ink, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center, maxLines = 1)
 		else Icon(painterResource(icon), null, tint = ink, modifier = Modifier.rotate(turn))
 	}
 }

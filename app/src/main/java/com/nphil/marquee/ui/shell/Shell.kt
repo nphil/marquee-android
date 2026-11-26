@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
@@ -69,7 +71,10 @@ import com.nphil.marquee.ui.requests.RequestsDestination
 import com.nphil.marquee.ui.search.SearchScreen
 import com.nphil.marquee.ui.settings.SettingsScreen
 import com.nphil.marquee.ui.theme.ThemeChoice
+import com.nphil.marquee.tvremote.RemoteAccess
 import com.nphil.marquee.ui.theme.lucent
+import com.nphil.marquee.ui.tvremote.RemoteEntryButton
+import com.nphil.marquee.ui.tvremote.RemoteMiniBar
 import com.nphil.marquee.ui.watchlist.WatchlistScreen
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -129,6 +134,11 @@ private fun ShellPages(
 	val session by container.session.state.collectAsStateWithLifecycle()
 	val settingsProfile = session.user
 	val glasses = container.glasses
+	val remote by container.tvRemote.state.collectAsStateWithLifecycle()
+	// The remote's entry is its button by the profile or its mini bar, never both; a connected display's remote takes its place.
+	val remoteEntry = remote.enabled && !glasses.isConnected
+	val remoteButton = remoteEntry && remote.access == RemoteAccess.ProfileButton
+	val remoteBar = remoteEntry && remote.access == RemoteAccess.MiniBar
 	val bigScreen = if (glasses.isConnected) remember(glasses.remoteTitle, glasses.symbol) { BigScreenEntry(glasses.remoteTitle, glasses.symbol, glasses::showRemote) } else null
 	val available = remember(seerr) { TabLayout.available(seerr) }
 	val limit = tabLimit(maxWidth.value)
@@ -179,7 +189,13 @@ private fun ShellPages(
 	DisposableEffect(anchor) { onDispose { anchor.pages = null } }
 
 	val pages: @Composable (Modifier) -> Unit = { modifier ->
-		Pages(showing, tabs, wide, container, env, place, places, choice, onTheme, settingsProfile, controllable, onSettings = { select(SETTINGS_KEY) }, onBack = { savedPlace = null }, modifier)
+		// The Mini Bar rides above the pages' foot. A minimised playback's bar sits in the room kept under that, so both stay tappable.
+		Column(modifier) {
+			Box(Modifier.weight(1f).fillMaxWidth()) {
+				Pages(showing, tabs, wide, container, env, place, places, choice, onTheme, settingsProfile, controllable, remoteButton, onSettings = { select(SETTINGS_KEY) }, onBack = { savedPlace = null }, Modifier.fillMaxSize())
+			}
+			if (remoteBar) RemoteMiniBar(container.tvRemote, remote)
+		}
 	}
 
 	if (!wide) {
@@ -256,6 +272,7 @@ private fun ShellPages(
 			bigScreen = bigScreen,
 			onLink = controllable?.let { phone -> { container.link.control(phone.id) } },
 			linkLabel = "Control ${controllable?.name.orEmpty()}",
+			remoteButton = if (remoteButton) ({ RemoteEntryButton(container.tvRemote) }) else null,
 		)
 		pages(Modifier.weight(1f).fillMaxHeight().padding(bottom = clear).onGloballyPositioned { anchor.pages = it.boundsInWindow() }.padding(bottom = room).clipToBounds().layout { child, available ->
 			// Slide the wide page behind the trailing clip. Reflow posters once, when the sidebar lands, not at each step.
@@ -284,6 +301,7 @@ private fun Pages(
 	onTheme: ((ThemeChoice) -> ThemeChoice) -> Unit,
 	settingsProfile: PlexHomeUser?,
 	controllable: LinkedPhone?,
+	remoteButton: Boolean,
 	onSettings: () -> Unit,
 	onBack: () -> Unit,
 	modifier: Modifier,
@@ -311,6 +329,7 @@ private fun Pages(
 						if (!wide) {
 							if (container.glasses.isConnected) GlassesRemoteButton(container.glasses)
 							controllable?.let { phone -> LinkEntryIcon(phone.name, onClick = { container.link.control(phone.id) }) }
+							if (remoteButton) RemoteEntryButton(container.tvRemote)
 							CompactSettingsButton(settingsProfile, onClick = onSettings)
 						}
 					},

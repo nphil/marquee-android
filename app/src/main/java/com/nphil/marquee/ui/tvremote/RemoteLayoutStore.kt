@@ -16,13 +16,13 @@ internal enum class PadMode(val id: String) {
 }
 
 /**
- * Where the user left the remote: the dock, the panel's rectangle, the modules kept and the pad mode. It shares the
- * remote's own preferences file, so clearing the remote's data clears these too.
+ * Where the user left the remote: the panel's rectangle, the modules kept and the pad mode. It shares the remote's own
+ * preferences file, so clearing the remote's data clears these too. The orb's dock of earlier builds is dropped on read.
  */
 internal class RemoteLayoutStore(private val prefs: SharedPreferences) {
-	var dock: RemoteDock?
-		get() = decodedDock(prefs.getString(DOCK, null))
-		set(value) = prefs.edit { if (value == null) remove(DOCK) else putString(DOCK, value.encoded()) }
+	init {
+		if (prefs.contains(DOCK)) prefs.edit { remove(DOCK) }
+	}
 
 	var panel: PanelFractions?
 		get() = decodedPanel(prefs.getString(PANEL, null))
@@ -36,7 +36,7 @@ internal class RemoteLayoutStore(private val prefs: SharedPreferences) {
 		get() = PadMode.decoded(prefs.getString(MODE, null))
 		set(value) = prefs.edit { putString(MODE, value.id) }
 
-	/** Back to the defaults: every element shown, the panel where it first opens, the D-pad. The orb keeps its dock. */
+	/** Back to the defaults: every element shown, the panel where it first opens, the D-pad. */
 	fun reset() = prefs.edit {
 		remove(PANEL)
 		remove(MODULES)

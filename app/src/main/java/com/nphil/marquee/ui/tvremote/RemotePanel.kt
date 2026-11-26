@@ -1,6 +1,8 @@
 package com.nphil.marquee.ui.tvremote
 
 import androidx.activity.compose.BackHandler
+import androidx.annotation.DrawableRes
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -13,6 +15,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Icon
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
@@ -85,13 +93,14 @@ internal fun RemotePanelFrame(
 private fun PagePanel(chrome: RemoteChrome, content: @Composable () -> Unit, motion: PanelMotion) {
 	Column(Modifier.fillMaxSize()) {
 		HeaderRow(motion, movable = true) {
-			Text(chrome.title, Modifier.weight(1f).padding(start = Space.s2), style = MaterialTheme.typography.titleMedium,
+			Text(chrome.title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium,
 				maxLines = 1, overflow = TextOverflow.Ellipsis)
-			RemoteGlyph(if (chrome.backIcon) "Back" else "Close remote",
-				if (chrome.backIcon) R.drawable.ic_arrow_back else R.drawable.ic_close, enabled = !chrome.busy, onClick = chrome.onBack)
+			HeaderIcon(if (chrome.backIcon) "Back" else "Close remote",
+				if (chrome.backIcon) R.drawable.ic_arrow_back else R.drawable.ic_close, enabled = !chrome.busy,
+				look = if (chrome.backIcon) HeaderLook.Raised else HeaderLook.Bare, onClick = chrome.onBack)
 		}
 		Column(
-			Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(start = Space.s4, end = Space.s4, bottom = Space.s4),
+			Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(start = Inset, end = Inset, bottom = Inset),
 			verticalArrangement = Arrangement.spacedBy(Space.s3),
 		) {
 			chrome.notice?.let { Notice(it) }
@@ -133,7 +142,7 @@ private fun FacePanel(
 			EditHeader(motion, onReset) { onEditing(false) }
 		} else {
 			FaceHeader(chrome, motion) { onEditing(true) }
-			chrome.notice?.let { Box(Modifier.offset(y = RemoteMetrics.Header.dp).padding(horizontal = Space.s4)) { Notice(it) } }
+			chrome.notice?.let { Box(Modifier.offset(y = RemoteMetrics.Header.dp).padding(horizontal = Inset)) { Notice(it) } }
 		}
 	}
 }
@@ -160,8 +169,9 @@ private fun HeaderRow(motion: PanelMotion, movable: Boolean, content: @Composabl
 					)
 				}
 			}
-			.padding(horizontal = Space.s2),
-		verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.s1), content = content,
+			// The drawn circles, not their 48 dp touch areas, sit on the card's inset.
+			.padding(start = Inset, end = Inset - HeaderSlack),
+		verticalAlignment = Alignment.CenterVertically, content = content,
 	)
 }
 
@@ -173,16 +183,49 @@ private fun FaceHeader(chrome: RemoteChrome, motion: PanelMotion, onEdit: () -> 
 		// The name and state double as the TV chooser, which keeps the header to three buttons.
 		Column(
 			Modifier.weight(1f).clickable(role = Role.Button, onClickLabel = "Choose TV", onClick = chrome.actions.onTvs)
-				.padding(start = Space.s2).semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
+				.semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
 		) {
 			Text(tv?.name ?: "LumaTV", style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
 			Text(statusText(tv, status), color = if (status?.ready == true) lucent.accentText else lucent.ink2,
 				style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
 		}
-		RemoteGlyph(if (status?.status == "connected" && !status.standby) "TV power" else "Wake TV", R.drawable.ic_power,
-			enabled = tv != null && status?.status != "unpaired", emphasized = true, onClick = chrome.actions.onPower)
-		RemoteGlyph("Arrange", R.drawable.ic_tune, onClick = onEdit)
-		RemoteGlyph("Close remote", R.drawable.ic_close, enabled = !chrome.busy, onClick = chrome.onBack)
+		val on = status?.status == "connected" && !status.standby
+		HeaderIcon(if (on) "TV power" else "Wake TV", R.drawable.ic_power, enabled = tv != null && status?.status != "unpaired",
+			look = if (on) HeaderLook.Tinted else HeaderLook.Raised, onClick = chrome.actions.onPower)
+		HeaderIcon("Arrange", R.drawable.ic_tune, onClick = onEdit)
+		HeaderIcon("Close remote", R.drawable.ic_close, enabled = !chrome.busy, look = HeaderLook.Bare, onClick = chrome.onBack)
+	}
+}
+
+private val Inset = RemoteMetrics.Inset.dp
+
+private val HeaderDisc = 32.dp
+
+/** The room a header button's touch area keeps beyond its drawn circle. */
+private val HeaderSlack = (48.dp - HeaderDisc) / 2
+
+private enum class HeaderLook { Raised, Tinted, Bare }
+
+/** A small round header button: a 32 dp circle in a 48 dp touch area. [HeaderLook.Tinted] colours the glyph for a state that is on. */
+@Composable
+private fun HeaderIcon(label: String, @DrawableRes icon: Int, enabled: Boolean = true, look: HeaderLook = HeaderLook.Raised, onClick: () -> Unit) {
+	val ink = when {
+		!enabled -> lucent.ink3
+		look == HeaderLook.Tinted -> lucent.accentText
+		look == HeaderLook.Bare -> lucent.ink2
+		else -> lucent.ink
+	}
+	Box(
+		Modifier.size(48.dp).clip(CircleShape).clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+			.semantics { contentDescription = label },
+		contentAlignment = Alignment.Center,
+	) {
+		Box(
+			Modifier.size(HeaderDisc).clip(CircleShape).then(if (look == HeaderLook.Bare) Modifier else Modifier.background(lucent.glassRaised)),
+			contentAlignment = Alignment.Center,
+		) {
+			Icon(painterResource(icon), null, Modifier.size(20.dp), tint = ink)
+		}
 	}
 }
 
@@ -223,7 +266,7 @@ private fun Notice(text: String) {
 	Text(text, Modifier.semantics { liveRegion = LiveRegionMode.Polite }, color = lucent.danger, style = MaterialTheme.typography.bodyMedium)
 }
 
-private fun statusText(tv: SavedTv?, status: TvStatus?) = when (status?.status) {
+internal fun statusText(tv: SavedTv?, status: TvStatus?) = when (status?.status) {
 	"connected" -> if (status.standby) "Standby" else "Connected"
 	"offline" -> "Offline · reconnecting"
 	"incompatible" -> "TV needs a compatible version"

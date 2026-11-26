@@ -43,6 +43,7 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -83,12 +84,14 @@ import kotlinx.coroutines.launch
 private const val StickReach = 0.62f
 private const val KnobRadius = 0.26f
 
-/** Width of the mode switch: three segments, never wider than the pad. */
-private val SwitchWidth = 168.dp
+/** The mode switch: a 36 dp capsule of three segments, 192 dp wide (never wider than the pad), in a 48 dp touch row. */
+private val SwitchWidth = 192.dp
+private val SwitchCapsule = 36.dp
 
 /**
  * The remote's thumb area. [mode] picks how it behaves; [touchpad] says the TV can take pointer input at all, and
- * without it the saved touchpad choice is kept but the D-pad shows. The mode switch sits under the pad when there is room.
+ * without it the saved touchpad choice is kept but the D-pad shows. The mode switch has a row of its own under the pad
+ * when there is room; a pad too short for both is only the pad.
  */
 @Composable
 internal fun RemotePad(
@@ -99,7 +102,7 @@ internal fun RemotePad(
 	BoxWithConstraints(modifier) {
 		val withSwitch = maxHeight >= 120.dp
 		val stage = (maxHeight - if (withSwitch) TokenSize.target + Space.s3 else 0.dp).coerceAtLeast(0.dp)
-		Box(Modifier.fillMaxWidth().height(stage), contentAlignment = Alignment.Center) {
+		Box(Modifier.fillMaxWidth().height(stage).clipToBounds(), contentAlignment = Alignment.Center) {
 			Crossfade(shown, Modifier.fillMaxSize(), animationSpec = tween(150), label = "padMode") { current ->
 				if (current == PadMode.Touchpad) {
 					TouchSurface(ready, input, Modifier.fillMaxSize())
@@ -121,10 +124,13 @@ internal fun RemotePad(
 @Composable
 private fun PadModeSwitch(mode: PadMode, onMode: (PadMode) -> Unit, touchpad: Boolean, modifier: Modifier = Modifier) {
 	val shape = RoundedCornerShape(percent = 50)
-	Row(modifier.height(TokenSize.target).clip(shape).background(lucent.glassRaised).border(1.dp, lucent.edge, shape).selectableGroup()) {
-		ModeSegment(PadMode.Dpad, R.drawable.ic_dpad, "Directional pad", mode, true, onMode, Modifier.weight(1f))
-		ModeSegment(PadMode.Joystick, R.drawable.ic_joystick, "Joystick", mode, true, onMode, Modifier.weight(1f))
-		ModeSegment(PadMode.Touchpad, R.drawable.ic_touchpad, "Touchpad", mode, touchpad, onMode, Modifier.weight(1f))
+	Box(modifier.height(TokenSize.target), contentAlignment = Alignment.Center) {
+		Box(Modifier.fillMaxWidth().height(SwitchCapsule).clip(shape).background(lucent.glassRaised).border(1.dp, lucent.edge, shape))
+		Row(Modifier.fillMaxSize().selectableGroup()) {
+			ModeSegment(PadMode.Dpad, R.drawable.ic_dpad, "Directional pad", mode, true, onMode, Modifier.weight(1f))
+			ModeSegment(PadMode.Joystick, R.drawable.ic_joystick, "Joystick", mode, true, onMode, Modifier.weight(1f))
+			ModeSegment(PadMode.Touchpad, R.drawable.ic_touchpad, "Touchpad", mode, touchpad, onMode, Modifier.weight(1f))
+		}
 	}
 }
 
@@ -143,13 +149,18 @@ private fun ModeSegment(
 		else -> lucent.ink2
 	}
 	Box(
-		modifier.fillMaxHeight().padding(3.dp).graphicsLayer { scaleX = scale; scaleY = scale }
-			.clip(RoundedCornerShape(percent = 50)).background(fill)
+		modifier.fillMaxHeight()
 			.selectable(selected, interaction, null, enabled, Role.RadioButton) { onMode(entry) }
 			.semantics { contentDescription = label },
 		contentAlignment = Alignment.Center,
 	) {
-		Icon(painterResource(icon), null, tint = ink)
+		Box(
+			Modifier.fillMaxWidth().height(SwitchCapsule - 4.dp).padding(horizontal = 2.dp).graphicsLayer { scaleX = scale; scaleY = scale }
+				.clip(RoundedCornerShape(percent = 50)).background(fill),
+			contentAlignment = Alignment.Center,
+		) {
+			Icon(painterResource(icon), null, tint = ink)
+		}
 	}
 }
 
