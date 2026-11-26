@@ -157,14 +157,7 @@ class MainActivity : ComponentActivity() {
 		}
 		val dark = theme.lucent.isDark
 		// System bar icons follow the theme on screen, which need not match the system's appearance.
-		LaunchedEffect(dark) {
-			val bars = if (dark) {
-				SystemBarStyle.dark(Color.TRANSPARENT)
-			} else {
-				SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
-			}
-			enableEdgeToEdge(statusBarStyle = bars, navigationBarStyle = bars)
-		}
+		LaunchedEffect(dark) { applyThemeBars(dark) }
 		val scope = rememberCoroutineScope()
 		MarqueeTheme(theme, container.typography) {
 			MarqueeApp(container, choice, onTheme = { change -> scope.launch { container.settings.updateTheme(change) } })
@@ -172,4 +165,10 @@ class MainActivity : ComponentActivity() {
 			ReportSheetHost(container)
 		}
 	}
+}
+
+internal fun ComponentActivity.applyThemeBars(dark: Boolean) {
+	val bars = if (dark) SystemBarStyle.dark(Color.TRANSPARENT)
+	else SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
+	enableEdgeToEdge(statusBarStyle = bars, navigationBarStyle = bars)
 }

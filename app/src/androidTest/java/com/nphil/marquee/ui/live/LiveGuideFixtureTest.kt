@@ -1,5 +1,10 @@
 package com.nphil.marquee.ui.live
 
+import android.graphics.Bitmap
+import com.nphil.marquee.applyThemeBars
+import com.nphil.marquee.ui.Recordings
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.graphics.toArgb
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -65,21 +70,39 @@ class LiveGuideFixtureTest {
 	@Test
 	fun editingARecordingShowsTheNewEpisodesSummary() {
 		val container = app.container
-		val model = runBlocking { withTimeout(10_000) { container.live.guide.filterNotNull().first().dvr } }
+		val guide = runBlocking { withTimeout(10_000) { container.live.guide.filterNotNull().first() } }
 		var mode by mutableStateOf(ThemeMode.Dark)
 		val display = InstrumentationRegistry.getInstrumentation().uiAutomation
 		rule.setContent {
 			val palette = if (mode == ThemeMode.Dark) LucentTheme.DEFAULT_DARK else LucentTheme.DEFAULT_LIGHT
-			MarqueeTheme(container.themes.resolve(palette, mode), container.typography) {
-				RecordingBrowserScreen(model, Modifier.fillMaxSize()) {}
+			val theme = container.themes.resolve(palette, mode)
+			LaunchedEffect(theme.lucent.isDark) { rule.activity.applyThemeBars(theme.lucent.isDark) }
+			MarqueeTheme(theme, container.typography) {
+				RecordingsDestination(container, Recordings(guide.key)) {}
 			}
 		}
 		rule.waitUntil(10_000) { rule.onAllNodesWithText("News 7 Tonight").fetchSemanticsNodes().isNotEmpty() }
-		rule.waitForIdle()
-		display.takeScreenshot().saveScreenshot("recording-upcoming-dark")
+		fun captureUpcoming(palette: String, name: String) {
+			val canvas = container.themes.resolve(palette, mode).lucent.canvas.toArgb()
+			// Compose can be idle before the display compositor presents its new frame.
+			rule.waitUntil(10_000) {
+				val frame = display.takeScreenshot() ?: return@waitUntil false
+				val pixels = if (frame.config == Bitmap.Config.HARDWARE) frame.copy(Bitmap.Config.ARGB_8888, false) else frame
+				try {
+					val x = frame.width / 4
+					val matches = pixels.getPixel(x, 4) == canvas && pixels.getPixel(3, frame.height / 2) == canvas &&
+						pixels.getPixel(x, frame.height - 5) == canvas
+					if (matches) pixels.saveScreenshot(name)
+					matches
+				} finally {
+					if (pixels !== frame) pixels.recycle()
+					frame.recycle()
+				}
+			}
+		}
+		captureUpcoming(LucentTheme.DEFAULT_DARK, "recording-upcoming-dark")
 		rule.runOnIdle { mode = ThemeMode.Light }
-		rule.waitForIdle()
-		display.takeScreenshot().saveScreenshot("recording-upcoming-light")
+		captureUpcoming(LucentTheme.DEFAULT_LIGHT, "recording-upcoming-light")
 		rule.onNodeWithText("Rules").performClick()
 		rule.waitUntil(10_000) { rule.onAllNodesWithText("Wild Coasts").fetchSemanticsNodes().isNotEmpty() }
 		rule.waitForIdle()
