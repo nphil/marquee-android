@@ -72,11 +72,13 @@ class LiveGuideFixtureTest {
 		}
 		rule.onNodeWithText("Rules").performClick()
 		rule.waitUntil(10_000) { rule.onAllNodesWithText("Wild Coasts").fetchSemanticsNodes().isNotEmpty() }
+		rule.saveWindow("recording-rules-light")
 		rule.onNodeWithText("Wild Coasts").performClick()
 		rule.onNodeWithText("Edit rule").performClick()
 		rule.waitUntil(10_000) { rule.onAllNodesWithText("New Episodes").fetchSemanticsNodes().isNotEmpty() }
 		rule.onNodeWithText("New Episodes").performClick()
 		rule.waitUntil(5_000) { rule.onAllNodesWithText("Records new episodes of Wild Coasts", substring = true).fetchSemanticsNodes().isNotEmpty() }
+		rule.saveWindow("recording-editor-new-episodes-light")
 	}
 
 	@Test
