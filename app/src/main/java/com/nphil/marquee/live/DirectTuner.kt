@@ -144,7 +144,11 @@ internal class TunerCandidate private constructor(
 		return availability(try { check.execute().use(::readJson) } catch (_: IOException) { null })
 	}
 
+	@Volatile var supportsConsent = false
+		private set
+
 	private fun availability(document: JsonElement?): TunerAvailability {
+		supportsConsent = ((document as? JsonObject)?.get("consent") as? JsonObject)?.get("version") == JsonPrimitive(1)
 		val status = document as? JsonObject ?: return TunerAvailability.Unreported
 		offer = TunerTranscode.offer(status)
 		val holder = status["holder"]
@@ -198,7 +202,8 @@ internal class TunerCandidate private constructor(
 			?: return null
 		val decision = transcodeDecision(number, smooth)
 		val named = if (isLuma) TunerTakeover.named(stream, clientName) else stream
-		return DirectTunerFeed(this, decision.profile?.let { TunerTranscode.ask(named, it) } ?: named, decision)
+		val target = decision.profile?.let { TunerTranscode.ask(named, it) } ?: named
+		return DirectTunerFeed(this, if (supportsConsent) target.newBuilder().addQueryParameter("consent", "1").build() else target, decision)
 	}
 
 	/** A picture of [height] lines reached the screen of an unconverted (or unlimited) tune of [number]. */
@@ -223,7 +228,7 @@ internal class TunerCandidate private constructor(
 			var request = chain.request()
 			var response = chain.proceed(request)
 			var redirects = 0
-			while (redirects < 5 && response.isRedirect) {
+			while (redirects < 5 && response.isRedirect && request.url.queryParameter("consent") == null) {
 				val next = response.header("Location")?.let(request.url::resolve)
 					?.takeIf { it.sameOrigin(base) && it.username.isEmpty() && it.password.isEmpty() } ?: break
 				response.close()
@@ -233,7 +238,10 @@ internal class TunerCandidate private constructor(
 			}
 			stamp(TuneTiming.Stage.Headers)
 			// A busy LumaTV can send 200 with a playable slate without granting a tuner lease.
-			if (isLuma && response.isSuccessful) {
+			if (request.url.queryParameter("consent") == "1" && response.isSuccessful) {
+				claim(if (response.header("X-Luma-Stream-Key").isNullOrEmpty()) TunerAvailability.Unreported else TunerAvailability.Ours)
+				stamp(TuneTiming.Stage.Admitted)
+			} else if (isLuma && response.isSuccessful) {
 				claim(TunerAvailability.Unreported)
 				claim(checkAdmission(admission))
 				stamp(TuneTiming.Stage.Admitted)
@@ -293,6 +301,12 @@ internal class DirectTunerFeed(
 	val tuner: TunerCandidate, private val url: HttpUrl, val decision: TunerTranscode.Decision = TunerTranscode.Decision(null, "not-luma", null),
 ) : Call.Factory {
 	val asked: Boolean get() = decision.asked
+	private var ticket: String? = null
+	fun confirmed(previous: DirectTunerFeed, challenge: TunerChallenge): Boolean {
+		if (previous.tuner !== tuner || previous.url != url || url.queryParameter("consent") != "1" || challenge.expired()) return false
+		ticket = challenge.ticket
+		return true
+	}
 
 	/** The first picture of this tune reached the screen, so an end after it is a stream lost, not one refused. */
 	@Volatile var rendered = false
@@ -332,7 +346,10 @@ internal class DirectTunerFeed(
 	else DirectProblem.Fallback
 
 	@Synchronized
-	override fun newCall(request: Request): Call = client.newCall(request).also {
+	override fun newCall(request: Request): Call = client.newCall(ticket?.let {
+		ticket = null
+		request.newBuilder().url(url.newBuilder().addQueryParameter("takeover", it).build()).build()
+	} ?: request).also {
 		timing?.mark(TuneTiming.Stage.Request)
 		if (stopped || call != null) it.cancel() else call = it
 	}
@@ -384,6 +401,12 @@ internal fun directProblem(errorCode: Int, cause: Throwable?): DirectProblem {
 		val marker = refused.headerFields.entries.firstOrNull { it.key.equals("X-HDHomeRun-Error", ignoreCase = true) }
 			?.value?.firstOrNull()
 		if (marker == null && refused.responseCode in 300..399) return DirectProblem.Fallback
+		if (refused.responseCode == 503 && marker?.substringBefore(' ') == "805") {
+			val json = refused.headerFields.entries.firstOrNull { it.key.equals("Content-Type", true) }
+				?.value?.firstOrNull()?.substringBefore(';')?.trim().equals("application/json", true)
+			val challenge = if (json) TunerChallenge.parse(refused.responseBody) else null
+			return DirectProblem.Refused(challenge?.holders ?: tunerHttpRefusal(503, marker, refused.responseBody), busy = true, status = 503, challenge = challenge)
+		}
 		return DirectProblem.Refused(
 			tunerHttpRefusal(refused.responseCode, marker, refused.responseBody), busy = refused.responseCode == 503, status = refused.responseCode,
 		)
@@ -399,7 +422,7 @@ internal fun tunerLost(errorCode: Int): Boolean =
 
 internal fun tunerHttpRefusal(status: Int, marker: String?, body: ByteArray): String {
 	val message = body.decodeToString(endIndex = minOf(body.size, 240))
-		.lineSequence().first().trim().takeUnless { it.isBlank() || '<' in it }
+		.lineSequence().first().trim().takeUnless { it.isBlank() || '<' in it || it.startsWith("{") }
 	return message ?: when {
 		status == 403 || marker?.startsWith("811") == true -> "This channel is protected."
 		status == 503 && marker == null || status == 409 || status == 423 || marker?.startsWith("805") == true ->
@@ -408,10 +431,25 @@ internal fun tunerHttpRefusal(status: Int, marker: String?, body: ByteArray): St
 	}
 }
 
+internal class TunerChallenge private constructor(val ticket: String, val holders: String, private val issued: Long) {
+	fun expired() = System.nanoTime() - issued >= 30_000_000_000L
+	companion object {
+		fun parse(body: ByteArray): TunerChallenge? {
+			if (body.size !in 1..8192) return null
+			val obj = runCatching { CoreJson.parseToJsonElement(body.decodeToString()) as? JsonObject }.getOrNull() ?: return null
+			if (obj["version"] != JsonPrimitive(1) || obj.text("error") != "takeover_required") return null
+			val ticket = (obj["takeover"] as? JsonPrimitive)?.takeIf { it.isString }?.content?.takeIf { it.isNotBlank() } ?: return null
+			val names = (obj["holders"] as? JsonArray)?.map { (it as? JsonObject)?.text("name")?.takeIf(String::isNotBlank) ?: "Another viewer" }.orEmpty()
+			if (names.isEmpty()) return null
+			return TunerChallenge(ticket, "Tuner in use: ${names.joinToString()}.", System.nanoTime())
+		}
+	}
+}
+
 internal sealed interface DirectProblem {
 	data object Fallback : DirectProblem
 	/** [busy]: a 503, which a LumaTV tuner explains in `status.json`. */
-	data class Refused(val message: String, val reason: String = "http_refusal", val busy: Boolean = false, val status: Int? = null) : DirectProblem
+	data class Refused(val message: String, val reason: String = "http_refusal", val busy: Boolean = false, val status: Int? = null, val challenge: TunerChallenge? = null) : DirectProblem
 }
 
 @Serializable

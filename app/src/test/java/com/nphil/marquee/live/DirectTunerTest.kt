@@ -29,6 +29,15 @@ class DirectTunerTest {
 	fun close() = server.shutdown()
 
 	@Test
+	fun consentRequiresAChallengeAndNeverDisplaysItsTicket() {
+		val body = """{"version":1,"error":"takeover_required","takeover":"single-use","holders":[{"name":"Living room TV"}]}"""
+		assertTrue(TunerChallenge.parse(body.toByteArray())!!.holders.contains("Living room TV"))
+		assertNull(TunerChallenge.parse(body.replace("takeover_required", "tuner_busy").toByteArray()))
+		assertNull(TunerChallenge.parse(body.replace("\"version\":1", "\"version\":2").toByteArray()))
+		assertFalse(tunerHttpRefusal(503, "805 All Tuners In Use", body.toByteArray()).contains("single-use"))
+	}
+
+	@Test
 	fun anotherDeviceAtTheSameAddressIsNotTuned() = runBlocking {
 		server.enqueue(MockResponse().setBody("""{"DeviceID":"DEADBEEF"}"""))
 		assertNull(TunerCandidate.discover(http, server.url("/"), uuid, emptySet()))

@@ -118,13 +118,13 @@ internal class LivePlayerModel(
 		else tune(initial)
 	}
 
-	fun tune(next: GuideChannel, retry: Boolean = false, takeBack: Boolean = false) {
+	fun tune(next: GuideChannel, retry: Boolean = false) {
 		if (closed || (!retry && next.id == channel?.id && phase !is LivePlayerPhase.Failed && phase != LivePlayerPhase.Away)) return
-		queueTune(next, takeBack = takeBack)
+		queueTune(next)
 	}
 
 	private fun queueTune(
-		next: GuideChannel, plexNotice: String? = null, plexReason: String? = null, takeBack: Boolean = false, reopen: Boolean = false,
+		next: GuideChannel, plexNotice: String? = null, plexReason: String? = null, approval: Pair<DirectTunerFeed, TunerChallenge>? = null, reopen: Boolean = false,
 	) {
 		if (!reopen) reopens = TunerReopen()
 		val mine = ++generation
@@ -142,12 +142,16 @@ internal class LivePlayerModel(
 				finishStream()
 				if (mine != generation) return@withLock
 				val choice = coroutineScope {
-					async { chooseRoute(next, plexReason, takeBack) }
+					async { chooseRoute(next, plexReason, approval) }
 						.also { resolving = it }.await()
 				}
 				resolving = null
 				if (mine != generation) return@withLock
 				outgoingTuner = null
+				if (approval != null && choice is TuneChoice.Plex) {
+					fail("The tuner request changed. Try again.")
+					return@withLock
+				}
 				when (choice) {
 					is TuneChoice.Direct -> {
 						direct = choice.feed
@@ -182,8 +186,7 @@ internal class LivePlayerModel(
 		}
 	}
 
-	/** [takeBack]: the viewer chose "Watch here" after another client took the tuner, so its being held is not a refusal. */
-	private suspend fun chooseRoute(next: GuideChannel, plexReason: String?, takeBack: Boolean = false): TuneChoice {
+	private suspend fun chooseRoute(next: GuideChannel, plexReason: String?, approval: Pair<DirectTunerFeed, TunerChallenge>?): TuneChoice {
 		val playback = container.settings.playback(guide.place.profile).first()
 		if (!playback.readsTunerDirectly) return TuneChoice.Plex("setting")
 		if (!canReadLocalTuner(app)) return TuneChoice.Plex("local_network_permission")
@@ -200,10 +203,13 @@ internal class LivePlayerModel(
 				else -> {
 					val available = candidate.availability()
 					// A channel on the RF the holder's viewers are on joins their tuner instead of being refused.
-					val joins = takeBack || (available is TunerAvailability.Held && candidate.shares(next.number))
+					val joins = candidate.supportsConsent || (available is TunerAvailability.Held && candidate.shares(next.number))
 					if (available is TunerAvailability.Held && !joins) return TuneChoice.Refused(available.message, "tuner_in_use")
 					if (!candidate.isLuma || joins || available == TunerAvailability.Free || available == TunerAvailability.Ours) {
-						plan.url?.let { candidate.open(it, next.number, playback.prefersSmoothMotion) }?.let { return TuneChoice.Direct(it, plan.handover) }
+						plan.url?.let { candidate.open(it, next.number, playback.prefersSmoothMotion) }?.let { feed ->
+							if (approval != null && !feed.confirmed(approval.first, approval.second)) return TuneChoice.Refused("The tuner request changed. Try again.", "expired_consent")
+							return TuneChoice.Direct(feed, plan.handover)
+						}
 						"invalid_stream_origin"
 					} else "claim_not_verified"
 				}
@@ -306,6 +312,11 @@ internal class LivePlayerModel(
 		val next = channel ?: return
 		val feed = direct ?: return
 		val recovery = feed.recover(problem) ?: return
+		if (feed.tuner.supportsConsent && recovery is DirectProblem.Refused && recovery.status == 503) {
+			fail(recovery.message)
+			pendingConsent = recovery.challenge?.let { feed to it }
+			return
+		}
 		if (!feed.tuner.isLuma) return recovered(next, feed, cause, recovery)
 		// LumaTV is asked first whether another client took the tuner: then playback stops here, without Plex.
 		val mine = generation
@@ -375,9 +386,16 @@ internal class LivePlayerModel(
 		tune(lineup[(current + by).mod(lineup.size)])
 	}
 
+	private var pendingConsent by mutableStateOf<Pair<DirectTunerFeed, TunerChallenge>?>(null)
+	val canConfirm get() = pendingConsent != null
+	fun confirmSwitch() {
+		val pending = pendingConsent ?: return
+		channel?.let { queueTune(it, approval = pending) }
+	}
+	fun declineSwitch() { pendingConsent = null }
+
 	fun retry() {
-		val takeBack = (phase as? LivePlayerPhase.Failed)?.displaced == true
-		channel?.let { tune(it, retry = true, takeBack = takeBack) }
+		channel?.let { tune(it, retry = true) }
 			?: container.scope.launch { start(refresh = true) }
 	}
 
@@ -649,6 +667,7 @@ internal class LivePlayerModel(
 	}
 
 	private fun stopMedia() {
+		pendingConsent = null
 		recordingWarning = null
 		resolving?.cancel()
 		resolving = null
