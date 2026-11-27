@@ -1,7 +1,9 @@
 package com.nphil.marquee
 
 import android.content.Intent
-import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
+import androidx.compose.ui.graphics.toArgb
+import com.nphil.marquee.ui.theme.LucentTheme
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -155,9 +157,8 @@ class MainActivity : ComponentActivity() {
 				shown = choice
 			}
 		}
-		val dark = theme.lucent.isDark
 		// System bar icons follow the theme on screen, which need not match the system's appearance.
-		LaunchedEffect(dark) { applyThemeBars(dark) }
+		LaunchedEffect(theme.lucent) { applyThemeBars(theme.lucent) }
 		val scope = rememberCoroutineScope()
 		MarqueeTheme(theme, container.typography) {
 			MarqueeApp(container, choice, onTheme = { change -> scope.launch { container.settings.updateTheme(change) } })
@@ -167,8 +168,9 @@ class MainActivity : ComponentActivity() {
 	}
 }
 
-internal fun ComponentActivity.applyThemeBars(dark: Boolean) {
-	val bars = if (dark) SystemBarStyle.dark(Color.TRANSPARENT)
-	else SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
+internal fun ComponentActivity.applyThemeBars(theme: LucentTheme) {
+	val canvas = theme.canvas.toArgb()
+	window.setBackgroundDrawable(ColorDrawable(canvas))
+	val bars = if (theme.isDark) SystemBarStyle.dark(canvas) else SystemBarStyle.light(canvas, canvas)
 	enableEdgeToEdge(statusBarStyle = bars, navigationBarStyle = bars)
 }

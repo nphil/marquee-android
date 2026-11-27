@@ -76,12 +76,13 @@ class LiveGuideFixtureTest {
 		rule.setContent {
 			val palette = if (mode == ThemeMode.Dark) LucentTheme.DEFAULT_DARK else LucentTheme.DEFAULT_LIGHT
 			val theme = container.themes.resolve(palette, mode)
-			LaunchedEffect(theme.lucent.isDark) { rule.activity.applyThemeBars(theme.lucent.isDark) }
+			LaunchedEffect(theme.lucent) { rule.activity.applyThemeBars(theme.lucent) }
 			MarqueeTheme(theme, container.typography) {
 				RecordingsDestination(container, Recordings(guide.key)) {}
 			}
 		}
 		rule.waitUntil(10_000) { rule.onAllNodesWithText("News 7 Tonight").fetchSemanticsNodes().isNotEmpty() }
+		val barMismatches = mutableListOf<String>()
 		fun captureUpcoming(palette: String, name: String) {
 			val canvas = container.themes.resolve(palette, mode).lucent.canvas.toArgb()
 			// Compose can be idle before the display compositor presents its new frame.
@@ -90,10 +91,14 @@ class LiveGuideFixtureTest {
 				val pixels = if (frame.config == Bitmap.Config.HARDWARE) frame.copy(Bitmap.Config.ARGB_8888, false) else frame
 				try {
 					val x = frame.width / 4
-					val matches = pixels.getPixel(x, 4) == canvas && pixels.getPixel(3, frame.height / 2) == canvas &&
-						pixels.getPixel(x, frame.height - 5) == canvas
-					if (matches) pixels.saveScreenshot(name)
-					matches
+					if (pixels.getPixel(3, frame.height / 2) != canvas) return@waitUntil false
+					pixels.saveScreenshot(name)
+					val top = pixels.getPixel(x, 4)
+					val bottom = pixels.getPixel(x, frame.height - 5)
+					if (top != canvas || bottom != canvas) {
+						barMismatches += "$name: expected ${canvas.toUInt().toString(16)}, top ${top.toUInt().toString(16)}, bottom ${bottom.toUInt().toString(16)}"
+					}
+					true
 				} finally {
 					if (pixels !== frame) pixels.recycle()
 					frame.recycle()
@@ -114,6 +119,7 @@ class LiveGuideFixtureTest {
 		rule.waitUntil(5_000) { rule.onAllNodesWithText("Records new episodes of Wild Coasts", substring = true).fetchSemanticsNodes().isNotEmpty() }
 		rule.waitForIdle()
 		display.takeScreenshot().saveScreenshot("recording-editor-new-episodes-light")
+		assertTrue(barMismatches.joinToString("; "), barMismatches.isEmpty())
 	}
 
 	@Test
