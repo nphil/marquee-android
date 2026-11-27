@@ -72,6 +72,7 @@ wait_for 'Continue Watching'
 key KEYCODE_DPAD_DOWN
 key KEYCODE_DPAD_CENTER
 wait_for Resume
+wait_for 'Sintel' content-desc
 capture details
 wait_for 'Trailer playing' content-desc
 key KEYCODE_DPAD_UP

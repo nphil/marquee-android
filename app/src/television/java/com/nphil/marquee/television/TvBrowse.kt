@@ -35,6 +35,8 @@ import com.nphil.marquee.ui.components.PlexArt
 import com.nphil.marquee.ui.theme.lucent
 import com.nphil.marquee.browse.posterLine
 import com.nphil.marquee.core.SectionQuery
+import com.nphil.marquee.core.logoPath
+import com.nphil.marquee.ui.detail.LogoArt
 import com.nphil.marquee.ui.browse.LocalPosterLabels
 
 private val focusIn = tween<Float>(220, easing = LinearOutSlowInEasing)
@@ -133,7 +135,10 @@ private suspend fun LazyListState.reveal(index: Int) {
                 } else Text(page.title, color = lucent.ink2, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
             }
             Column(Modifier.fillMaxWidth(.74f).then(if (hasNav) Modifier.heightIn(min = 109.dp) else Modifier), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(hero?.title ?: media?.title ?: page.query.ifEmpty { tile?.title ?: page.title }, color = lucent.ink, fontSize = 34.sp, lineHeight = 39.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                val title = hero?.title ?: media?.title ?: page.query.ifEmpty { tile?.title ?: page.title }
+                val logo = if (hero != null) hero.logo else if (hasNav) media?.logoPath else null
+                if (logo != null) key(logo) { LogoArt(logo, title, 270.dp, 54.dp) }
+                else Text(title, color = lucent.ink, fontSize = 34.sp, lineHeight = 39.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 (hero?.meta ?: tile?.subtitle)?.let { Text(it, color = lucent.accentText, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                 (hero?.overview ?: media?.summary)?.takeIf { it.isNotBlank() }?.let { Text(it, color = lucent.ink2, fontSize = 15.sp, lineHeight = 20.sp, maxLines = 2, overflow = TextOverflow.Ellipsis) }
             }

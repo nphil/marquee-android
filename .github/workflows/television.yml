@@ -80,6 +80,10 @@ jobs:
           ffmpeg -v error -f lavfi -i testsrc2=size=320x180:rate=24 -t 146 -c:v libx264 -preset ultrafast -pix_fmt yuv420p -movflags +faststart -f mp4 "$clip"
           metadata=core/UITests/FakePlex/pms/library/metadata
           mkdir -p "$metadata/108"
+          # A transparent wordmark for the offline title; no network artwork in the review.
+          ffmpeg -v error -f lavfi -i "color=c=black@0:s=540x108,format=rgba,drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf:text=Sintel:fontsize=86:fontcolor=white:x=0:y=(h-th)/2" -frames:v 1 -threads 1 core/UITests/FakePlex/art/sintel-review-logo.png
+          jq '.MediaContainer.Metadata[0].Image = [{"type":"clearLogo","url":"/art/sintel-review-logo.png"}]' "$metadata/108.json" > "$RUNNER_TEMP/title.json"
+          cp "$RUNNER_TEMP/title.json" "$metadata/108.json"
           jq '.MediaContainer.Metadata[0] |= (.title = "Sintel Trailer" | .Media[0].Part[0].key = "/library/parts/2121/file.mp4")' "$metadata/105/extras.json" > "$metadata/108/extras.json"
           # Two marked rolls separated by an unmarked tag; only the isolated review package gets this episode.
           episode=core/UITests/FakePlex/pms/library/metadata/212.json

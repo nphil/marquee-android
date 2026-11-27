@@ -29,6 +29,7 @@ import com.nphil.marquee.browse.StoredLibraryMemory
 import com.nphil.marquee.browse.decodeLibraryView
 import com.nphil.marquee.browse.encodeLibraryView
 import com.nphil.marquee.data.TvShortcut
+import com.nphil.marquee.core.logoPath
 import com.nphil.marquee.core.PlexDirectory
 import com.nphil.marquee.core.libraryLetters
 import com.nphil.marquee.core.HomeLoad
@@ -102,7 +103,7 @@ internal class GlassesTile(
 internal class GlassesRow(val id: String, val title: String?, val shape: TileShape, val tiles: List<GlassesTile>)
 
 @Immutable
-internal class GlassesHero(val title: String, val meta: String?, val overview: String?, val backdrop: String?)
+internal class GlassesHero(val title: String, val meta: String?, val overview: String?, val backdrop: String?, val logo: String?)
 
 /** One page of the big screen: rows of tiles and where the focus sits among them. */
 @Stable
@@ -844,7 +845,7 @@ internal class GlassesNavigator(
 		if ((item.type == MediaType.Movie || item.type == MediaType.Episode) && item.duration > 0) parts += runtime(item.duration)
 		if (item.type == MediaType.Show) item.childCount?.let { parts += if (it == 1) "1 Season" else "$it Seasons" }
 		if (item.type == MediaType.Season) item.parentTitle?.let { parts.add(0, it) }
-		return GlassesHero(item.title, parts.takeIf { it.isNotEmpty() }?.joinToString(" \u00B7 "), item.summary.takeIf { it.isNotEmpty() }, item.art ?: item.grandparentArt)
+		return GlassesHero(item.title, parts.takeIf { it.isNotEmpty() }?.joinToString(" \u00B7 "), item.summary.takeIf { it.isNotEmpty() }, item.art ?: item.grandparentArt, item.logoPath)
 	}
 
 	private fun playActions(item: PlexItem, label: String? = null): GlassesRow {

@@ -28,6 +28,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -46,8 +47,11 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import coil3.compose.AsyncImage
+import androidx.compose.foundation.Image
+import coil3.compose.AsyncImagePainter
+import coil3.compose.rememberAsyncImagePainter
 import com.nphil.marquee.R
 import com.nphil.marquee.core.AudioChoice
 import com.nphil.marquee.core.ItemText
@@ -80,25 +84,21 @@ private val CastPhoto = 72.dp
  * kept, so it skips [PlexArt]'s track-coloured backing; without a connection the name stands in.
  */
 @Composable
-internal fun LogoArt(path: String, title: String) {
+internal fun LogoArt(path: String, title: String, width: Dp = 280.dp, height: Dp = 96.dp) {
 	val images = LocalPlexImages.current
 	val context = LocalContext.current
 	val density = LocalDensity.current.density
-	val width = 280.dp
-	val height = 96.dp
 	val widthPx = ceil(width.value * density).toInt()
 	val heightPx = ceil(height.value * density).toInt()
 	val request = remember(images, path, widthPx, heightPx) { images?.request(context, path, widthPx, heightPx) }
-	if (request == null) {
-		Text(title, style = MaterialTheme.typography.displaySmall, color = lucent.ink, maxLines = 3, overflow = TextOverflow.Ellipsis)
-	} else {
-		AsyncImage(
-			model = request,
-			contentDescription = title,
-			modifier = Modifier.size(width, height),
-			contentScale = ContentScale.Fit,
-			alignment = Alignment.CenterStart,
-		)
+	val painter = rememberAsyncImagePainter(request, contentScale = ContentScale.Fit)
+	val state by painter.state.collectAsState()
+	Box(Modifier.fillMaxWidth().height(height), contentAlignment = Alignment.CenterStart) {
+		if (request != null && state is AsyncImagePainter.State.Success) {
+			Image(painter, title, Modifier.size(width, height), alignment = Alignment.CenterStart, contentScale = ContentScale.Fit)
+		} else {
+			Text(title, style = MaterialTheme.typography.displaySmall, color = lucent.ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
+		}
 	}
 }
 
