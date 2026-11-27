@@ -403,8 +403,10 @@ if [[ $1 == subtitle-provider ]]; then
   key KEYCODE_BACK
   key KEYCODE_BACK
   wait_for 'Continue Watching'
+else
+  # open_settings already moved onto the Caminandes episode; Back preserves that tile.
+  key KEYCODE_DPAD_RIGHT
 fi
-key KEYCODE_DPAD_RIGHT
 key KEYCODE_MENU
 wait_for 'Play from Start'
 wait_for 'Mark as watched'
