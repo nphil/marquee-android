@@ -75,11 +75,11 @@ jobs:
       - name: Build the offline TV review version
         run: |
           bash ffmpeg/build.sh x86_64
-          if ! command -v ffmpeg >/dev/null; then
-            # FFmpeg comes from Ubuntu; the runner's unrelated vendor feeds are not required.
+          if ! command -v ffmpeg >/dev/null || ! /usr/bin/python3 -c 'from PIL import Image'; then
+            # Only Ubuntu's media and screenshot tooling is needed for the offline fixtures.
             apt=(sudo apt-get -o Dir::Etc::sourcelist=sources.list.d/ubuntu.sources -o Dir::Etc::sourceparts=-)
             "${apt[@]}" update -qq
-            "${apt[@]}" install -y --no-install-recommends ffmpeg
+            "${apt[@]}" install -y --no-install-recommends ffmpeg python3-pil
           fi
           clip=core/UITests/FakePlex/pms/library/parts/2121/file.mp4.bin
           ffmpeg -v error -f lavfi -i testsrc2=size=320x180:rate=24 -t 146 -c:v libx264 -preset ultrafast -pix_fmt yuv420p -movflags +faststart -f mp4 "$clip"

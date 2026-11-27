@@ -84,6 +84,7 @@ import com.nphil.marquee.playback.PlayerPhase
 import com.nphil.marquee.playback.title
 import com.nphil.marquee.ui.components.PlexArt
 import com.nphil.marquee.ui.player.CaptionView
+import com.nphil.marquee.ui.player.TvCaptions
 import com.nphil.marquee.ui.player.CountdownRing
 import com.nphil.marquee.ui.theme.LucentTheme
 import com.nphil.marquee.ui.theme.MarqueeTheme
@@ -595,7 +596,8 @@ internal fun GlassesPlayerView(model: PlayerModel, navigator: GlassesNavigator, 
 				onRelease = { it.player = null },
 				modifier = Modifier.fillMaxSize(),
 			)
-			CaptionView(cues = model.tracks.cues, look = look, controlsUp = controls, modifier = Modifier.fillMaxSize())
+			if (navigator.isTelevision) TvCaptions(model.tracks.cues, look, controls, Modifier.fillMaxSize())
+			else CaptionView(model.tracks.cues, look, controls, Modifier.fillMaxSize())
 		}
 		AnimatedVisibility(controls, enter = fadeIn(), exit = fadeOut()) {
 			var positionMs by remember { mutableLongStateOf(model.movieMs()) }

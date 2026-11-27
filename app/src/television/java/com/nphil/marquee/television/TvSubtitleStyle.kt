@@ -22,7 +22,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.text.Cue
 import com.nphil.marquee.AppContainer
 import com.nphil.marquee.data.*
-import com.nphil.marquee.ui.player.CaptionView
+import com.nphil.marquee.ui.player.TvCaptions
 import com.nphil.marquee.ui.theme.lucent
 import kotlinx.coroutines.launch
 
@@ -97,7 +97,7 @@ private enum class Setting(val label: String) {
         Column(Modifier.weight(1f).align(Alignment.CenterVertically), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Text subtitle preview", color = lucent.accentText, style = MaterialTheme.typography.titleMedium)
             Box(Modifier.fillMaxWidth().aspectRatio(16f / 9).clip(shape).background(Brush.linearGradient(listOf(lucent.accent, lucent.glassRaised, lucent.canvas)))) {
-                CaptionView(cues, look, false, Modifier.fillMaxSize())
+                TvCaptions(cues, look, false, Modifier.fillMaxSize())
             }
             Text("Saved for this profile. Subtitles drawn into the video cannot be restyled.", color = lucent.ink2)
         }

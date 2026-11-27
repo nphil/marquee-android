@@ -267,6 +267,8 @@ androidComponents {
 			variant.sources.manifests.addStaticManifestFile("src/television/AndroidManifest.xml")
 			variant.sources.kotlin?.addStaticSourceDirectory("src/television/java")
 			variant.sources.res?.addStaticSourceDirectory("src/television/res")
+			variant.sources.manifests.addStaticManifestFile("src/tvReview/AndroidManifest.xml")
+			variant.sources.kotlin?.addStaticSourceDirectory("src/tvReview/java")
 		}
 		variant.manifestPlaceholders.put("marqueeApplication", "com.nphil.marquee.profile.ProfilingApplication")
 		variant.sources.assets?.addStaticSourceDirectory(rootProject.file("core/UITests/FakePlex").path)

@@ -300,6 +300,9 @@ esac
 
 # A missing trailer must not discard the independent credits, settings or library evidence.
 failed=0
+if ! /usr/bin/python3 .github/television-captions.py "$out" "$pkg"; then
+  echo "::error::TV caption placement failed"; failed=1
+fi
 for name in watchlist series library people details playback settings account-services credits; do
   set +e
   (
