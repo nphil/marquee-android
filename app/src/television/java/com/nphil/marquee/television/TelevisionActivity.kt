@@ -92,22 +92,24 @@ class TelevisionActivity : ComponentActivity() {
         var style by remember { mutableStateOf(false) }
         var requests by remember { mutableStateOf(false) }
         val requestsAvailable by container.seerr.enabled.collectAsStateWithLifecycle()
-        var request by remember { mutableStateOf<Triple<String, String, Boolean>?>(null) }
-        val nav = remember { GlassesNavigator(container, scope, openTitle = { id, title, start -> request = Triple(id, title, start) },
-            tvSettings = { settings = true }, tvSubtitleStyle = { style = true }, tvRequests = { requests = true }) }
+        var about by remember { mutableStateOf<com.nphil.marquee.core.PlexItem?>(null) }
+        var request by remember { mutableStateOf<com.nphil.marquee.ui.player.PlayRequest.Title?>(null) }
+        val nav = remember { GlassesNavigator(container, scope, openTitle = { id, title, start, file -> request = com.nphil.marquee.ui.player.PlayRequest.Title(id, fromStart = start, titleKey = title, recordingMediaID = file) },
+            tvSettings = { settings = true }, tvSubtitleStyle = { style = true }, tvRequests = { requests = true }, tvAbout = { about = it }) }
         LaunchedEffect(requestsAvailable) { nav.refreshRequestsEntry(); if (!requestsAvailable) requests = false }
         DisposableEffect(nav) { nav.start(); onDispose { nav.close() } }
-        SideEffect { input = if (settings || style || requests) null else nav }
+        SideEffect { input = if (settings || style || requests || about != null) null else nav }
         DisposableEffect(Unit) { onDispose { input = null } }
-        BackHandler(style || settings || requests || nav.panel != null || nav.pages.size > 1 || request != null) {
-            when { style -> style = false; settings -> settings = false; requests -> requests = false; else -> nav.handle(GlassesInput.Back) }
+        BackHandler(style || settings || requests || about != null || nav.panel != null || nav.pages.size > 1 || request != null) {
+            when { about != null -> about = null; style -> style = false; settings -> settings = false; requests -> requests = false; else -> nav.handle(GlassesInput.Back) }
         }
         request?.let { item -> key(item) {
             val owner = remember { object : ViewModelStoreOwner { override val viewModelStore = ViewModelStore() } }
-            val model = viewModel<PlayerModel>(viewModelStoreOwner = owner) { PlayerModel(container, container.http, this@TelevisionActivity, item.first, item.second, item.third) }
+            val model = viewModel<PlayerModel>(viewModelStoreOwner = owner) { PlayerModel(container, container.http, this@TelevisionActivity, item.ratingKey, item.titleKey ?: item.ratingKey, item.fromStart, recordingMediaID = item.recordingMediaID) }
             MatchFilmRate(window, model.player, model.plan?.takeUnless { it.route.reencodesVideo }?.videoStream()?.frameRate)
-            SideEffect { model.menusOpen = nav.panel != null || settings || style }
-            LaunchedEffect(model, nav.panel != null || settings || style) { if (model.menusOpen) model.userActed() }
+            val covered = nav.panel != null || settings || style || about != null
+            SideEffect { model.menusOpen = covered }
+            LaunchedEffect(model, covered) { if (covered) model.userActed() }
             DisposableEffect(model) {
                 playing = model; nav.link = GlassesPlayerLink(model) { request = null }
                 onDispose { window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON); nav.link = null; nav.leftPlayer(); playing = null; owner.viewModelStore.clear() }
@@ -121,8 +123,9 @@ class TelevisionActivity : ComponentActivity() {
             val layout = BigScreenLayout.of(DisplayKind.Tv, pixels.width, pixels.height)
             val density = (pixels.height / 1080f).coerceAtLeast(0.5f)
             CompositionLocalProvider(LocalDensity provides Density(density, LocalDensity.current.fontScale)) { GlassesPlayerView(model, nav, container, layout) }
-        } } ?: if (!settings && !style && !requests) { nav.page?.let { page -> key(page) { TvBrowse(page, nav.panel == null) } } } else Unit
+        } } ?: if (!settings && !style && !requests && about == null) { nav.page?.let { page -> key(page) { TvBrowse(page, nav.panel == null) } } } else Unit
         when {
+            about != null -> about?.let { TvAbout(it) }
             style -> TvSubtitleStyle(container)
             settings -> TvSettings(container) { settings = false }
             requests -> com.nphil.marquee.ui.requests.RequestsDestination(container, Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 12.dp)) { requests = false }
@@ -152,7 +155,9 @@ class TelevisionActivity : ComponentActivity() {
             KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_MEDIA_PLAY, KeyEvent.KEYCODE_MEDIA_PAUSE -> {
                 val player = playing ?: return super.dispatchKeyEvent(event)
                 if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) when (event.keyCode) {
-                    KeyEvent.KEYCODE_MEDIA_PLAY -> player.setPlaying(true); KeyEvent.KEYCODE_MEDIA_PAUSE -> player.pause(); else -> player.toggle()
+                    KeyEvent.KEYCODE_MEDIA_PAUSE -> player.pause()
+                    else -> if (nav.scrubTime != null) nav.handle(GlassesInput.Select)
+                        else if (event.keyCode == KeyEvent.KEYCODE_MEDIA_PLAY) player.setPlaying(true) else player.toggle()
                 }; return true
             }
             else -> return super.dispatchKeyEvent(event)

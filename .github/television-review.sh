@@ -32,6 +32,13 @@ key KEYCODE_DPAD_DOWN
 key KEYCODE_DPAD_CENTER
 wait_for Resume
 capture details
+wait_for 'About'
+key KEYCODE_DPAD_DOWN
+key KEYCODE_DPAD_CENTER
+wait_for 'Synopsis'
+capture about
+key KEYCODE_BACK
+wait_for 'Resume'
 key KEYCODE_BACK
 wait_for 'Continue Watching'
 adb shell dumpsys gfxinfo "$pkg" reset >/dev/null
@@ -49,6 +56,19 @@ key KEYCODE_DPAD_RIGHT
 wait_for 'Seek preview' content-desc
 capture seek
 key KEYCODE_BACK
+key KEYCODE_MEDIA_PAUSE
+wait_for 'Subtitles' content-desc
+capture transport
+key KEYCODE_DPAD_UP
+key KEYCODE_DPAD_CENTER
+wait_for 'Subtitle Style'
+key KEYCODE_BACK
+key KEYCODE_BACK
+adb shell uiautomator dump /sdcard/window.xml >/dev/null
+adb shell cat /sdcard/window.xml >"$out/hidden-transport.xml"
+! grep -Fq 'content-desc="Subtitles"' "$out/hidden-transport.xml" || exit 1
+key KEYCODE_DPAD_DOWN
+wait_for 'Subtitles' content-desc
 key KEYCODE_MENU
 wait_for 'Playback Info'
 key KEYCODE_DPAD_DOWN
@@ -63,6 +83,7 @@ wait_for 'Playback Info'
 key KEYCODE_DPAD_DOWN
 key KEYCODE_DPAD_CENTER
 wait_for 'Apple TV'
+key KEYCODE_BACK
 key KEYCODE_BACK
 key KEYCODE_BACK
 wait_for 'Continue Watching'
@@ -86,7 +107,7 @@ wait_for 'Skip Intro'
 key KEYCODE_DPAD_CENTER
 key KEYCODE_DPAD_RIGHT
 wait_for 'After the opening'
-key KEYCODE_DPAD_DOWN
+key KEYCODE_DPAD_UP
 wait_for 'First roll'
 key KEYCODE_DPAD_CENTER
 wait_for 'Watch Credits'
@@ -94,7 +115,7 @@ key KEYCODE_DPAD_LEFT
 capture credits-first
 key KEYCODE_DPAD_CENTER
 key KEYCODE_DPAD_RIGHT
-key KEYCODE_DPAD_DOWN
+key KEYCODE_DPAD_UP
 wait_for 'Last roll'
 key KEYCODE_DPAD_CENTER
 wait_for 'Next Episode'

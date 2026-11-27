@@ -549,18 +549,26 @@ internal fun GlassesPlayerView(model: PlayerModel, navigator: GlassesNavigator, 
 	val engine = model.player
 	var chrome by remember { mutableStateOf(true) }
 	val stamp = navigator.chromeStamp
-	LaunchedEffect(stamp) {
+	val tv = navigator.link?.takeIf { navigator.isTelevision }
+	LaunchedEffect(stamp, tv, navigator.panel != null, model.menusOpen, model.isPlaying) {
 		chrome = true
+		if (navigator.panel != null || model.menusOpen || !model.isPlaying) return@LaunchedEffect
 		delay(CHROME_DWELL_MS)
 		chrome = false
+		tv?.let { it.awake = false; it.row = HudRow.Timeline }
 	}
 	val scrubbed = navigator.scrubTime
-	val tv = navigator.link?.takeIf { navigator.isTelevision }
 	val candidate = model.offers.offer.takeIf { tv != null }
 	var raised by remember(candidate) { mutableStateOf(candidate != null && !(candidate is Offer.UpNext && candidate.carried)) }
-	LaunchedEffect(candidate) { if (raised) { delay(8_000); raised = false } }
-	val controls = chrome || scrubbed != null || !model.isPlaying || model.phase != PlayerPhase.Playing
-	val tvOffer = candidate.takeIf { (raised || controls || model.offers.countdown != null) && navigator.panel == null && scrubbed == null }
+	LaunchedEffect(candidate) {
+		if (raised) {
+			tv?.dismissed = false
+			delay(8_000)
+			raised = false
+		}
+	}
+	val controls = scrubbed != null || (tv?.controlsUp ?: (chrome || !model.isPlaying || model.phase != PlayerPhase.Playing))
+	val tvOffer = candidate.takeIf { (raised || controls || model.offers.countdown != null) && navigator.panel == null && scrubbed == null && tv?.dismissed != true }
 	androidx.compose.runtime.SideEffect { tv?.visibleOffer = tvOffer }
 	val profile by remember(container) { container.session.state.map { it.user?.uuid }.distinctUntilChanged() }.collectAsStateWithLifecycle(null)
 	val look by remember(container, profile) { container.settings.subtitleLook(profile) }.collectAsStateWithLifecycle(SubtitleLook())
@@ -585,7 +593,7 @@ internal fun GlassesPlayerView(model: PlayerModel, navigator: GlassesNavigator, 
 		AnimatedVisibility(controls, enter = fadeIn(), exit = fadeOut()) {
 			var positionMs by remember { mutableLongStateOf(model.movieMs()) }
 			LaunchedEffect(model) { while (true) { positionMs = model.movieMs(); delay(POSITION_POLL_MS) } }
-			PlayerOsd(model, positionMs, scrubbed, layout, tvOffer != null)
+			PlayerOsd(model, positionMs, scrubbed, layout, tv, tvOffer, navigator)
 		}
 		if (controls && model.showsStats && layout.kind == DisplayKind.Tv) {
 			val lines = remember(stamp, model.phase) { model.stats().all.filter { it.label in setOf("Route", "Video", "Picture", "Start", "Frames", "Buffer") } }
@@ -594,18 +602,24 @@ internal fun GlassesPlayerView(model: PlayerModel, navigator: GlassesNavigator, 
 				lines.forEach { GlassesLabel("${it.label}: ${it.value}", GlassesText.Caption, lucent.ink, maxLines = 2) }
 			}
 		}
-		PlayerCenter(model, scrubbed, navigator.isTelevision)
+		if (tv == null || !tv.dismissed || model.phase !is PlayerPhase.Playing) PlayerCenter(model, scrubbed, navigator.isTelevision)
 		if (tv != null && navigator.panel == null) com.nphil.marquee.ui.player.SubtitleSearchBanner(model.subtitleFinder, Modifier.align(Alignment.TopCenter).padding(top = layout.marginY.toFloat().dp))
-		if (tv != null && tvOffer != null && scrubbed == null && navigator.panel == null) {
-			val watch = tv.watchFocus === tvOffer
-			Row(Modifier.align(Alignment.BottomEnd).padding(end = layout.marginX.toFloat().dp,
-				bottom = layout.marginY.toFloat().dp + if (controls) (GlassesCanvas.OPTION * 2).dp else 0.dp),
-				horizontalArrangement = Arrangement.spacedBy(GlassesCanvas.TITLE_GAP.dp)) {
-				IntroButton(if (tvOffer is Offer.SkipIntro) "Watch Intro" else "Watch Credits", watch, { tv.finishOffer(true) })
-				IntroButton(when (tvOffer) { is Offer.UpNext -> "Next Episode"; is Offer.SkipCredits -> "Skip Credits"; is Offer.SkipIntro -> "Skip Intro" }, !watch, { tv.finishOffer(false) }) {
-					model.offers.countdown?.let { CountdownRing(it, if (watch) lucent.ink else lucent.accentInk, Modifier.size(GlassesText.Body.size.dp)) }
-				}
+		if (tv != null && tvOffer != null && !controls) {
+			Box(Modifier.align(Alignment.BottomEnd).padding(end = layout.marginX.toFloat().dp, bottom = layout.marginY.toFloat().dp)) {
+				OfferButtons(tv, tvOffer)
 			}
+		}
+	}
+}
+
+@Composable
+private fun OfferButtons(tv: GlassesPlayerLink, offer: Offer) {
+	val watch = tv.watchFocus === offer
+	Row(horizontalArrangement = Arrangement.spacedBy(GlassesCanvas.TITLE_GAP.dp)) {
+		val focused = tv.unfocusedOffer !== offer
+		IntroButton(if (offer is Offer.SkipIntro) "Watch Intro" else "Watch Credits", focused && watch, { tv.finishOffer(true) })
+		IntroButton(when (offer) { is Offer.UpNext -> "Next Episode"; is Offer.SkipCredits -> "Skip Credits"; is Offer.SkipIntro -> "Skip Intro" }, focused && !watch, { tv.finishOffer(false) }) {
+			tv.model.offers.countdown?.let { CountdownRing(it, if (watch) lucent.ink else lucent.accentInk, Modifier.size(GlassesText.Body.size.dp)) }
 		}
 	}
 }
@@ -621,7 +635,7 @@ private fun IntroButton(label: String, active: Boolean, press: () -> Unit, trail
 }
 
 @Composable
-private fun PlayerOsd(model: PlayerModel, positionMs: Long, scrub: Double?, layout: BigScreenLayout, introControls: Boolean) {
+private fun PlayerOsd(model: PlayerModel, positionMs: Long, scrub: Double?, layout: BigScreenLayout, tv: GlassesPlayerLink?, offer: Offer?, nav: GlassesNavigator) {
 	Column(Modifier.fillMaxSize().padding(horizontal = layout.marginX.toFloat().dp, vertical = layout.marginY.toFloat().dp)) {
 		Column(
 			Modifier.clip(RoundedCornerShape(GlassesCanvas.RADIUS.dp)).background(lucent.glass).padding(GlassesCanvas.TILE_GAP.dp),
@@ -632,7 +646,7 @@ private fun PlayerOsd(model: PlayerModel, positionMs: Long, scrub: Double?, layo
 			if (layout.kind == DisplayKind.Tv) model.plan?.let { GlassesLabel(it.route.title(), GlassesText.Label, lucent.accentText) }
 		}
 		Box(Modifier.weight(1f))
-		if (!introControls) offerText(model)?.let { text ->
+		if (!nav.isTelevision) offerText(model)?.let { text ->
 			Box(Modifier.fillMaxWidth().padding(bottom = GlassesCanvas.ROW_GAP.dp), contentAlignment = Alignment.CenterEnd) {
 				Box(
 					Modifier.height(GlassesCanvas.OPTION.dp).clip(CircleShape).background(lucent.accent).padding(horizontal = GlassesCanvas.TILE_GAP.dp),
@@ -642,12 +656,28 @@ private fun PlayerOsd(model: PlayerModel, positionMs: Long, scrub: Double?, layo
 				}
 			}
 		}
-		Timeline(model, positionMs, scrub)
-		if (layout.kind == DisplayKind.Tv && !introControls) {
-			val help = if (scrub == null) "OK  Play / pause     ·     ← →  Seek     ·     ↓  Options"
-				else "← →  Preview     ·     OK  Jump here     ·     Back  Cancel" + if (model.plan?.chapters.isNullOrEmpty()) "" else "     ·     ↑ ↓  Chapters"
-			GlassesLabel(help, GlassesText.Caption, lucent.ink, Modifier.clip(CircleShape).background(lucent.glass).padding(horizontal = GlassesCanvas.TILE_GAP.dp, vertical = GlassesCanvas.CAPTION_GAP.dp))
+		if (tv != null && scrub == null) Row(Modifier.fillMaxWidth().padding(bottom = GlassesCanvas.CAPTION_GAP.dp), horizontalArrangement = Arrangement.End) {
+			if (offer != null) OfferButtons(tv, offer)
+			else Row(horizontalArrangement = Arrangement.spacedBy(GlassesCanvas.TITLE_GAP.dp)) {
+				HudDisc("Subtitles", R.drawable.ic_closed_caption, tv.row == HudRow.Tracks && tv.track == 0) { tv.row = HudRow.Tracks; tv.track = 0; nav.openHudControl(tv) }
+				HudDisc("Audio", R.drawable.ic_volume_up, tv.row == HudRow.Tracks && tv.track == 1) { tv.row = HudRow.Tracks; tv.track = 1; nav.openHudControl(tv) }
+				HudDisc("Playback options", R.drawable.ic_more_horiz, tv.row == HudRow.Tracks && tv.track == 2) { tv.row = HudRow.Tracks; tv.track = 2; nav.openHudControl(tv) }
+			}
 		}
+		Timeline(model, positionMs, scrub)
+		if (tv != null && scrub == null && model.plan != null) Row(Modifier.fillMaxWidth().padding(top = GlassesCanvas.CAPTION_GAP.dp), horizontalArrangement = Arrangement.spacedBy(GlassesCanvas.TITLE_GAP.dp)) {
+			IntroButton("Info", tv.row == HudRow.Sections && (offer == null || tv.unfocusedOffer === offer) && tv.section == 0, { tv.row = HudRow.Sections; tv.section = 0; nav.openHudControl(tv) })
+			if (!model.plan?.chapters.isNullOrEmpty())
+				IntroButton("Chapters", tv.row == HudRow.Sections && (offer == null || tv.unfocusedOffer === offer) && tv.section == 1, { tv.row = HudRow.Sections; tv.section = 1; nav.openHudControl(tv) })
+		}
+	}
+}
+
+@Composable
+private fun HudDisc(label: String, icon: Int, active: Boolean, press: () -> Unit) {
+	Box(Modifier.size(GlassesCanvas.OPTION.dp).clip(CircleShape).background(if (active) lucent.glassRaised else lucent.sheet)
+		.semantics { selected = active }.clickable(role = Role.Button, onClick = press), contentAlignment = Alignment.Center) {
+		Icon(painterResource(icon), label, Modifier.size(GlassesText.Headline.size.dp), tint = if (active) lucent.accentText else lucent.ink)
 	}
 }
 

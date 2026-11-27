@@ -74,7 +74,6 @@ private enum class Setting(val label: String) {
     Row(Modifier.fillMaxSize().background(lucent.canvas).padding(32.dp), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Subtitle Style", color = lucent.ink, style = MaterialTheme.typography.headlineLarge)
-            Text("↑ ↓  Choose a setting     ← →  Adjust", color = lucent.ink2)
             LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 items(rows.size, key = { rows[it].name }) { i ->
                     val row = rows[i]

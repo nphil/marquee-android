@@ -34,6 +34,7 @@ import com.nphil.marquee.core.libraryCollections
 import com.nphil.marquee.core.libraryGenres
 import com.nphil.marquee.core.watchlistPage
 import com.nphil.marquee.core.copiesOf
+import com.nphil.marquee.core.versionLabel
 import com.nphil.marquee.core.Page
 import com.nphil.marquee.diagnostics.Diag
 import com.nphil.marquee.diagnostics.DiagCategory
@@ -150,11 +151,22 @@ internal class GlassesPanel(val title: String, val options: List<GlassesOption>,
 	var focus by mutableIntStateOf(focus)
 }
 
+internal enum class HudRow { Tracks, Timeline, Sections }
+
 /** The player a [GlassesNavigator] drives: the phone's player, with the way to close it. */
 @Stable
 internal class GlassesPlayerLink(val model: PlayerModel, val close: () -> Unit) {
 	var aspect by mutableStateOf(com.nphil.marquee.ui.player.PlayerAspect.Fit)
+	var row by mutableStateOf(HudRow.Timeline)
+	var track by mutableIntStateOf(0)
+	var section by mutableIntStateOf(0)
+	var dismissed by mutableStateOf(false)
+	var awake by mutableStateOf(true)
+	val controlsUp get() = !dismissed && (awake || !model.isPlaying || model.phase != com.nphil.marquee.playback.PlayerPhase.Playing)
+
+	fun hideHud() { dismissed = true; awake = false; row = HudRow.Timeline }
 	var visibleOffer: Offer? = null
+	var unfocusedOffer by mutableStateOf<Offer?>(null, androidx.compose.runtime.referentialEqualityPolicy())
 	var watchFocus by mutableStateOf<Offer?>(null, androidx.compose.runtime.referentialEqualityPolicy())
 		private set
 
@@ -183,10 +195,11 @@ internal class GlassesNavigator(
 	private val container: AppContainer,
 	private val scope: CoroutineScope,
 	private val center: GlassesCenter? = null,
-	private val openTitle: (String, String, Boolean) -> Unit = requireNotNull(center)::play,
+	private val openTitle: (String, String, Boolean, Int?) -> Unit = { key, title, start, _ -> requireNotNull(center).play(key, title, start) },
 	private val tvSettings: (() -> Unit)? = null,
 	private val tvSubtitleStyle: (() -> Unit)? = null,
 	private val tvRequests: (() -> Unit)? = null,
+	private val tvAbout: ((PlexItem) -> Unit)? = null,
 ) {
 	val pages = mutableStateListOf<GlassesPage>()
 	var panel by mutableStateOf<GlassesPanel?>(null)
@@ -366,6 +379,7 @@ internal class GlassesNavigator(
 		}
 		GlassesInput.Back -> {
 			this.panel = panel.parent
+			if (isTelevision && this.panel == null && link != null) wakeTransport()
 			HapticCue.Back
 		}
 		else -> null
@@ -377,19 +391,52 @@ internal class GlassesNavigator(
 		val model = player.model
 		val offer = model.offers.offer
 		if (isTelevision && scrubTime != null) return televisionScrub(input, model)
-		if (isTelevision && offer != null && player.visibleOffer === offer) {
+		if (isTelevision && offer != null && player.visibleOffer === offer && player.unfocusedOffer !== offer) {
 			when (input) {
 				GlassesInput.Select -> { player.finishOffer(player.watchFocus === offer); return HapticCue.Select }
-				GlassesInput.Back -> { player.finishOffer(watch = true); return HapticCue.Back }
-				is GlassesInput.Move -> if (input.move.isHorizontal) {
-					player.chooseWatch(offer, input.move == FocusMove.Left)
-					chromeStamp++
+				GlassesInput.Back -> { player.finishOffer(watch = true); player.row = HudRow.Tracks; wakeTransport(); return HapticCue.Back }
+				is GlassesInput.Move -> {
+					if (input.move.isHorizontal) {
+						player.chooseWatch(offer, input.move == FocusMove.Left)
+					} else {
+						player.unfocusedOffer = offer
+						player.row = HudRow.Timeline
+						model.userActed()
+					}
+					wakeTransport()
 					return HapticCue.FocusStep
 				}
 				else -> Unit
 			}
 		}
-		if (isTelevision && input is GlassesInput.Move && input.move.isHorizontal) return televisionScrub(input, model)
+		if (isTelevision) {
+			if (input == GlassesInput.Back) {
+				if (player.controlsUp && model.phase !is com.nphil.marquee.playback.PlayerPhase.Failed) player.hideHud() else player.close()
+				return HapticCue.Back
+			}
+			val visible = player.controlsUp
+			wakeTransport()
+			if (input is GlassesInput.Move) {
+				if (!input.move.isHorizontal) {
+					if (!visible) player.row = HudRow.Timeline
+					else if (input.move == FocusMove.Up && player.row == HudRow.Tracks) player.hideHud()
+					else player.row = HudRow.entries[(player.row.ordinal + if (input.move == FocusMove.Up) -1 else 1).coerceIn(0, 2)]
+					if (player.row == HudRow.Tracks && offer != null) player.unfocusedOffer = null
+					return HapticCue.FocusStep
+				}
+				val direction = if (input.move == FocusMove.Right) 1 else -1
+				when (player.row) {
+					HudRow.Tracks -> player.track = (player.track + direction).coerceIn(0, 2)
+					HudRow.Sections -> player.section = (player.section + direction).coerceIn(0, if (model.plan?.chapters.isNullOrEmpty()) 0 else 1)
+					HudRow.Timeline -> return televisionScrub(input, model)
+				}
+				return HapticCue.FocusStep
+			}
+			if (input == GlassesInput.Select && visible && player.row != HudRow.Timeline) {
+				openHudControl(player)
+				return HapticCue.Select
+			}
+		}
 		return when (input) {
 			GlassesInput.Select -> when (model.offers.offer.takeUnless { isTelevision }) {
 				is Offer.SkipIntro -> { model.offers.skipIntro(); HapticCue.Select }
@@ -438,6 +485,32 @@ internal class GlassesNavigator(
 		}
 	}
 
+	private fun wakeTransport() {
+		link?.let { it.dismissed = false; it.awake = true }
+		chromeStamp++
+	}
+
+	fun openHudControl(player: GlassesPlayerLink) {
+		val model = player.model
+		model.userActed()
+		wakeTransport()
+		when (player.row) {
+			HudRow.Tracks -> openTracks(model, when (player.track) { 0 -> "Subtitles"; 1 -> "Audio"; else -> null })
+			HudRow.Sections -> if (player.section == 0) model.plan?.item?.let { tvAbout?.invoke(it) }
+				else openChapters(model)
+			HudRow.Timeline -> Unit
+		}
+	}
+
+	private fun openChapters(model: PlayerModel, parent: GlassesPanel? = null) {
+		val chapters = model.plan?.chapters.orEmpty()
+		if (chapters.isEmpty()) return
+		val active = com.nphil.marquee.ui.player.chapterAt(chapters, model.movieMs())
+		panel = GlassesPanel("Chapters", chapters.mapIndexed { i, c ->
+			GlassesOption("chapter.$i", com.nphil.marquee.ui.player.chapterName(c, i), checked = i == active) { model.seekTo(c.start / 1000.0) }
+		}, active.coerceAtLeast(0), parent)
+	}
+
 	private fun cue(tick: Scrub.Tick, scrub: Scrub): HapticCue? {
 		scrubTime = scrub.time
 		return when (tick) {
@@ -456,12 +529,18 @@ internal class GlassesNavigator(
 			options += GlassesOption("start", "Play from Start") { play(item, fromStart = true) }
 		}
 		options += hostOption()
+		if (isTelevision && item?.type == MediaType.Episode) {
+			options += GlassesOption("episode", "Episode Details") { pages += leafPage(item) }
+			item.grandparentRatingKey?.let { key ->
+				options += GlassesOption("show", "Go to Show") { pages += showPage(PlexItem(key, title = item.grandparentTitle.orEmpty(), type = MediaType.Show)) }
+			}
+		}
 		if (pages.size > 1) options += GlassesOption("home", "Home") { goHome() }
 		panel = GlassesPanel(tile?.title ?: page?.title ?: "Options", options)
 	}
 
 	/** Subtitles and audio, then the rest of what the player offers. */
-	fun openTracks(model: PlayerModel) {
+	fun openTracks(model: PlayerModel, section: String? = null) {
 		val options = ArrayList<GlassesOption>()
 		val tracks = model.tracks
 		val lists = tracks.lists
@@ -511,14 +590,15 @@ internal class GlassesNavigator(
 			} }
 			options += GlassesOption("sleep.end", "Stop at End", "Playback", model.sleepAtEnd) { model.sleepAtEnd = !model.sleepAtEnd }
 			val chapters = model.plan?.chapters.orEmpty()
-			if (chapters.isNotEmpty()) submenu("Chapters") {
-				val active = com.nphil.marquee.ui.player.chapterAt(chapters, model.movieMs())
-				chapters.mapIndexed { i, c -> GlassesOption("chapter.$i", com.nphil.marquee.ui.player.chapterName(c, i), checked = i == active) { model.seekTo(c.start / 1000.0) } }
+			if (chapters.isNotEmpty()) {
+				val index = options.size
+				options += GlassesOption("chapters", "Chapters", "Playback") { openChapters(model, GlassesPanel(model.title, options, index)) }
 			}
 		}
 		if (model.next != null) options += GlassesOption("next", "Next Episode", "Playback") { model.userActed(); model.playNext() }
 		options += hostOption("Playback")
-		panel = GlassesPanel(model.title, options)
+		val shown = if (section == null) options else options.filter { it.section == section }
+		panel = GlassesPanel(section ?: model.title, shown, if (section == null) 0 else shown.indexOfFirst { it.checked }.coerceAtLeast(0))
 	}
 
 	private fun televisionScrub(input: GlassesInput, model: PlayerModel): HapticCue? {
@@ -529,8 +609,7 @@ internal class GlassesNavigator(
 				val seconds = when (input.move) {
 					FocusMove.Left -> current - model.skipInterval
 					FocusMove.Right -> current + model.skipInterval
-					FocusMove.Up -> model.plan?.chapters?.lastOrNull { it.start < current * 1000 - 500 }?.start?.div(1000.0)
-					FocusMove.Down -> model.plan?.chapters?.firstOrNull { it.start > current * 1000 + 500 }?.start?.div(1000.0)
+					FocusMove.Up, FocusMove.Down -> chapterJump(model.plan?.chapters.orEmpty(), (current * 1000).toLong(), input.move == FocusMove.Up)?.div(1000.0)
 				} ?: return HapticCue.Edge
 				if (scrubTime == null) model.userActed()
 				model.scrubbing = true
@@ -544,7 +623,7 @@ internal class GlassesNavigator(
 				model.scrubbing = false
 				scrubTime = null
 				if (input == GlassesInput.Select) model.seekTo(current)
-				chromeStamp++
+				wakeTransport()
 				if (input == GlassesInput.Select) HapticCue.Select else HapticCue.Back
 			}
 			else -> null
@@ -569,13 +648,14 @@ internal class GlassesNavigator(
 
 	// MARK: Opening things
 
-	fun play(item: PlexItem, fromStart: Boolean = false) {
-		openTitle(item.ratingKey, item.grandparentRatingKey ?: item.ratingKey, fromStart)
+	fun play(item: PlexItem, fromStart: Boolean = false, mediaID: Int? = null) {
+		openTitle(item.ratingKey, item.grandparentRatingKey ?: item.ratingKey, fromStart, mediaID)
 	}
 
 	private fun open(item: PlexItem) {
 		when (item.type) {
-			MediaType.Movie -> pages += moviePage(item)
+			MediaType.Movie -> pages += leafPage(item)
+			MediaType.Episode -> if (isTelevision) pages += leafPage(item) else play(item, fromStart = item.rewatchedAt != null)
 			MediaType.Show -> pages += showPage(item)
 			MediaType.Season -> pages += seasonPage(item)
 			MediaType.Collection -> pages += collectionPage(item)
@@ -673,7 +753,11 @@ internal class GlassesNavigator(
 		val parts = ArrayList<String>()
 		item.year?.let { parts += it.toString() }
 		item.contentRating?.let { parts += it }
-		if (item.type == MediaType.Movie && item.duration > 0) parts += runtime(item.duration)
+		if (item.type == MediaType.Episode) {
+			item.grandparentTitle?.let { parts.add(0, it) }
+			episodeNumber(item)?.let { parts += it }
+		}
+		if ((item.type == MediaType.Movie || item.type == MediaType.Episode) && item.duration > 0) parts += runtime(item.duration)
 		if (item.type == MediaType.Show) item.childCount?.let { parts += if (it == 1) "1 Season" else "$it Seasons" }
 		if (item.type == MediaType.Season) item.parentTitle?.let { parts.add(0, it) }
 		return GlassesHero(item.title, parts.takeIf { it.isNotEmpty() }?.joinToString(" \u00B7 "), item.summary.takeIf { it.isNotEmpty() }, item.art ?: item.grandparentArt)
@@ -690,7 +774,7 @@ internal class GlassesNavigator(
 		return GlassesRow("actions", null, TileShape.Card, tiles)
 	}
 
-	private fun moviePage(item: PlexItem): GlassesPage {
+	private fun leafPage(item: PlexItem): GlassesPage {
 		val page = GlassesPage(item.title)
 		page.hero = hero(item)
 		page.setRows(listOf(playActions(item)), loading = true)
@@ -732,6 +816,17 @@ internal class GlassesNavigator(
 
 	private suspend fun addDetailShelves(page: GlassesPage, title: PlexItem) {
 		val rows = page.rows.toMutableList()
+		tvAbout?.let { about ->
+			val details = arrayListOf(GlassesTile("about", "About", art = GlassesArt.Symbol(R.drawable.ic_info)) { about(title) })
+			val files = title.media.filter { it.id > 0 && it.parts.isNotEmpty() }
+			if (files.size > 1) details += GlassesTile("versions", "Play a Version", art = GlassesArt.Symbol(R.drawable.ic_video_library)) {
+				panel = GlassesPanel("Play a Version", files.map { file ->
+					GlassesOption("file.${file.id}", file.versionLabel) { play(title, mediaID = file.id) }
+				})
+			}
+			rows += GlassesRow("more", "More", TileShape.Card, details)
+			page.setRows(rows.toList())
+		}
 		val cast = title.roles.distinctBy { it.id }.mapNotNull { role ->
 			val id = role.id ?: return@mapNotNull null
 			GlassesTile("person.$id", role.name, role.character, GlassesArt.Plex(role.thumb)) {
@@ -954,4 +1049,16 @@ internal fun episodeNumber(item: PlexItem): String? {
 internal fun runtime(ms: Int): String {
 	val minutes = abs(ms) / 60_000
 	return if (minutes >= 60) String.format(Locale.ROOT, "%dh %02dm", minutes / 60, minutes % 60) else "${minutes}m"
+}
+
+internal fun chapterJump(chapters: List<com.nphil.marquee.core.Chapter>, ms: Long, forward: Boolean): Int? {
+	if (chapters.size < 2) return null
+	val at = chapters.indexOfLast { it.start <= ms + 250 }
+	val target = when {
+		forward -> at + 1
+		at < 0 -> return null
+		ms - chapters[at].start > 3_000 -> at
+		else -> (at - 1).coerceAtLeast(0)
+	}
+	return chapters.getOrNull(target)?.start
 }
