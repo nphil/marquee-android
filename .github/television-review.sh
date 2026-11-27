@@ -35,6 +35,12 @@ else:
 raise SystemExit(not found)
 PY
     then return 0; fi
+    # The emulator launcher can interrupt a fresh app launch with its one-time Shop tour.
+    if [[ $word == 'Browse the shelves' ]] && grep -Fq 'package="com.google.android.tvlauncher"' "$out/window.xml" &&
+       grep -Fq 'text="Buy and rent movies on your TV"' "$out/window.xml" && grep -Fq 'text="Dismiss"' "$out/window.xml"; then
+      key KEYCODE_BACK
+      adb shell am start -W -n "$pkg/com.nphil.marquee.television.TelevisionActivity" >/dev/null
+    fi
     case $attribute in
       focus-down|editor-down|select-down) key KEYCODE_DPAD_DOWN ;;
       focus-up) key KEYCODE_DPAD_UP ;;
