@@ -121,18 +121,21 @@ private enum class Destination(val label: String, val group: String, val summary
     val hidden by remember(profile) { container.settings.hiddenTvShortcuts(profile) }.collectAsStateWithLifecycle(emptySet())
     val requests by container.seerr.enabled.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
+    val first = remember { FocusRequester() }
     Column(Modifier.widthIn(max = 480.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text("Home and Settings are always available.", color = lucent.ink2)
         for (shortcut in com.nphil.marquee.data.TvShortcut.entries) {
             if (shortcut == com.nphil.marquee.data.TvShortcut.Requests && !requests) continue
             val shown = shortcut.name !in hidden
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            val focus = if (shortcut == com.nphil.marquee.data.TvShortcut.Movies) Modifier.focusRequester(first) else Modifier
+            Row(Modifier.fillMaxWidth().then(focus), verticalAlignment = Alignment.CenterVertically) {
                 Text(shortcut.label, Modifier.weight(1f), color = lucent.ink)
                 Action(if (shown) "Hide ${shortcut.label}" else "Show ${shortcut.label}") {
                     scope.launch { container.settings.setTvShortcut(profile, shortcut, !shown) }
                 }
             }
         }
+        LaunchedEffect(Unit) { first.requestFocus() }
     }
 }
 
