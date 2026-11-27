@@ -42,7 +42,7 @@ private enum class Destination(val label: String, val group: String, val summary
     Servers("Servers", "Plex Home", "Choose a server owned by or shared with this account."),
     Seerr("Seerr", "Integrations", "Connect Seerr to browse and request titles not in the library."),
     Bazarr("Bazarr", "Integrations", "Find subtitles for films and episodes."),
-    Speech("SpeechDock", "Integrations", "Connect the speech service for subtitle transcription."),
+    Speech("SpeechDock", "Integrations", "Align English subtitles with the audio for Reveal as spoken."),
     Logs("Diagnostics", "System", "Review the app’s diagnostic log and reporting options."),
     Tour("Remote tour", "System", "Revisit the six remote controls lessons."),
     Licences("Licences", "System", "Third-party software and its licences."),
@@ -56,7 +56,9 @@ private enum class Destination(val label: String, val group: String, val summary
     val restricted = state.user?.let { it.isRestricted || it.isGuest } != false
     val choices = remember(restricted) { Destination.entries.filterNot { restricted && (it.group == "Integrations" || it == Destination.Logs) } }
     val padding = PaddingValues(horizontal = 24.dp, vertical = 8.dp)
-    val current = page
+    // A restored page must obey the same profile permissions as its menu entry.
+    val current = page?.takeIf { it in choices }
+    if (page != null && current == null) LaunchedEffect(page) { page = null }
     BackHandler(current != null) { page = null }
     if (current == null) {
         val list = rememberLazyListState(choices.indexOf(last).coerceAtLeast(0))
@@ -66,7 +68,7 @@ private enum class Destination(val label: String, val group: String, val summary
         Row(Modifier.fillMaxSize().background(lucent.canvas).padding(34.dp), horizontalArrangement = Arrangement.spacedBy(32.dp)) {
             Column(Modifier.weight(.8f).padding(top = 18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Settings", color = lucent.ink, style = MaterialTheme.typography.headlineLarge)
-                Text(last.summary, color = lucent.ink2, style = MaterialTheme.typography.titleMedium)
+                Text(last.takeIf { it in choices }?.summary ?: restore.summary, color = lucent.ink2, style = MaterialTheme.typography.titleMedium)
             }
             LazyColumn(Modifier.weight(1.2f), state = list, verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 itemsIndexed(choices, key = { _, d -> d.name }) { i, d ->

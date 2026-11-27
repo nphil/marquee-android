@@ -18,6 +18,11 @@ if attr == "selected-text":
     # Android projects Compose's selected button as a checked, clickable parent of its label.
     found = any((n.get("selected") == "true" or (n.get("checkable") == "true" and n.get("checked") == "true"))
                 and any(c.get("text") == word for c in n.iter("node")) for n in root.iter("node"))
+elif attr in ("focused-text", "focus-down"):
+    found = any(n.get("focused") == "true" and any(c.get("text") == word for c in n.iter("node"))
+                for n in root.iter("node"))
+elif attr == "focused-editor":
+    found = any(n.get("focused") == "true" and n.get("class") == "android.widget.EditText" for n in root.iter("node"))
 elif attr == "text-prefix":
     found = any(n.get("text", "").startswith(word) for n in root.iter("node"))
 else:
@@ -25,6 +30,7 @@ else:
 raise SystemExit(not found)
 PY
     then return 0; fi
+    if [[ $attribute == focus-down ]]; then key KEYCODE_DPAD_DOWN; fi
     sleep 1
   done
   echo "Did not reach $word" >&2; return 1
@@ -271,6 +277,39 @@ wait_for 'SpeechDock'
 ! grep -Fq 'text="API Key"' "$out/window.xml" || exit 1
 capture speechdock-setup
 ;;
+restricted-profile)
+open_settings
+wait_for Profiles focus-down
+key KEYCODE_DPAD_CENTER
+wait_for Kids focus-down
+key KEYCODE_DPAD_CENTER
+wait_for 'Browse the shelves'
+key KEYCODE_BACK
+wait_for 'Continue Watching'
+open_settings
+wait_for Servers focus-down
+key KEYCODE_DPAD_DOWN
+wait_for 'Remote tour' focused-text
+if grep -Eq 'text="(Integrations|Seerr|Bazarr|SpeechDock|Diagnostics)"' "$out/window.xml"; then exit 1; fi
+capture restricted-settings
+;;
+seerr-permission)
+open_settings
+wait_for Seerr focus-down
+key KEYCODE_DPAD_CENTER
+wait_for Enabled focus-down
+key KEYCODE_DPAD_CENTER
+wait_for Address focused-editor
+adb shell input text seerr.local
+if adb shell dumpsys input_method | grep 'mInputShown=true' >/dev/null; then key KEYCODE_BACK; fi
+wait_for 'Test Connection' focus-down
+wait_for "Seerr doesn't let this Plex profile in." text-prefix
+capture seerr-profile-denied
+key KEYCODE_BACK
+key KEYCODE_BACK
+wait_for 'Continue Watching'
+if grep -Fq 'text="Requests"' "$out/window.xml"; then exit 1; fi
+;;
 credits)
 key KEYCODE_DPAD_RIGHT
 key KEYCODE_MENU
@@ -303,7 +342,7 @@ failed=0
 if ! /usr/bin/python3 .github/television-captions.py "$out" "$pkg"; then
   echo "::error::TV caption placement failed"; failed=1
 fi
-for name in watchlist series library people details playback settings account-services credits; do
+for name in watchlist series library people details playback settings account-services restricted-profile seerr-permission credits; do
   set +e
   (
     set -e
