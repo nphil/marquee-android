@@ -3,6 +3,7 @@ package com.nphil.marquee.ui.requests
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -42,6 +43,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
@@ -58,6 +62,7 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.nphil.marquee.AppContainer
+import com.nphil.marquee.BuildConfig
 import com.nphil.marquee.R
 import com.nphil.marquee.ui.components.tvFieldNavigation
 import com.nphil.marquee.core.SeerrBrowseQuery
@@ -90,14 +95,24 @@ internal fun RequestsHomeScreen(container: AppContainer, nav: RequestsNav, onBac
 	val text by search.text.collectAsStateWithLifecycle()
 	var tab by rememberSaveable { mutableIntStateOf(0) }
 	val searching = text.isNotBlank()
+	val searchFocus = remember { FocusRequester() }
 	BrowseScaffold(
-		topBar = { TopAppBar(title = { Text("Requests") }, navigationIcon = { if (onBack != null) BackArrow(onBack) }) },
+		topBar = {
+			TopAppBar(title = { Text("Requests") }, navigationIcon = {
+				if (onBack != null) {
+					Box(if (BuildConfig.TV_CONTROLS) Modifier.focusProperties { down = searchFocus } else Modifier) {
+						BackArrow(onBack)
+					}
+				}
+			})
+		},
 	) { padding ->
 		BoxWithConstraints(Modifier.fillMaxSize().padding(top = padding.calculateTopPadding()).then(padding.sides())) {
 			val wide = maxWidth >= WideBreakpoint
 			val bottom = padding.calculateBottomPadding()
 			Column(Modifier.fillMaxSize()) {
-				SearchField(text, search::edit, Modifier.padding(horizontal = Space.inset, vertical = Space.s2))
+				SearchField(text, search::edit, Modifier.padding(horizontal = Space.inset, vertical = Space.s2)
+					.then(if (BuildConfig.TV_CONTROLS) Modifier.focusRequester(searchFocus) else Modifier))
 				if (!searching) {
 					SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = Space.inset, vertical = Space.s2)) {
 						listOf("Discover", "My Requests").forEachIndexed { index, label ->
