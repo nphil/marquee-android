@@ -15,7 +15,9 @@ import sys, xml.etree.ElementTree as E
 root = E.parse(sys.argv[1])
 attr, word = sys.argv[2:]
 if attr == "selected-text":
-    found = any(n.get("selected") == "true" and any(c.get("text") == word for c in n.iter("node")) for n in root.iter("node"))
+    # Android projects Compose's selected button as a checked, clickable parent of its label.
+    found = any((n.get("selected") == "true" or (n.get("checkable") == "true" and n.get("checked") == "true"))
+                and any(c.get("text") == word for c in n.iter("node")) for n in root.iter("node"))
 else:
     found = any(n.get(attr) == word for n in root.iter("node"))
 raise SystemExit(not found)
