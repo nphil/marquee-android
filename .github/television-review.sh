@@ -21,7 +21,7 @@ if attr in ("selected-text", "select-right", "select-left", "select-down"):
     # Android projects Compose's selected button as a checked, clickable parent of its label.
     found = any((n.get("selected") == "true" or (n.get("checkable") == "true" and n.get("checked") == "true"))
                 and labelled(n) for n in root.iter("node"))
-elif attr in ("focused-text", "focus-down", "focus-right"):
+elif attr in ("focused-text", "focus-down", "focus-right", "focus-up"):
     found = any(n.get("focused") == "true" and labelled(n) for n in root.iter("node"))
 elif attr in ("focused-editor", "editor-down"):
     found = any(n.get("focused") == "true" and n.get("class") == "android.widget.EditText" and labelled(n)
@@ -37,6 +37,7 @@ PY
     then return 0; fi
     case $attribute in
       focus-down|editor-down|select-down) key KEYCODE_DPAD_DOWN ;;
+      focus-up) key KEYCODE_DPAD_UP ;;
       focus-right|select-right) key KEYCODE_DPAD_RIGHT ;;
       select-left) key KEYCODE_DPAD_LEFT ;;
     esac
@@ -72,6 +73,21 @@ home_shortcut() {
   wait_for Search select-left
   wait_for "$1" select-right
   key KEYCODE_DPAD_CENTER
+}
+verified_seerr_home() {
+seerr_address
+wait_for 'Plex Profile|API Key' focus-down
+wait_for 'API Key' focus-right
+key KEYCODE_DPAD_CENTER
+wait_for 'API Key' editor-down
+adb shell input text fixtureOnly12345678901234567890
+hide_ime
+wait_for 'Test Connection' focus-down
+wait_for 'Connected · Seerr 2.0.0, signed in as Jordan.'
+capture seerr-verified
+key KEYCODE_BACK
+key KEYCODE_BACK
+wait_for 'Continue Watching'
 }
 journey() {
 case "$1" in
@@ -332,21 +348,11 @@ wait_for 'Continue Watching'
 if grep -Fq 'text="Requests"' "$out/window.xml"; then exit 1; fi
 ;;
 seerr-requests)
-seerr_address
-wait_for 'Plex Profile|API Key' focus-down
-wait_for 'API Key' focus-right
-key KEYCODE_DPAD_CENTER
-wait_for 'API Key' editor-down
-adb shell input text fixtureOnly12345678901234567890
-hide_ime
-wait_for 'Test Connection' focus-down
-wait_for 'Connected · Seerr 2.0.0, signed in as Jordan.'
-capture seerr-verified
-key KEYCODE_BACK
-key KEYCODE_BACK
-wait_for 'Continue Watching'
+verified_seerr_home
 home_shortcut Requests
 wait_for 'My Requests'
+# Entering Requests may restore focus to a Discover poster below the search field.
+wait_for Back focus-up
 wait_for 'Search movies and series' editor-down
 adb shell input text Wing
 hide_ime
@@ -356,13 +362,15 @@ key KEYCODE_DPAD_CENTER
 wait_for Request focus-down
 key KEYCODE_DPAD_CENTER
 wait_for 'Request Wing It!'
+capture seerr-request-confirmation
 wait_for Request focus-down
 key KEYCODE_DPAD_CENTER
 wait_for 'Pending · Requested by Jordan'
 capture seerr-pending
-key KEYCODE_BACK
-key KEYCODE_BACK
-wait_for 'Continue Watching'
+;;
+seerr-disable)
+verified_seerr_home
+wait_for Requests
 home_shortcut Settings
 wait_for Seerr focus-down
 key KEYCODE_DPAD_CENTER
@@ -435,7 +443,7 @@ failed=0
 if ! /usr/bin/python3 .github/television-captions.py "$out" "$pkg"; then
   echo "::error::TV caption placement failed"; failed=1
 fi
-for name in watchlist series library people details playback settings account-services restricted-profile seerr-permission seerr-requests subtitle-replacement credits; do
+for name in watchlist series library people details playback settings account-services restricted-profile seerr-permission seerr-requests seerr-disable subtitle-replacement credits; do
   set +e
   (
     set -e
