@@ -136,7 +136,9 @@ internal val LocalTvWatchedChanges = staticCompositionLocalOf<Map<String, Boolea
                     LazyRow(Modifier.weight(1f).clip(CircleShape).background(lucent.sheet), state = strip, contentPadding = PaddingValues(4.dp)) {
                         itemsIndexed(rows[0].tiles, key = { _, t -> t.id }) { i, t ->
                             val active = index == 0 && col == i
-                            Text(t.title, Modifier.clip(CircleShape).background(if (active) lucent.glassRaised else lucent.sheet).clickable { page.focusOn(0, i); t.select() }.padding(horizontal = TvSpace.inset, vertical = 6.dp), color = if (active) lucent.accentText else lucent.ink)
+                            Text(t.title, Modifier.clip(CircleShape).background(if (active) lucent.glassRaised else lucent.sheet)
+                                .semantics { selected = active }.clickable { page.focusOn(0, i); t.select() }
+                                .padding(horizontal = TvSpace.inset, vertical = 6.dp), color = if (active) lucent.accentText else lucent.ink)
                         }
                     }
                 } else Text(page.title, color = lucent.ink2, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))

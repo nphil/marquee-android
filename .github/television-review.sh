@@ -17,7 +17,7 @@ attr, word = sys.argv[2:]
 labels = word.split("|")
 def labelled(n):
     return any(c.get("text") in labels or c.get("content-desc") in labels for c in n.iter("node"))
-if attr in ("selected-text", "select-right", "select-down"):
+if attr in ("selected-text", "select-right", "select-left", "select-down"):
     # Android projects Compose's selected button as a checked, clickable parent of its label.
     found = any((n.get("selected") == "true" or (n.get("checkable") == "true" and n.get("checked") == "true"))
                 and labelled(n) for n in root.iter("node"))
@@ -26,6 +26,8 @@ elif attr in ("focused-text", "focus-down", "focus-right"):
 elif attr in ("focused-editor", "editor-down"):
     found = any(n.get("focused") == "true" and n.get("class") == "android.widget.EditText" and labelled(n)
                 for n in root.iter("node"))
+elif attr == "absent":
+    found = not any(n.get("text") == word for n in root.iter("node"))
 elif attr == "text-prefix":
     found = any(n.get("text", "").startswith(word) for n in root.iter("node"))
 else:
@@ -36,6 +38,7 @@ PY
     case $attribute in
       focus-down|editor-down|select-down) key KEYCODE_DPAD_DOWN ;;
       focus-right|select-right) key KEYCODE_DPAD_RIGHT ;;
+      select-left) key KEYCODE_DPAD_LEFT ;;
     esac
     sleep 1
   done
@@ -66,6 +69,7 @@ seerr_address() {
 }
 home_shortcut() {
   key KEYCODE_DPAD_UP
+  wait_for Search select-left
   wait_for "$1" select-right
   key KEYCODE_DPAD_CENTER
 }
@@ -408,11 +412,15 @@ key KEYCODE_DPAD_UP
 wait_for 'First roll'
 key KEYCODE_DPAD_CENTER
 wait_for 'Watch Credits'
+# Keep the first roll onscreen while accessibility inspects the choice; the fixture's early marker lasts only 15 s.
+key KEYCODE_MEDIA_PAUSE
 key KEYCODE_DPAD_LEFT
 wait_for 'Watch Credits' selected-text
 capture credits-first
 key KEYCODE_DPAD_CENTER
+wait_for 'Watch Credits' absent
 key KEYCODE_DPAD_RIGHT
+wait_for 'Seek preview' content-desc
 key KEYCODE_DPAD_UP
 wait_for 'Last roll'
 key KEYCODE_DPAD_CENTER

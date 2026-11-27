@@ -602,7 +602,8 @@ internal fun GlassesPlayerView(model: PlayerModel, navigator: GlassesNavigator, 
 		AnimatedVisibility(controls, enter = fadeIn(), exit = fadeOut()) {
 			var positionMs by remember { mutableLongStateOf(model.movieMs()) }
 			LaunchedEffect(model) { while (true) { positionMs = model.movieMs(); delay(POSITION_POLL_MS) } }
-			PlayerOsd(model, positionMs, scrubbed, layout, tv, tvOffer, navigator)
+			// The outgoing transport still draws during its fade; only the standalone prompt owns the offer then.
+			PlayerOsd(model, positionMs, scrubbed, layout, tv, tvOffer.takeIf { controls }, navigator)
 		}
 		if (controls && model.showsStats && layout.kind == DisplayKind.Tv) {
 			val lines by androidx.compose.runtime.produceState(initialValue = emptyList<com.nphil.marquee.playback.StatLine>(), model) {
