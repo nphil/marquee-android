@@ -567,9 +567,7 @@ internal class GlassesNavigator(
 		options += hostOption()
 		if (isTelevision && item?.type == MediaType.Episode) {
 			options += GlassesOption("episode", "Episode Details") { pages += leafPage(item) }
-			item.grandparentRatingKey?.let { key ->
-				options += GlassesOption("show", "Go to Show") { pages += showPage(PlexItem(key, title = item.grandparentTitle.orEmpty(), type = MediaType.Show)) }
-			}
+			if (item.grandparentRatingKey != null) options += GlassesOption("show", "Go to Show") { goToShow(item) }
 		}
 		if (isTelevision && item != null) {
 			val series = item.type == MediaType.Show || item.type == MediaType.Season
@@ -903,7 +901,7 @@ internal class GlassesNavigator(
 		return GlassesHero(item.title, parts.takeIf { it.isNotEmpty() }?.joinToString(" \u00B7 "), item.summary.takeIf { it.isNotEmpty() }, item.art ?: item.grandparentArt, item.logoPath)
 	}
 
-	private fun playActions(item: PlexItem, label: String? = null): GlassesRow {
+	private fun playActions(item: PlexItem, label: String? = null, episodeDetails: Boolean = false): GlassesRow {
 		val tiles = ArrayList<GlassesTile>()
 		if (item.viewOffset > 0) {
 			tiles += GlassesTile("resume", "Resume", label, GlassesArt.Symbol(R.drawable.ic_play_arrow), item = item) { play(item) }
@@ -911,13 +909,16 @@ internal class GlassesNavigator(
 		} else {
 			tiles += GlassesTile("play", "Play", label, GlassesArt.Symbol(R.drawable.ic_play_arrow), item = item) { play(item, fromStart = item.rewatchedAt != null) }
 		}
+		if (episodeDetails && isTelevision && item.type == MediaType.Episode && item.grandparentRatingKey != null) {
+			tiles.add(1, GlassesTile("show", "Go to Show", art = GlassesArt.Symbol(R.drawable.ic_tv)) { goToShow(item) })
+		}
 		return GlassesRow("actions", null, TileShape.Card, tiles)
 	}
 
 	private fun leafPage(item: PlexItem): GlassesPage {
 		val page = GlassesPage(item.title)
 		page.hero = hero(item)
-		page.setRows(listOf(playActions(item)), loading = true)
+		page.setRows(listOf(playActions(item, episodeDetails = true)), loading = true)
 		page.run(scope) {
 			val full = try {
 				onServer { server, remembered -> itemOf(server, remembered, item.ratingKey) }
@@ -928,13 +929,18 @@ internal class GlassesNavigator(
 				return@run
 			}
 			page.hero = hero(full)
-			page.setRows(listOf(playActions(full)))
+			page.setRows(listOf(playActions(full, episodeDetails = true)))
 			if (isTelevision) addDetailShelves(page, full)
 		}
 		return page
 	}
 
-	private fun showPage(item: PlexItem): GlassesPage {
+	private fun goToShow(episode: PlexItem) {
+		val show = PlexItem(episode.grandparentRatingKey ?: return, title = episode.grandparentTitle.orEmpty(), type = MediaType.Show)
+		pages += showPage(show, episode)
+	}
+
+	private fun showPage(item: PlexItem, fromEpisode: PlexItem? = null): GlassesPage {
 		val page = GlassesPage(item.title)
 		page.hero = hero(item)
 		page.run(scope) {
@@ -946,6 +952,11 @@ internal class GlassesNavigator(
 				show.onDeck?.let { rows += playActions(it, episodeNumber(it)) }
 				rows += GlassesRow("seasons", "Seasons", TileShape.Poster, seasons.map { tile(it, wide = false) })
 				page.setRows(rows)
+				if (fromEpisode != null) {
+					val at = seasons.indexOfFirst { s -> fromEpisode.parentRatingKey?.let { it == s.ratingKey }
+						?: (fromEpisode.parentIndex != null && fromEpisode.parentIndex == s.index) }
+					if (at >= 0) page.focusOn(rows.lastIndex, at)
+				}
 				if (isTelevision) addDetailShelves(page, show)
 			} catch (e: Exception) {
 				failure(page, e)
