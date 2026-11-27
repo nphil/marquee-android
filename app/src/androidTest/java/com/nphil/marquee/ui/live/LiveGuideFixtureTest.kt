@@ -85,24 +85,28 @@ class LiveGuideFixtureTest {
 		val barMismatches = mutableListOf<String>()
 		fun captureUpcoming(palette: String, name: String) {
 			val canvas = container.themes.resolve(palette, mode).lucent.canvas.toArgb()
-			// Compose can be idle before the display compositor presents its new frame.
-			rule.waitUntil(10_000) {
-				val frame = display.takeScreenshot() ?: return@waitUntil false
-				val pixels = if (frame.config == Bitmap.Config.HARDWARE) frame.copy(Bitmap.Config.ARGB_8888, false) else frame
-				try {
-					val x = frame.width / 4
-					if (pixels.getPixel(3, frame.height / 2) != canvas) return@waitUntil false
-					pixels.saveScreenshot(name)
-					val top = pixels.getPixel(x, 4)
-					val bottom = pixels.getPixel(x, frame.height - 5)
-					if (top != canvas || bottom != canvas) {
-						barMismatches += "$name: expected ${canvas.toUInt().toString(16)}, top ${top.toUInt().toString(16)}, bottom ${bottom.toUInt().toString(16)}"
-					}
-					true
-				} finally {
-					if (pixels !== frame) pixels.recycle()
-					frame.recycle()
+			// Wait for a committed frame, not for the colour under test: a bad frame is evidence too.
+			val committed = java.util.concurrent.CountDownLatch(1)
+			rule.runOnIdle {
+				val view = rule.activity.window.decorView
+				view.viewTreeObserver.registerFrameCommitCallback { committed.countDown() }
+				view.invalidate()
+			}
+			val ready = committed.await(5, java.util.concurrent.TimeUnit.SECONDS)
+			val frame = checkNotNull(display.takeScreenshot())
+			val pixels = if (frame.config == Bitmap.Config.HARDWARE) frame.copy(Bitmap.Config.ARGB_8888, false) else frame
+			try {
+				pixels.saveScreenshot(name)
+				val top = pixels.getPixel(pixels.width / 4, 4)
+				val middle = pixels.getPixel(3, pixels.height / 2)
+				val bottom = pixels.getPixel(pixels.width / 4, pixels.height - 5)
+				if (!ready || top != canvas || middle != canvas || bottom != canvas) {
+					fun hex(color: Int) = color.toUInt().toString(16)
+					barMismatches += "$name: committed=$ready expected=${hex(canvas)} top=${hex(top)} middle=${hex(middle)} bottom=${hex(bottom)}"
 				}
+			} finally {
+				if (pixels !== frame) pixels.recycle()
+				frame.recycle()
 			}
 		}
 		captureUpcoming(LucentTheme.DEFAULT_DARK, "recording-upcoming-dark")
