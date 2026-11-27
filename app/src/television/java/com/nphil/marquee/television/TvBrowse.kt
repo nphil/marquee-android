@@ -237,6 +237,11 @@ internal val LocalTvWatchedChanges = staticCompositionLocalOf<Map<String, Boolea
     LaunchedEffect(panel.focus) { if (panel.focus in panel.options.indices) state.reveal(panel.focus + 1) }
     LazyColumn(Modifier.width(310.dp).fillMaxHeight().background(lucent.sheet).padding(TvSpace.inset), state = state) {
         item { Text(panel.title, color = lucent.ink, style = MaterialTheme.typography.titleLarge) }
-        itemsIndexed(panel.options, key = { _, o -> o.id }) { i, o -> Text((if (o.checked) "✓  " else "") + o.title, Modifier.fillMaxWidth().clip(TvSpace.card).background(if (i == panel.focus) lucent.glassRaised else lucent.sheet).clickable { panel.focus = i; nav.handle(GlassesInput.Select) }.padding(TvSpace.inset), color = if (i == panel.focus) lucent.accentText else lucent.ink) }
+        itemsIndexed(panel.options, key = { _, o -> o.id }) { i, o ->
+            Text((if (o.checked) "✓  " else "") + o.title, Modifier.fillMaxWidth().clip(TvSpace.card)
+                .background(if (i == panel.focus) lucent.glassRaised else lucent.sheet)
+                .clickable { panel.focus = i; nav.handle(GlassesInput.Select) }
+                .semantics { focused = i == panel.focus }.padding(TvSpace.inset), color = if (i == panel.focus) lucent.accentText else lucent.ink)
+        }
     }
 }

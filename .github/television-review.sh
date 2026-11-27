@@ -14,14 +14,15 @@ wait_for() {
 import sys, xml.etree.ElementTree as E
 root = E.parse(sys.argv[1])
 attr, word = sys.argv[2:]
-if attr == "selected-text":
+def labelled(n):
+    return any(c.get("text") == word or c.get("content-desc") == word for c in n.iter("node"))
+if attr in ("selected-text", "select-right"):
     # Android projects Compose's selected button as a checked, clickable parent of its label.
     found = any((n.get("selected") == "true" or (n.get("checkable") == "true" and n.get("checked") == "true"))
-                and any(c.get("text") == word for c in n.iter("node")) for n in root.iter("node"))
-elif attr in ("focused-text", "focus-down"):
-    found = any(n.get("focused") == "true" and any(c.get("text") == word for c in n.iter("node"))
-                for n in root.iter("node"))
-elif attr == "focused-editor":
+                and labelled(n) for n in root.iter("node"))
+elif attr in ("focused-text", "focus-down", "focus-right"):
+    found = any(n.get("focused") == "true" and labelled(n) for n in root.iter("node"))
+elif attr in ("focused-editor", "editor-down"):
     found = any(n.get("focused") == "true" and n.get("class") == "android.widget.EditText" for n in root.iter("node"))
 elif attr == "text-prefix":
     found = any(n.get("text", "").startswith(word) for n in root.iter("node"))
@@ -30,7 +31,10 @@ else:
 raise SystemExit(not found)
 PY
     then return 0; fi
-    if [[ $attribute == focus-down ]]; then key KEYCODE_DPAD_DOWN; fi
+    case $attribute in
+      focus-down|editor-down) key KEYCODE_DPAD_DOWN ;;
+      focus-right|select-right) key KEYCODE_DPAD_RIGHT ;;
+    esac
     sleep 1
   done
   echo "Did not reach $word" >&2; return 1
@@ -44,6 +48,24 @@ open_settings() {
   key KEYCODE_DPAD_DOWN
   key KEYCODE_DPAD_CENTER
   wait_for 'Video & Playback'
+}
+hide_ime() {
+  if adb shell dumpsys input_method | grep 'mInputShown=true' >/dev/null; then key KEYCODE_BACK; fi
+}
+seerr_address() {
+  open_settings
+  wait_for Seerr focus-down
+  key KEYCODE_DPAD_CENTER
+  wait_for Enabled focus-down
+  key KEYCODE_DPAD_CENTER
+  wait_for Address focused-editor
+  adb shell input text seerr.local
+  hide_ime
+}
+home_shortcut() {
+  key KEYCODE_DPAD_UP
+  wait_for "$1" select-right
+  key KEYCODE_DPAD_CENTER
 }
 journey() {
 case "$1" in
@@ -294,14 +316,7 @@ if grep -Eq 'text="(Integrations|Seerr|Bazarr|SpeechDock|Diagnostics)"' "$out/wi
 capture restricted-settings
 ;;
 seerr-permission)
-open_settings
-wait_for Seerr focus-down
-key KEYCODE_DPAD_CENTER
-wait_for Enabled focus-down
-key KEYCODE_DPAD_CENTER
-wait_for Address focused-editor
-adb shell input text seerr.local
-if adb shell dumpsys input_method | grep 'mInputShown=true' >/dev/null; then key KEYCODE_BACK; fi
+seerr_address
 wait_for 'Test Connection' focus-down
 wait_for "Seerr doesn't let this Plex profile in." text-prefix
 capture seerr-profile-denied
@@ -309,6 +324,74 @@ key KEYCODE_BACK
 key KEYCODE_BACK
 wait_for 'Continue Watching'
 if grep -Fq 'text="Requests"' "$out/window.xml"; then exit 1; fi
+;;
+seerr-requests)
+seerr_address
+key KEYCODE_DPAD_DOWN
+wait_for 'API Key' focus-right
+key KEYCODE_DPAD_CENTER
+wait_for 'API Key' editor-down
+adb shell input text fixtureOnly12345678901234567890
+hide_ime
+wait_for 'Test Connection' focus-down
+wait_for 'Connected · Seerr 2.0.0, signed in as Jordan.'
+capture seerr-verified
+key KEYCODE_BACK
+key KEYCODE_BACK
+wait_for 'Continue Watching'
+home_shortcut Requests
+wait_for 'My Requests'
+wait_for Search editor-down
+adb shell input text Wing
+hide_ime
+wait_for 'Wing It!, 2023' focus-down
+capture seerr-search
+key KEYCODE_DPAD_CENTER
+wait_for Request focus-down
+key KEYCODE_DPAD_CENTER
+wait_for 'Request Wing It!'
+wait_for Request focus-down
+key KEYCODE_DPAD_CENTER
+wait_for Pending
+capture seerr-pending
+key KEYCODE_BACK
+key KEYCODE_BACK
+wait_for 'Continue Watching'
+home_shortcut Settings
+wait_for Seerr focus-down
+key KEYCODE_DPAD_CENTER
+wait_for Enabled focus-down
+key KEYCODE_DPAD_CENTER
+key KEYCODE_BACK
+key KEYCODE_BACK
+wait_for 'Continue Watching'
+key KEYCODE_DPAD_UP
+wait_for Settings select-right
+if grep -Fq 'text="Requests"' "$out/window.xml"; then exit 1; fi
+capture seerr-disabled
+;;
+subtitle-replacement)
+key KEYCODE_DPAD_RIGHT
+key KEYCODE_MENU
+wait_for 'Play from Start'
+key KEYCODE_DPAD_CENTER
+wait_for 'Skip Intro'
+key KEYCODE_DPAD_LEFT
+wait_for 'Watch Intro' selected-text
+key KEYCODE_DPAD_CENTER
+key KEYCODE_DPAD_RIGHT
+wait_for 'Seek preview' content-desc
+key KEYCODE_BACK
+key KEYCODE_MEDIA_PAUSE
+wait_for 'Subtitles' content-desc
+key KEYCODE_DPAD_UP
+key KEYCODE_DPAD_CENTER
+wait_for 'Subtitle Style'
+wait_for 'Find Subtitles' focus-down
+key KEYCODE_DPAD_CENTER
+wait_for 'English subtitles on'
+wait_for 'From Plex' text-prefix
+capture subtitle-replacement
 ;;
 credits)
 key KEYCODE_DPAD_RIGHT
@@ -342,7 +425,7 @@ failed=0
 if ! /usr/bin/python3 .github/television-captions.py "$out" "$pkg"; then
   echo "::error::TV caption placement failed"; failed=1
 fi
-for name in watchlist series library people details playback settings account-services restricted-profile seerr-permission credits; do
+for name in watchlist series library people details playback settings account-services restricted-profile seerr-permission seerr-requests subtitle-replacement credits; do
   set +e
   (
     set -e

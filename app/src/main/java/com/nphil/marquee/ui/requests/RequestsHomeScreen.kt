@@ -59,6 +59,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.nphil.marquee.AppContainer
 import com.nphil.marquee.R
+import com.nphil.marquee.ui.components.tvFieldNavigation
 import com.nphil.marquee.core.SeerrBrowseQuery
 import com.nphil.marquee.core.SeerrFeed
 import com.nphil.marquee.core.SeerrGenre
@@ -124,7 +125,7 @@ private fun SearchField(text: String, onChange: (String) -> Unit, modifier: Modi
 	TextField(
 		value = text,
 		onValueChange = onChange,
-		modifier = modifier.fillMaxWidth().semantics { contentDescription = "Search movies and series" },
+		modifier = modifier.fillMaxWidth().tvFieldNavigation().semantics { contentDescription = "Search movies and series" },
 		singleLine = true,
 		placeholder = { Text("Search movies and series") },
 		leadingIcon = { Icon(painterResource(R.drawable.ic_search), contentDescription = null) },

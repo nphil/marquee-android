@@ -77,12 +77,13 @@ internal data class FindBanner(val tone: Tone, val title: String, val detail: St
 }
 
 @Serializable
-internal data class FindSubtitlesReply(val banner: FindBanner, val tracks: PlayTracks? = null, val trackId: Int? = null)
+internal data class FindSubtitlesReply(val banner: FindBanner, val tracks: PlayTracks? = null, val trackId: Int? = null, val awaitingFile: Boolean = false)
 
-internal suspend fun MarqueeCore.findSubtitles(source: SubtitleSource, request: String, bazarr: BazarrLink?): FindSubtitlesReply =
+internal suspend fun MarqueeCore.findSubtitles(source: SubtitleSource, request: String, bazarr: BazarrLink?, checkOnly: Boolean = false): FindSubtitlesReply =
 	call("subtitles.find", buildJsonObject {
 		source.fields(this)
 		put("request", request)
+		if (checkOnly) put("checkOnly", true)
 		if (bazarr != null) put("bazarr", CoreJson.encodeToJsonElement(BazarrLink.serializer(), bazarr))
 	})
 

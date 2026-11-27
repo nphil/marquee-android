@@ -37,6 +37,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.nphil.marquee.ui.components.GroupRow
+import com.nphil.marquee.ui.components.tvFieldNavigation
 import com.nphil.marquee.ui.theme.Space
 import com.nphil.marquee.ui.theme.lucent
 
@@ -65,6 +66,7 @@ internal fun SettingsFieldRow(
 			onValueChange = onChange,
 			modifier = Modifier
 				.weight(1f)
+				.tvFieldNavigation()
 				.then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
 				.onFocusChanged { state ->
 					if (state.isFocused) {

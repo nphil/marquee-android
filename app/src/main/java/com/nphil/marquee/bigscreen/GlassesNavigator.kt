@@ -631,7 +631,10 @@ internal class GlassesNavigator(
 				model.pickSubtitle(SubtitlePick.track(track.id))
 			}
 		}
-		if (isTelevision && model.canFindSubtitles && !model.subtitleFinder.busy) options += GlassesOption("subtitle.find", "Find Subtitles", "Subtitles") { model.findSubtitles() }
+		if (isTelevision && model.canFindSubtitles && !model.subtitleFinder.busy) {
+			if (model.canRecheckSubtitle) options += GlassesOption("subtitle.recheck", "Check Plex again", "Subtitles") { model.findSubtitles(checkOnly = true) }
+			options += GlassesOption("subtitle.find", "Find Subtitles", "Subtitles") { model.findSubtitles() }
+		}
 		for (track in lists.audio) {
 			options += GlassesOption("audio.${track.id}", track.label, "Audio", tracks.audioId == track.id) { model.pickAudio(track.id) }
 		}

@@ -150,6 +150,7 @@ class PlayerModel(
 
 	private val onlineSubtitleSource get() = if (castReceiver == null) plan?.subtitleSource(isOffline) else null
 	internal val canFindSubtitles: Boolean get() = player != null && onlineSubtitleSource != null
+	internal val canRecheckSubtitle: Boolean get() = subtitleFinder.waitingFor?.let { it == onlineSubtitleSource } == true
 
 	/** Skip Intro and Up Next over the picture. */
 	internal val offers: PlayerOffers = PlayerOffers(viewModelScope, container.core, ::steady, { menusOpen || scrubbing }, ::seekTo, ::playNext, ::finish, ::movieMs)
@@ -600,10 +601,12 @@ class PlayerModel(
 	}
 
 	/** Finds an English subtitle and puts it on screen without reopening video. */
-	internal fun findSubtitles() {
+	internal fun findSubtitles() = findSubtitles(checkOnly = false)
+
+	internal fun findSubtitles(checkOnly: Boolean) {
 		if (!canFindSubtitles) return
 		val source = onlineSubtitleSource ?: return
-		subtitleFinder.find(source) { lists, id ->
+		subtitleFinder.find(source, checkOnly) { lists, id ->
 			if (player == null || onlineSubtitleSource != source) return@find false
 			tracks.refresh(lists)
 			if (id == null) return@find false

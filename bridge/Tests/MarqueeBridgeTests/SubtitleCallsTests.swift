@@ -36,9 +36,16 @@ import Testing
         let first = try await session.findSubtitles(find, transport: server, waits: [.zero])
         #expect(first.trackId == nil)
         #expect(first.banner.title == "Plex hasn't listed the new file yet")
+        #expect(first.awaitingFile)
+        var retry = find
+        retry.checkOnly = true
+        let count = server.requests.count
+        let stillWaiting = try await session.findSubtitles(retry, transport: server, waits: [.zero])
+        #expect(stillWaiting.awaitingFile && stillWaiting.trackId == nil)
+        #expect(server.requests.dropFirst(count).map(\.method) == [.get])
+        #expect(server.requests.last?.url.path == "/library/metadata/7")
 
         server.listBazarrFile()
-        let retry = FindSubtitlesCall(session: id, ratingKey: "7", partId: 18, request: "recheck", bazarr: bazarr)
         let listed = try await session.findSubtitles(retry, transport: server, waits: [.zero])
         #expect(listed.trackId == 30 && listed.banner.detail == "From Bazarr · OpenSubtitles.com")
         let firstSubtitle = try #require(listed.tracks?.subtitles.first { $0.id == 30 })

@@ -12,6 +12,7 @@ struct FindSubtitlesCall: Decodable {
     let partId: Int
     let request: String
     let bazarr: Bazarr?
+    var checkOnly: Bool?
 }
 
 struct FindProgressCall: Decodable {
@@ -105,6 +106,7 @@ struct FindSubtitlesReply: Encodable, Sendable {
     let banner: FindBanner
     var tracks: PlayTracksWire?
     var trackId: Int?
+    var awaitingFile = false
 }
 
 extension PlaySession {
@@ -118,7 +120,7 @@ extension PlaySession {
         }
         let config = call.bazarr.flatMap { try? BazarrConfig.parse(address: $0.address, key: $0.apiKey).get() }
         if subtitleSearch.key != file.key { subtitleSearch = SubtitleSearchState(key: file.key) }
-        if subtitleSearch.address != config?.address {
+        if call.checkOnly != true, subtitleSearch.address != config?.address {
             subtitleSearch.address = config?.address
             subtitleSearch.target = nil
         }
@@ -127,6 +129,13 @@ extension PlaySession {
         subtitleSearch.progress = (request, .busy(checking ? "Checking Plex for the last file…" : config == nil ? "Asking Plex…" : "Asking Bazarr…"))
         defer { if subtitleSearch.progress?.request == request { subtitleSearch.progress = nil } }
 
+        if call.checkOnly == true {
+            guard let pending = subtitleSearch.pending else {
+                return FindSubtitlesReply(banner: .init(tone: .missing, title: "No subtitle is waiting", detail: "Find subtitles to search again."))
+            }
+            return try await listSubtitle(pending, in: file, request: request, waits: [.zero], refreshAllowed: false)
+                ?? FindSubtitlesReply(banner: .init(tone: .missing, title: "Plex hasn't listed the new file yet", detail: "Check Plex again in a moment."), awaitingFile: true)
+        }
         if let pending = subtitleSearch.pending,
            let result = try await listSubtitle(pending, in: file, request: request, waits: [.zero]) { return result }
 
@@ -160,7 +169,7 @@ extension PlaySession {
         }
         return FindSubtitlesReply(banner: .init(
             tone: .missing, title: "Plex hasn't listed the new file yet", detail: "From \(added.source.rawValue). Find again to check."
-        ), tracks: changedMenu(since: file))
+        ), tracks: changedMenu(since: file), awaitingFile: true)
     }
 
     private func changedMenu(since file: PlayingSubtitleFile) -> PlayTracksWire? {
@@ -178,12 +187,12 @@ extension PlaySession {
     }
 
     private func listSubtitle(
-        _ pending: SubtitleSearchState.Pending, in file: PlayingSubtitleFile, request: String, waits: [Duration]
+        _ pending: SubtitleSearchState.Pending, in file: PlayingSubtitleFile, request: String, waits: [Duration], refreshAllowed: Bool = true
     ) async throws -> FindSubtitlesReply? {
         guard let library else { throw PlayError.noSession }
         var pending = pending
         do {
-            if case .bazarr = pending.added, !pending.refreshed {
+            if refreshAllowed, case .bazarr = pending.added, !pending.refreshed {
                 try await library.refresh(file.item.ratingKey)
                 try checkSearch(file, request)
                 pending.refreshed = true
@@ -216,7 +225,7 @@ extension PlaySession {
             try checkSearch(file, request)
             return FindSubtitlesReply(banner: .init(
                 tone: .missing, title: "Couldn't check Plex", detail: "\(pending.added.source.rawValue) sent a file. Find again to look for it."
-            ), tracks: changedMenu(since: file))
+            ), tracks: changedMenu(since: file), awaitingFile: true)
         }
     }
 }
