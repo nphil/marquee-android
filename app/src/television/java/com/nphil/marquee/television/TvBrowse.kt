@@ -2,6 +2,11 @@ package com.nphil.marquee.television
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.background
@@ -29,6 +34,10 @@ import com.nphil.marquee.bigscreen.*
 import com.nphil.marquee.ui.components.PlexArt
 import com.nphil.marquee.ui.theme.lucent
 
+private val focusIn = tween<Float>(220, easing = LinearOutSlowInEasing)
+private val focusOut = tween<Float>(160, easing = LinearOutSlowInEasing)
+private val shelfTravel = tween<Float>(210, easing = LinearOutSlowInEasing)
+
 private object TvSpace {
     val edge = 32.dp
     val gap = 10.dp
@@ -54,26 +63,31 @@ private suspend fun LazyListState.reveal(index: Int) {
         item.offset < layout.viewportStartOffset -> item.offset - layout.viewportStartOffset
         else -> (item.offset + item.size - layout.viewportEndOffset).coerceAtLeast(0)
     }
-    if (distance != 0) animateScrollBy(distance.toFloat(), tween(140))
+    if (distance != 0) animateScrollBy(distance.toFloat(), shelfTravel)
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable internal fun TvBrowse(page: GlassesPage) {
     // The grid is shared with the external-display client. Reading its stamp observes a move, not an animation frame.
     @Suppress("UNUSED_VARIABLE") val moved = page.stamp
-    val tile = page.focusedTile
-    val media = tile?.item
+    val focused = page.focusedTile
     val hero = page.hero
     val rows = page.rows
     val hasNav = rows.firstOrNull()?.id == "menu"
+    // Focus responds immediately. On Home, don't lay out a new synopsis or decode artwork for every intermediate key repeat.
+    var preview by remember { mutableStateOf(focused) }
+    LaunchedEffect(focused, hasNav) { if (hasNav && preview != null) kotlinx.coroutines.delay(240); preview = focused }
+    val tile = if (hasNav) preview else focused
+    val media = tile?.item
     val first = if (hasNav) 1 else 0
     val index = page.focus.row
-    val list = rememberLazyListState()
+    val list = rememberLazyListState(cacheWindow = remember { androidx.compose.foundation.lazy.layout.LazyLayoutCacheWindow(220.dp, 220.dp) })
     val column = page.focus.column
     LaunchedEffect(index, first) { if (index in first until rows.size) list.reveal(index - first) }
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val art = hero?.backdrop ?: media?.art ?: media?.grandparentArt
         // Delay artwork changes on held arrows: do not fetch full-width art for each title the remote passes.
-        var shown by remember { mutableStateOf(art) }; LaunchedEffect(art) { kotlinx.coroutines.delay(280); shown = art }
+        var shown by remember { mutableStateOf(art) }; LaunchedEffect(art) { if (!hasNav) kotlinx.coroutines.delay(280); shown = art }
         val canvas = lucent.canvas
         val across = remember(canvas) { Brush.horizontalGradient(listOf(canvas, canvas.copy(alpha = .90f), canvas.copy(alpha = .2f))) }
         val down = remember(canvas) { Brush.verticalGradient(listOf(canvas.copy(alpha = .08f), canvas.copy(alpha = .2f), canvas)) }
@@ -103,7 +117,7 @@ private suspend fun LazyListState.reveal(index: Int) {
                     }
                 } else Text(page.title, color = lucent.ink2, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
             }
-            Column(Modifier.fillMaxWidth(.74f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Column(Modifier.fillMaxWidth(.74f).then(if (hasNav) Modifier.heightIn(min = 109.dp) else Modifier), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text(hero?.title ?: media?.title ?: page.query.ifEmpty { tile?.title ?: page.title }, color = lucent.ink, fontSize = 34.sp, lineHeight = 39.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 (hero?.meta ?: tile?.subtitle)?.let { Text(it, color = lucent.accentText, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                 (hero?.overview ?: media?.summary)?.takeIf { it.isNotBlank() }?.let { Text(it, color = lucent.ink2, fontSize = 15.sp, lineHeight = 20.sp, maxLines = 2, overflow = TextOverflow.Ellipsis) }
@@ -143,7 +157,7 @@ private suspend fun LazyListState.reveal(index: Int) {
 }
 
 @Composable private fun TvTile(t: GlassesTile, selected: Boolean, width: androidx.compose.ui.unit.Dp, height: androidx.compose.ui.unit.Dp, select: () -> Unit) {
-    val scale = animateFloatAsState(if (selected) 1.04f else 1f, tween(105), label = "remote focus")
+    val scale = animateFloatAsState(if (selected) 1.05f else 1f, if (selected) focusIn else focusOut, label = "remote focus")
     Column(Modifier.width(width).graphicsLayer { scaleX = scale.value; scaleY = scale.value }.semantics { this.selected = selected }.clickable(onClick = select)) {
         Box(Modifier.fillMaxWidth().height(height).clip(TvSpace.card).then(if (selected) Modifier.border(2.dp, lucent.accent, TvSpace.card) else Modifier).background(if (selected) lucent.glassRaised else lucent.sheet), contentAlignment = Alignment.Center) {
             when (val picture = t.art) {
@@ -157,13 +171,26 @@ private suspend fun LazyListState.reveal(index: Int) {
     }
 }
 
-@Composable internal fun TvPanel(panel: GlassesPanel, nav: GlassesNavigator) {
-    val state = rememberLazyListState()
-    LaunchedEffect(panel.focus) { val row = panel.focus + 1; if (panel.focus in panel.options.indices && !state.fullyShows(row)) state.animateScrollToItem(row) }
-    Box(Modifier.fillMaxSize().background(lucent.scrim), contentAlignment = Alignment.CenterEnd) {
-        LazyColumn(Modifier.width(310.dp).fillMaxHeight().background(lucent.sheet).padding(TvSpace.inset), state = state) {
-            item { Text(panel.title, color = lucent.ink, style = MaterialTheme.typography.titleLarge) }
-            itemsIndexed(panel.options, key = { _, o -> o.id }) { i, o -> Text((if (o.checked) "✓  " else "") + o.title, Modifier.fillMaxWidth().clip(TvSpace.card).background(if (i == panel.focus) lucent.glassRaised else lucent.sheet).clickable { panel.focus = i; nav.handle(GlassesInput.Select) }.padding(TvSpace.inset), color = if (i == panel.focus) lucent.accentText else lucent.ink) }
+@Composable internal fun TvOptions(panel: GlassesPanel?, nav: GlassesNavigator) {
+    AnimatedVisibility(panel != null, enter = androidx.compose.animation.fadeIn(tween(150)), exit = androidx.compose.animation.fadeOut(tween(110))) {
+        Box(Modifier.fillMaxSize().background(lucent.scrim), contentAlignment = Alignment.CenterEnd) {
+            var last by remember { mutableStateOf(panel) }
+            SideEffect { if (panel != null) last = panel }
+            (panel ?: last)?.let { shown ->
+                Box(Modifier.animateEnterExit(
+                    enter = slideInHorizontally(tween(210, easing = LinearOutSlowInEasing)) { it / 5 },
+                    exit = slideOutHorizontally(tween(140, easing = FastOutLinearInEasing)) { it / 5 },
+                )) { TvPanel(shown, nav) }
+            }
         }
+    }
+}
+
+@Composable private fun TvPanel(panel: GlassesPanel, nav: GlassesNavigator) {
+    val state = rememberLazyListState()
+    LaunchedEffect(panel.focus) { if (panel.focus in panel.options.indices) state.reveal(panel.focus + 1) }
+    LazyColumn(Modifier.width(310.dp).fillMaxHeight().background(lucent.sheet).padding(TvSpace.inset), state = state) {
+        item { Text(panel.title, color = lucent.ink, style = MaterialTheme.typography.titleLarge) }
+        itemsIndexed(panel.options, key = { _, o -> o.id }) { i, o -> Text((if (o.checked) "✓  " else "") + o.title, Modifier.fillMaxWidth().clip(TvSpace.card).background(if (i == panel.focus) lucent.glassRaised else lucent.sheet).clickable { panel.focus = i; nav.handle(GlassesInput.Select) }.padding(TvSpace.inset), color = if (i == panel.focus) lucent.accentText else lucent.ink) }
     }
 }

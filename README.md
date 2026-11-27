@@ -41,6 +41,10 @@ During playback, Up shows the timeline and Down opens options. Playback Info sho
 route, decoder, startup time and dropped frames. When Android TV permits non-seamless frame-rate
 matching, playback requests the film rate at the current resolution and releases it on exit.
 
+Home highlights the new selection immediately and waits 240 ms before loading its preview.
+The 5% card lift uses the [Android TV focus treatment](https://developer.android.com/design/ui/tv/guides/styles/focus-system);
+the shelves and options drawer ease to a stop without delaying the next remote press.
+
 With the Android Swift SDK and NDK set up as for the phone build:
 
 ```sh

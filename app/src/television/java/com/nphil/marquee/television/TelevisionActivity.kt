@@ -115,7 +115,7 @@ class TelevisionActivity : ComponentActivity() {
             val density = (pixels.height / 1080f).coerceAtLeast(0.5f)
             CompositionLocalProvider(LocalDensity provides Density(density, LocalDensity.current.fontScale)) { GlassesPlayerView(model, nav, container, layout) }
         } } ?: if (!settings) { nav.page?.let { page -> key(page) { TvBrowse(page) } } } else Unit
-        if (!settings) nav.panel?.let { TvPanel(it, nav) }
+        if (!settings) TvOptions(nav.panel, nav)
         if (settings) {
             Column(Modifier.fillMaxSize().background(lucent.canvas).padding(48.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("Settings", color = lucent.ink, style = MaterialTheme.typography.headlineLarge)
