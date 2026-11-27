@@ -13,6 +13,7 @@ struct FindSubtitlesCall: Decodable {
     let request: String
     let bazarr: Bazarr?
     var checkOnly: Bool?
+    var choice: String?
 }
 
 struct FindProgressCall: Decodable {
@@ -62,6 +63,7 @@ struct SubtitleSearchState: Sendable {
     var key: PlayingSubtitleFile.FileKey?
     var address: URL?
     var target: BazarrTarget?
+    var picker: (file: UUID, address: URL, target: BazarrTarget, rows: [String: BazarrSubtitle])?
     var tried = SubtitleSearch.Tried()
     var pending: Pending?
     var progress: (request: String, banner: FindBanner)?
@@ -109,7 +111,33 @@ struct FindSubtitlesReply: Encodable, Sendable {
     var awaitingFile = false
 }
 
+struct ProviderChoice: Encodable, Sendable {
+    let key: String
+    let label: String
+}
+
 extension PlaySession {
+    func subtitleChoices(_ call: FindSubtitlesCall, transport: any PlexTransport) async throws -> [ProviderChoice] {
+        guard hasStream, let library, let file = subtitleFile, file.key == .init(ratingKey: call.ratingKey, partId: call.partId),
+              let link = call.bazarr else { throw PlayError.noSession }
+        let config = try BazarrConfig.parse(address: link.address, key: link.apiKey).get()
+        let client = BazarrClient(config: config, transport: transport)
+        let target = try await client.find(file.lookup(in: library))
+        let rows = try await client.search(target).filter { $0.trackLanguage == .english }.sorted { $0.score > $1.score }
+        guard subtitleFile?.id == file.id else { throw CancellationError() }
+        if subtitleSearch.key != file.key { subtitleSearch = SubtitleSearchState(key: file.key) }
+        var offers: [String: BazarrSubtitle] = [:]
+        let choices = rows.map { row in
+            let key = UUID().uuidString
+            offers[key] = row
+            let details = [row.providerName, "\(Int(row.score))%", row.releases.first,
+                           row.isForced ? "Forced" : row.isHearingImpaired ? "SDH" : nil]
+            return ProviderChoice(key: key, label: details.compactMap { $0 }.joined(separator: " · "))
+        }
+        subtitleSearch.picker = (file.id, config.address, target, offers)
+        return choices
+    }
+
     func findSubtitles(
         _ call: FindSubtitlesCall, transport: any PlexTransport,
         waits: [Duration] = [.seconds(1), .seconds(2), .seconds(3), .seconds(5), .seconds(8)]
@@ -135,6 +163,18 @@ extension PlaySession {
             }
             return try await listSubtitle(pending, in: file, request: request, waits: [.zero], refreshAllowed: false)
                 ?? FindSubtitlesReply(banner: .init(tone: .missing, title: "Plex hasn't listed the new file yet", detail: "Check Plex again in a moment."), awaitingFile: true)
+        }
+        if let key = call.choice {
+            guard let config, let picker = subtitleSearch.picker, picker.file == file.id, picker.address == config.address,
+                  let row = picker.rows[key] else { throw PlayError.noFile }
+            subtitleSearch.picker = nil
+            let pending = SubtitleSearchState.Pending(added: .bazarr(row), before: Set(file.tracks.subtitles.map(\.id)))
+            try await BazarrClient(config: config, transport: transport).download(row, for: picker.target)
+            try checkSearch(file, request)
+            subtitleSearch.pending = pending
+            subtitleSearch.tried.insert(pending.added)
+            return try await listSubtitle(pending, in: file, request: request, waits: waits)
+                ?? FindSubtitlesReply(banner: .init(tone: .missing, title: "Waiting for Plex", detail: "Check Plex again in a moment."), awaitingFile: true)
         }
         if let pending = subtitleSearch.pending,
            let result = try await listSubtitle(pending, in: file, request: request, waits: [.zero]) { return result }

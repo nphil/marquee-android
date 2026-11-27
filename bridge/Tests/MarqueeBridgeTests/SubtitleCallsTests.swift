@@ -27,6 +27,27 @@ import Testing
         #expect(requests.allSatisfy { $0.headers["X-Plex-Token"] == nil })
     }
 
+    @Test func providerListDoesNotDownloadAndSupersededChoicesCannotWrite() async throws {
+        let server = Server(listBazarrFile: false)
+        let (session, id) = try await play(in: services(server))
+        let bazarr = FindSubtitlesCall.Bazarr(address: "https://bazarr.example.test", apiKey: server.key)
+        var call = FindSubtitlesCall(session: id, ratingKey: "7", partId: 18, request: "manual", bazarr: bazarr)
+        let first = try await session.subtitleChoices(call, transport: server)
+        call.choice = try #require(first.first).key
+        let second = try await session.subtitleChoices(call, transport: server)
+        do {
+            _ = try await session.findSubtitles(call, transport: server, waits: [.zero])
+            Issue.record("A superseded provider choice was accepted")
+        } catch PlayError.noFile {}
+        #expect(!server.requests.contains { $0.url.path == "/api/providers/movies" && $0.method == .post })
+        let selected = try #require(second.first)
+        #expect(selected.label.contains("OpenSubtitles"))
+        call.choice = selected.key
+        let result = try await session.findSubtitles(call, transport: server, waits: [.zero])
+        #expect(result.awaitingFile)
+        #expect(server.requests.filter { $0.url.path == "/api/providers/movies" && $0.method == .post }.count == 1)
+    }
+
     @Test func aBazarrFileRefreshesThePlayingPartAndFindingAgainFallsBackToPlex() async throws {
         let server = Server(listBazarrFile: false)
         let services = services(server)

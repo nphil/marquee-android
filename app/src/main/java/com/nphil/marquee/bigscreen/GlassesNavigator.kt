@@ -634,6 +634,21 @@ internal class GlassesNavigator(
 		if (isTelevision && model.canFindSubtitles && !model.subtitleFinder.busy) {
 			if (model.canRecheckSubtitle) options += GlassesOption("subtitle.recheck", "Check Plex again", "Subtitles") { model.findSubtitles(checkOnly = true) }
 			options += GlassesOption("subtitle.find", "Find Subtitles", "Subtitles") { model.findSubtitles() }
+			if (model.canChooseSubtitle) options += GlassesOption("subtitle.providers", "Choose from Bazarr", "Subtitles") {
+				val back = GlassesOption("back", "Back") { openTracks(model, "Subtitles") }
+				val loading = GlassesPanel("Searching Bazarr…", listOf(back))
+				panel = loading
+				scope.launch {
+					try {
+						val choices = model.subtitleChoices()
+						if (panel !== loading) return@launch
+						panel = GlassesPanel(if (choices.isEmpty()) "No English subtitles found" else "Choose a subtitle", choices.map { row ->
+							GlassesOption(row.key, row.label) { model.findSubtitles(checkOnly = false, choice = row.key) }
+						} + back, parent = GlassesPanel("Subtitles", options.filter { it.section == "Subtitles" }))
+					} catch (e: CancellationException) { throw e }
+					catch (_: Exception) { if (panel === loading) panel = GlassesPanel("Couldn’t search Bazarr", listOf(back)) }
+				}
+			}
 		}
 		for (track in lists.audio) {
 			options += GlassesOption("audio.${track.id}", track.label, "Audio", tracks.audioId == track.id) { model.pickAudio(track.id) }

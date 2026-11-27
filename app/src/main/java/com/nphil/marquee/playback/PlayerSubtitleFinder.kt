@@ -30,7 +30,7 @@ internal class PlayerSubtitleFinder(private val scope: CoroutineScope, private v
 	var waitingFor by mutableStateOf<SubtitleSource?>(null)
 		private set
 
-	fun find(source: SubtitleSource, checkOnly: Boolean, apply: suspend (PlayTracks, Int?) -> Boolean) {
+	fun find(source: SubtitleSource, checkOnly: Boolean, choice: String? = null, apply: suspend (PlayTracks, Int?) -> Boolean) {
 		if (busy) return
 		task?.cancel()
 		banner = FindBanner.busy(if (checkOnly) "Checking Plex for the last file…" else if (services.bazarr.value == null) "Asking Plex…" else "Asking Bazarr…")
@@ -38,7 +38,7 @@ internal class PlayerSubtitleFinder(private val scope: CoroutineScope, private v
 			banner = try {
 				val reply = coroutineScope {
 					val request = UUID.randomUUID().toString()
-					val finding = async { core.findSubtitles(source, request, if (checkOnly) null else services.bazarrLink(), checkOnly) }
+					val finding = async { core.findSubtitles(source, request, if (checkOnly) null else services.bazarrLink(), checkOnly, choice) }
 					val progress = launch {
 						while (true) {
 							delay(250)

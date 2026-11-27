@@ -65,6 +65,7 @@ import com.nphil.marquee.core.playStop
 import com.nphil.marquee.core.playTap
 import com.nphil.marquee.core.playTapReset
 import com.nphil.marquee.core.playTranscode
+import com.nphil.marquee.core.subtitleChoices
 import com.nphil.marquee.core.subtitleSource
 import com.nphil.marquee.core.setWatched
 import com.nphil.marquee.core.startCast
@@ -600,13 +601,19 @@ class PlayerModel(
 		}
 	}
 
+	internal val canChooseSubtitle get() = canFindSubtitles && container.subtitleServices.bazarr.value != null
+
+	internal suspend fun subtitleChoices() = container.core.subtitleChoices(
+		requireNotNull(onlineSubtitleSource), requireNotNull(container.subtitleServices.bazarrLink())
+	)
+
 	/** Finds an English subtitle and puts it on screen without reopening video. */
 	internal fun findSubtitles() = findSubtitles(checkOnly = false)
 
-	internal fun findSubtitles(checkOnly: Boolean) {
+	internal fun findSubtitles(checkOnly: Boolean, choice: String? = null) {
 		if (!canFindSubtitles) return
 		val source = onlineSubtitleSource ?: return
-		subtitleFinder.find(source, checkOnly) { lists, id ->
+		subtitleFinder.find(source, checkOnly, choice) { lists, id ->
 			if (player == null || onlineSubtitleSource != source) return@find false
 			tracks.refresh(lists)
 			if (id == null) return@find false
