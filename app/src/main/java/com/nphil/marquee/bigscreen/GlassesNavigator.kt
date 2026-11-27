@@ -419,12 +419,14 @@ internal class GlassesNavigator(
 				is GlassesInput.Move -> {
 					if (input.move.isHorizontal) {
 						player.chooseWatch(offer, input.move == FocusMove.Left)
+						// Choosing between Watch and Skip must not move the buttons into the transport overlay.
+						chromeStamp++
 					} else {
 						player.unfocusedOffer = offer
 						player.row = HudRow.Timeline
 						model.userActed()
+						wakeTransport()
 					}
-					wakeTransport()
 					return HapticCue.FocusStep
 				}
 				else -> Unit
@@ -1075,11 +1077,31 @@ internal class GlassesNavigator(
 	private fun watchlist(): GlassesPage {
 		val page = GlassesPage("Watchlist", FocusGrid.Style.Grid)
 		page.withModel<WatchlistModel>({ WatchlistModel(container.browse) }) { model ->
-			page.onMove = { page.focusedTile?.id?.let(model::nearEnd) }
-			model.state.collect { state ->
-				val rows = gridRows(state.items.map(::watchlistCard), TileShape.Poster)
-				if (rows.isEmpty() && state.failure != null) page.setRows(listOf(GlassesRow("retry", "Couldn’t load Watchlist", TileShape.Card, listOf(GlassesTile("retry", "Retry") { model.load() }))))
-				else page.setRows(rows, state.isLoading)
+			val choices = kotlinx.coroutines.flow.MutableStateFlow(TvWatchlistOrder())
+			page.onMove = { if (!choices.value.needsWholeList) page.focusedTile?.id?.let(model::nearEnd) }
+			choices.collectLatest { order ->
+				val tools = GlassesRow("watchlist.filters", "Sort & Filter", TileShape.Card, listOf(
+					GlassesTile("kind", order.typeLabel) {
+						panel = GlassesPanel("Show", listOf(null, MediaType.Movie, MediaType.Show).map { type ->
+							val next = order.copy(type = type)
+							GlassesOption(next.typeLabel, next.typeLabel, checked = type == order.type) { choices.value = next }
+						})
+					},
+					GlassesTile("order", order.sort.label, order.direction) {
+						panel = GlassesPanel("Sort by", TvWatchlistSort.entries.flatMap { sort ->
+							listOf(false, true).map { reversed ->
+								val next = order.copy(sort = sort, reversed = reversed)
+								GlassesOption("${sort.name}.$reversed", "${sort.label} · ${next.direction}", checked = order == next) { choices.value = next }
+							}
+						})
+					},
+				))
+				model.state.collect { state ->
+					val rows = gridRows(order.apply(state.items).map(::watchlistCard), TileShape.Poster)
+					val retry = if (state.failure == null) emptyList() else listOf(GlassesRow("retry", "Couldn’t load the full Watchlist", TileShape.Card, listOf(GlassesTile("retry", "Retry") { model.load() })))
+					page.setRows(listOf(tools) + retry + rows, state.isLoading)
+					if (order.needsWholeList && !state.isLoading && state.failure == null) model.fillNextPage()
+				}
 			}
 		}
 		return page

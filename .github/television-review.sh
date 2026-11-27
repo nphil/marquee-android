@@ -10,7 +10,17 @@ adb shell am start -W -n "$pkg/com.nphil.marquee.television.TelevisionActivity"
 wait_for() {
   local word=$1 attribute=${2:-text}
   for (( i=0; i<20; i++ )); do
-    if adb shell uiautomator dump /sdcard/window.xml >/dev/null && adb shell cat /sdcard/window.xml >"$out/window.xml" && python3 -c 'import sys, xml.etree.ElementTree as E; raise SystemExit(not any(n.get(sys.argv[2]) == sys.argv[3] for n in E.parse(sys.argv[1]).iter("node")))' "$out/window.xml" "$attribute" "$word"; then return 0; fi
+    if adb shell uiautomator dump /sdcard/window.xml >/dev/null && adb shell cat /sdcard/window.xml >"$out/window.xml" && python3 - "$out/window.xml" "$attribute" "$word" <<'PY'
+import sys, xml.etree.ElementTree as E
+root = E.parse(sys.argv[1])
+attr, word = sys.argv[2:]
+if attr == "selected-text":
+    found = any(n.get("selected") == "true" and any(c.get("text") == word for c in n.iter("node")) for n in root.iter("node"))
+else:
+    found = any(n.get(attr) == word for n in root.iter("node"))
+raise SystemExit(not found)
+PY
+    then return 0; fi
     sleep 1
   done
   echo "Did not reach $word" >&2; return 1
@@ -22,6 +32,22 @@ wait_for 'Continue Watching'
 capture home
 key KEYCODE_DPAD_UP
 key KEYCODE_DPAD_RIGHT
+key KEYCODE_DPAD_RIGHT
+key KEYCODE_DPAD_RIGHT
+key KEYCODE_DPAD_CENTER
+wait_for 'Sort & Filter'
+key KEYCODE_DPAD_CENTER
+wait_for 'Show'
+key KEYCODE_DPAD_DOWN
+key KEYCODE_DPAD_DOWN
+key KEYCODE_DPAD_CENTER
+wait_for 'Caminandes'
+! grep -Fq 'text="Wing It!"' "$out/window.xml" || exit 1
+capture watchlist-shows
+key KEYCODE_BACK
+wait_for 'Continue Watching'
+key KEYCODE_DPAD_LEFT
+key KEYCODE_DPAD_LEFT
 key KEYCODE_DPAD_CENTER
 wait_for 'Browse Library'
 key KEYCODE_DPAD_RIGHT
@@ -65,6 +91,7 @@ wait_for 'Play from Start'
 key KEYCODE_DPAD_CENTER
 wait_for 'Skip Intro'
 key KEYCODE_DPAD_LEFT
+wait_for 'Watch Intro' selected-text
 capture intro
 key KEYCODE_DPAD_CENTER
 key KEYCODE_DPAD_RIGHT
@@ -133,6 +160,7 @@ wait_for 'First roll'
 key KEYCODE_DPAD_CENTER
 wait_for 'Watch Credits'
 key KEYCODE_DPAD_LEFT
+wait_for 'Watch Credits' selected-text
 capture credits-first
 key KEYCODE_DPAD_CENTER
 key KEYCODE_DPAD_RIGHT

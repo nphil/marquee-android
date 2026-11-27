@@ -56,6 +56,11 @@ class WatchlistModel(private val env: BrowseEnvironment) : ViewModel() {
 		viewModelScope.launch { loader.loadMoreIfNeeded(lastKey) }
 	}
 
+	/** A filtered TV grid may contain none of the last page's cards, so advance by the unfiltered cursor. */
+	internal suspend fun fillNextPage() {
+		loader.state.value.items.lastOrNull()?.let { loader.loadMoreIfNeeded(it.ratingKey) }
+	}
+
 	/** Takes [item] off the Watchlist, with Undo in the message; the poster goes at once. */
 	fun remove(item: PlexItem) {
 		val guid = item.guid ?: return

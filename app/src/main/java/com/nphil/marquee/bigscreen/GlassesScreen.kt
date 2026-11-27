@@ -567,7 +567,7 @@ internal fun GlassesPlayerView(model: PlayerModel, navigator: GlassesNavigator, 
 	val scrubbed = navigator.scrubTime
 	val candidate = model.offers.offer.takeIf { tv != null }
 	var raised by remember(candidate) { mutableStateOf(candidate != null && !(candidate is Offer.UpNext && candidate.carried)) }
-	LaunchedEffect(candidate) {
+	LaunchedEffect(candidate, stamp) {
 		if (raised) {
 			tv?.dismissed = false
 			delay(8_000)
