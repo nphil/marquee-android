@@ -247,7 +247,8 @@ internal class GlassesNavigator(
 	private var toastJob: Job? = null
 	private var menuLibraries: List<LibrarySection> = emptyList()
 	private var hiddenShortcuts: Set<String> = emptySet()
-	private val watchedChanges = HashMap<String, Boolean>()
+	private val watchedChanges = androidx.compose.runtime.mutableStateMapOf<String, Boolean>()
+	val tvWatchedChanges: Map<String, Boolean> get() = watchedChanges
 
 	val page: GlassesPage? get() = pages.lastOrNull()
 
@@ -574,7 +575,13 @@ internal class GlassesNavigator(
 				val state = if (next) "watched" else "unwatched"
 				val label = if (series) "Mark all episodes $state" else "Mark as $state"
 				options += GlassesOption("watched", label) {
-					fun apply() { ItemActions(container.browse).setWatched(next, item) { watchedChanges[item.ratingKey] = it } }
+					fun apply() {
+						val previous = watchedChanges[item.ratingKey]
+						ItemActions(container.browse).setWatched(next, item) { value ->
+							if (value != next && previous == null) watchedChanges.remove(item.ratingKey)
+							else watchedChanges[item.ratingKey] = value
+						}
+					}
 					if (!series) apply() else panel = GlassesPanel("${item.title}: $label?", listOf(
 						GlassesOption("cancel", "Cancel") {}, GlassesOption("confirm", label, run = ::apply)))
 				}

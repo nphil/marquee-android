@@ -82,6 +82,10 @@ capture library-filter-restored
 key KEYCODE_DPAD_RIGHT
 key KEYCODE_DPAD_CENTER
 wait_for Off
+key KEYCODE_DPAD_LEFT
+key KEYCODE_DPAD_CENTER
+wait_for 'Big Buck Bunny'
+capture library-watched
 ;;
 people)
 key KEYCODE_DPAD_UP

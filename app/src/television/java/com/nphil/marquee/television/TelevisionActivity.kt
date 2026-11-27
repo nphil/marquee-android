@@ -131,7 +131,11 @@ class TelevisionActivity : ComponentActivity() {
             val layout = BigScreenLayout.of(DisplayKind.Tv, pixels.width, pixels.height)
             val density = (pixels.height / 1080f).coerceAtLeast(0.5f)
             CompositionLocalProvider(LocalDensity provides Density(density, LocalDensity.current.fontScale)) { GlassesPlayerView(model, nav, container, layout) }
-        } } ?: if (!settings && !style && !requests && about == null) { nav.page?.let { page -> key(page) { TvBrowse(page, nav.panel == null, trailerRemote) } } } else Unit
+        } } ?: if (!settings && !style && !requests && about == null) {
+            CompositionLocalProvider(LocalTvWatchedChanges provides nav.tvWatchedChanges) {
+                nav.page?.let { page -> key(page) { TvBrowse(page, nav.panel == null, trailerRemote) } }
+            }
+        } else Unit
         when {
             about != null -> about?.let { TvAbout(it) }
             style -> TvSubtitleStyle(container)

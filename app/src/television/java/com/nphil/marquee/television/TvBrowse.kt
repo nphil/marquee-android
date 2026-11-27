@@ -36,6 +36,11 @@ import com.nphil.marquee.ui.theme.lucent
 import com.nphil.marquee.browse.posterLine
 import com.nphil.marquee.core.SectionQuery
 import com.nphil.marquee.core.logoPath
+import com.nphil.marquee.core.progress
+import com.nphil.marquee.core.showsWatched
+import com.nphil.marquee.core.unwatchedBadge
+import com.nphil.marquee.ui.components.PosterBadge
+import com.nphil.marquee.ui.detail.marked
 import com.nphil.marquee.ui.detail.LogoArt
 import com.nphil.marquee.ui.browse.LocalPosterLabels
 
@@ -70,6 +75,8 @@ private suspend fun LazyListState.reveal(index: Int) {
     }
     if (distance != 0) animateScrollBy(distance.toFloat(), shelfTravel)
 }
+
+internal val LocalTvWatchedChanges = staticCompositionLocalOf<Map<String, Boolean>> { emptyMap() }
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable internal fun TvBrowse(page: GlassesPage, unobscured: Boolean, trailerRemote: TvTrailerTransport) {
@@ -178,10 +185,21 @@ private suspend fun LazyListState.reveal(index: Int) {
 
 @Composable private fun TvTile(t: GlassesTile, selected: Boolean, width: androidx.compose.ui.unit.Dp, height: androidx.compose.ui.unit.Dp, poster: Boolean, sort: SectionQuery.Sort?, select: () -> Unit) {
     val labels = if (poster && t.captionItem != null) LocalPosterLabels.current else null
+    val item = t.item
+    val localMark = item?.let { LocalTvWatchedChanges.current[it.ratingKey] }
+    val markedItem = if (item == null || localMark == null) item else remember(item, localMark) { item.marked(localMark) }
+    val progress = if (markedItem == null) t.progress else markedItem.progress
+    val remaining = markedItem?.unwatchedBadge
+    val watched = markedItem?.showsWatched == true
     val scale = animateFloatAsState(if (selected) 1.05f else 1f, if (selected) focusIn else focusOut, label = "remote focus")
     Column(Modifier.width(width).graphicsLayer { scaleX = scale.value; scaleY = scale.value }.semantics {
         this.selected = selected
         if (labels?.showsTitle == false) contentDescription = t.title
+        when {
+            remaining != null -> stateDescription = if (remaining == 1) "1 unwatched episode" else "$remaining unwatched episodes"
+            watched -> stateDescription = "Watched"
+            progress != null -> stateDescription = "In progress"
+        }
     }.clickable(onClick = select)) {
         Box(Modifier.fillMaxWidth().height(height).clip(TvSpace.card).then(if (selected) Modifier.border(2.dp, lucent.accent, TvSpace.card) else Modifier).background(if (selected) lucent.glassRaised else lucent.sheet), contentAlignment = Alignment.Center) {
             when (val picture = t.art) {
@@ -189,7 +207,8 @@ private suspend fun LazyListState.reveal(index: Int) {
                 is GlassesArt.Symbol -> Icon(painterResource(picture.icon), contentDescription = t.title, tint = lucent.ink)
                 GlassesArt.None -> Text(t.title, color = lucent.ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
-            t.progress?.let { Box(Modifier.align(Alignment.BottomStart).fillMaxWidth(it).height(3.dp).background(lucent.accent)) }
+            PosterBadge(remaining, watched)
+            progress?.let { Box(Modifier.align(Alignment.BottomStart).fillMaxWidth(it).height(3.dp).background(lucent.accent)) }
         }
         if (t.art !is GlassesArt.None && labels?.showsTitle != false) Text(t.title, Modifier.padding(top = 3.dp), color = if (selected) lucent.accentText else lucent.ink, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 14.sp)
         if (labels != null) remember(t, labels, sort) { t.captionItem?.posterLine(labels, sort, null) }?.let { line ->

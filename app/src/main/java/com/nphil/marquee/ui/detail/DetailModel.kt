@@ -87,7 +87,7 @@ internal fun DetailState.withWatched(ratingKey: String, watched: Boolean): Detai
 	return copy(episodes = listed, seasons = seasonsNow, item = page?.recountedFrom(seasonsNow))
 }
 
-private fun PlexItem.marked(watched: Boolean): PlexItem = when (type) {
+internal fun PlexItem.marked(watched: Boolean): PlexItem = when (type) {
 	MediaType.Show, MediaType.Season -> copy(
 		isWatched = watched,
 		unwatchedLeafCount = if (watched) 0 else leafCount ?: unwatchedLeafCount,
