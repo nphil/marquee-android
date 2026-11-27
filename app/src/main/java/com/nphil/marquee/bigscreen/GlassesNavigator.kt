@@ -649,6 +649,32 @@ internal class GlassesNavigator(
 					catch (_: Exception) { if (panel === loading) panel = GlassesPanel("Couldn’t search Bazarr", listOf(back)) }
 				}
 			}
+			val external = lists.menuSubtitles.filter { it.isExternal }
+			if (model.canRemoveSubtitle && external.isNotEmpty()) options += GlassesOption("subtitle.remove", "Remove a subtitle file…", "Subtitles") {
+				val parent = GlassesPanel("Subtitles", options.filter { it.section == "Subtitles" })
+				panel = GlassesPanel("Remove a subtitle file", external.map { track ->
+					GlassesOption("remove.${track.id}", track.label) {
+						val checking = GlassesPanel("Checking file…", listOf(GlassesOption("cancel", "Cancel") { panel = parent }), parent = parent)
+						panel = checking
+						scope.launch {
+							try {
+								val ticket = requireNotNull(model.removeExternalSubtitle(track.id))
+								if (panel !== checking) return@launch
+								panel = GlassesPanel("Delete ${track.label} from the server?", listOf(
+									GlassesOption("cancel", "Keep file") { panel = parent },
+									GlassesOption("delete", "Delete subtitle file") {
+										scope.launch {
+											try { model.removeExternalSubtitle(track.id, ticket) }
+											catch (e: CancellationException) { throw e }
+											catch (_: Exception) { container.browse.toasts.show("Couldn’t remove subtitle file") }
+										}
+									}), parent = parent)
+							} catch (e: CancellationException) { throw e }
+							catch (_: Exception) { if (panel === checking) panel = GlassesPanel("File unavailable or removal not allowed", listOf(GlassesOption("back", "Back") { panel = parent }), parent = parent) }
+						}
+					}
+				}, parent = parent)
+			}
 		}
 		for (track in lists.audio) {
 			options += GlassesOption("audio.${track.id}", track.label, "Audio", tracks.audioId == track.id) { model.pickAudio(track.id) }

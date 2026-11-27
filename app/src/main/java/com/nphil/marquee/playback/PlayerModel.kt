@@ -65,6 +65,7 @@ import com.nphil.marquee.core.playStop
 import com.nphil.marquee.core.playTap
 import com.nphil.marquee.core.playTapReset
 import com.nphil.marquee.core.playTranscode
+import com.nphil.marquee.core.removeExternalSubtitle
 import com.nphil.marquee.core.subtitleChoices
 import com.nphil.marquee.core.subtitleSource
 import com.nphil.marquee.core.setWatched
@@ -599,6 +600,19 @@ class PlayerModel(
 			cancelCastConnect()
 			tracks.show(picked, player)
 		}
+	}
+
+	internal val canRemoveSubtitle get() = canFindSubtitles && container.session.state.value.user?.let { !it.isRestricted && !it.isGuest } == true
+
+	internal suspend fun removeExternalSubtitle(id: Int, ticket: String? = null): String? {
+		check(canRemoveSubtitle && tracks.lists.subtitles.any { it.id == id && it.isExternal })
+		val source = requireNotNull(onlineSubtitleSource)
+		val reply = container.core.removeExternalSubtitle(source, id, ticket)
+		if (source == onlineSubtitleSource) reply.tracks?.let {
+			if (tracks.subtitleId == id) pickSubtitle(SubtitlePick.Off)
+			tracks.refresh(it)
+		}
+		return reply.ticket
 	}
 
 	internal val canChooseSubtitle get() = canFindSubtitles && container.subtitleServices.bazarr.value != null

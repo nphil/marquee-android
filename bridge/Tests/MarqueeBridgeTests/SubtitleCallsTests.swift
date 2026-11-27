@@ -27,6 +27,30 @@ import Testing
         #expect(requests.allSatisfy { $0.headers["X-Plex-Token"] == nil })
     }
 
+    @Test func externalRemovalRequiresCurrentFileAndSingleUseConfirmation() async throws {
+        let server = Server()
+        let (session, id) = try await play(in: services(server))
+        let embedded = RemoveSubtitleCall(session: id, ratingKey: "7", partId: 18, stream: 2)
+        do {
+            _ = try await session.removeExternalSubtitle(embedded, confirm: false, transport: server)
+            Issue.record("Offered to delete an audio stream")
+        } catch PlayError.noFile {}
+        var call = RemoveSubtitleCall(session: id, ratingKey: "7", partId: 18, stream: 30)
+        let offer = try await session.removeExternalSubtitle(call, confirm: false, transport: server)
+        #expect(!server.requests.contains { $0.method == .delete })
+        call.ticket = try #require(offer.ticket)
+        let reply = try await session.removeExternalSubtitle(call, confirm: true, transport: server)
+        let tracks = try #require(reply.tracks)
+        #expect(!tracks.subtitles.contains { $0.id == 30 })
+        do {
+            _ = try await session.removeExternalSubtitle(call, confirm: true, transport: server)
+            Issue.record("Accepted a used deletion ticket")
+        } catch PlayError.noFile {}
+        let writes = server.requests.filter { $0.method == .delete }
+        #expect(writes.map(\.url.path) == ["/library/streams/30"])
+        #expect(writes.first?.restrictToOrigin == true && writes.first?.isIdempotent == false)
+    }
+
     @Test func providerListDoesNotDownloadAndSupersededChoicesCannotWrite() async throws {
         let server = Server(listBazarrFile: false)
         let (session, id) = try await play(in: services(server))
@@ -184,6 +208,8 @@ import Testing
         func send(_ request: PlexRequest) async throws -> PlexHTTPResponse {
             state.withLock { $0.requests.append(request) }
             switch (request.url.path, request.method) {
+            case ("/", .get): return plex(["allowMediaDeletion": true])
+            case ("/library/streams/30", .delete): return PlexHTTPResponse(status: 204, body: Data())
             case ("/tools/api/system/status", .get):
                 return json(["data": ["bazarr_version": "1.5.3", "radarr_version": "5.0"]])
             case ("/health", .get): return json(["status": "ok", "version": "2.0"])

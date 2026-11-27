@@ -384,7 +384,24 @@ wait_for Settings select-right
 if grep -Fq 'text="Requests"' "$out/window.xml"; then exit 1; fi
 capture seerr-disabled
 ;;
-subtitle-replacement)
+subtitle-replacement|subtitle-provider)
+if [[ $1 == subtitle-provider ]]; then
+  open_settings
+  wait_for Bazarr focus-down
+  key KEYCODE_DPAD_CENTER
+  wait_for Address editor-down
+  adb shell input text https://bazarr.local
+  hide_ime
+  wait_for 'API Key' editor-down
+  adb shell input text fixtureOnly12345678901234567890
+  hide_ime
+  wait_for 'Test Connection' focus-down
+  key KEYCODE_DPAD_CENTER
+  wait_for 'Connected · Bazarr' text-prefix
+  key KEYCODE_BACK
+  key KEYCODE_BACK
+  wait_for 'Continue Watching'
+fi
 key KEYCODE_DPAD_RIGHT
 key KEYCODE_MENU
 wait_for 'Play from Start'
@@ -401,11 +418,30 @@ wait_for 'Subtitles' content-desc
 key KEYCODE_DPAD_UP
 key KEYCODE_DPAD_CENTER
 wait_for 'Subtitle Style'
+if [[ $1 == subtitle-provider ]]; then
+  wait_for 'Choose from Bazarr' select-down
+  key KEYCODE_DPAD_CENTER
+  wait_for 'Choose a subtitle'
+  wait_for 'OpenSubtitles.com' text-prefix
+  capture subtitle-provider-choices
+  key KEYCODE_BACK
+  wait_for 'Subtitle Style'
+  return
+fi
 wait_for 'Find Subtitles' select-down
 key KEYCODE_DPAD_CENTER
 wait_for 'English subtitles on'
 grep -Fq 'text="From Plex' "$out/window.xml"
 capture subtitle-replacement
+key KEYCODE_DPAD_CENTER
+wait_for 'Remove a subtitle file…' select-down
+key KEYCODE_DPAD_CENTER
+wait_for 'Remove a subtitle file'
+key KEYCODE_DPAD_CENTER
+wait_for 'Keep file' selected-text
+capture subtitle-keep-file
+key KEYCODE_DPAD_CENTER
+wait_for 'Subtitle Style'
 ;;
 credits)
 key KEYCODE_DPAD_RIGHT
@@ -443,7 +479,7 @@ failed=0
 if ! /usr/bin/python3 .github/television-captions.py "$out" "$pkg"; then
   echo "::error::TV caption placement failed"; failed=1
 fi
-for name in watchlist series library people details playback settings account-services restricted-profile seerr-permission seerr-requests seerr-disable subtitle-replacement credits; do
+for name in watchlist series library people details playback settings account-services restricted-profile seerr-permission seerr-requests seerr-disable subtitle-replacement subtitle-provider credits; do
   set +e
   (
     set -e

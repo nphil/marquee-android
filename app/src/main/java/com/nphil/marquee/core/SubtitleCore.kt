@@ -80,6 +80,16 @@ internal data class FindBanner(val tone: Tone, val title: String, val detail: St
 internal data class FindSubtitlesReply(val banner: FindBanner, val tracks: PlayTracks? = null, val trackId: Int? = null, val awaitingFile: Boolean = false)
 
 @Serializable
+internal data class SubtitleRemoval(val ticket: String? = null, val tracks: PlayTracks? = null)
+
+internal suspend fun MarqueeCore.removeExternalSubtitle(source: SubtitleSource, stream: Int, ticket: String?): SubtitleRemoval =
+	call(if (ticket == null) "subtitles.remove.prepare" else "subtitles.remove.confirm", buildJsonObject {
+		source.fields(this)
+		put("stream", stream)
+		if (ticket != null) put("ticket", ticket)
+	})
+
+@Serializable
 internal data class ProviderChoice(val key: String, val label: String)
 
 internal suspend fun MarqueeCore.subtitleChoices(source: SubtitleSource, link: BazarrLink): List<ProviderChoice> =

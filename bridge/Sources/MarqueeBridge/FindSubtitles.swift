@@ -64,6 +64,7 @@ struct SubtitleSearchState: Sendable {
     var address: URL?
     var target: BazarrTarget?
     var picker: (file: UUID, address: URL, target: BazarrTarget, rows: [String: BazarrSubtitle])?
+    var removal: (ticket: String, file: UUID, stream: Int)?
     var tried = SubtitleSearch.Tried()
     var pending: Pending?
     var progress: (request: String, banner: FindBanner)?

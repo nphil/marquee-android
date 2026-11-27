@@ -33,6 +33,10 @@ enum SubtitleCalls {
             } catch let error as SpeechDock.Failure {
                 return try Reply.ok(Connection(problem: error == .unreachable ? "unreachable" : "notSpeechDock"))
             }
+        case "subtitles.remove.prepare", "subtitles.remove.confirm":
+            let call = try read(RemoveSubtitleCall.self)
+            let session = try services.session(call.session)
+            return try Reply.ok(try await session.removeExternalSubtitle(call, confirm: name == "subtitles.remove.confirm", transport: transport))
         case "subtitles.choices":
             let call = try read(FindSubtitlesCall.self)
             return try Reply.ok(try await services.session(call.session).subtitleChoices(call, transport: transport))
