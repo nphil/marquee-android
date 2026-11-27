@@ -89,13 +89,14 @@ class TelevisionActivity : ComponentActivity() {
     @Composable private fun Library(mode: ThemeMode) {
         val scope = rememberCoroutineScope()
         var settings by remember { mutableStateOf(false) }
+        var style by remember { mutableStateOf(false) }
         var request by remember { mutableStateOf<Triple<String, String, Boolean>?>(null) }
-        val nav = remember { GlassesNavigator(container, scope, openTitle = { id, title, start -> request = Triple(id, title, start) }, tvSettings = { settings = true }) }
+        val nav = remember { GlassesNavigator(container, scope, openTitle = { id, title, start -> request = Triple(id, title, start) }, tvSettings = { settings = true }, tvSubtitleStyle = { style = true }) }
         DisposableEffect(nav) { nav.start(); onDispose { nav.close() } }
-        SideEffect { input = if (settings) null else nav }
+        SideEffect { input = if (settings || style) null else nav }
         DisposableEffect(Unit) { onDispose { input = null } }
-        BackHandler(settings || nav.panel != null || nav.pages.size > 1 || request != null) {
-            if (settings) settings = false else nav.handle(GlassesInput.Back)
+        BackHandler(style || settings || nav.panel != null || nav.pages.size > 1 || request != null) {
+            if (style) style = false else if (settings) settings = false else nav.handle(GlassesInput.Back)
         }
         request?.let { item -> key(item) {
             val owner = remember { object : ViewModelStoreOwner { override val viewModelStore = ViewModelStore() } }
@@ -114,12 +115,13 @@ class TelevisionActivity : ComponentActivity() {
             val layout = BigScreenLayout.of(DisplayKind.Tv, pixels.width, pixels.height)
             val density = (pixels.height / 1080f).coerceAtLeast(0.5f)
             CompositionLocalProvider(LocalDensity provides Density(density, LocalDensity.current.fontScale)) { GlassesPlayerView(model, nav, container, layout) }
-        } } ?: if (!settings) { nav.page?.let { page -> key(page) { TvBrowse(page) } } } else Unit
-        if (!settings) TvOptions(nav.panel, nav)
-        if (settings) {
+        } } ?: if (!settings && !style) { nav.page?.let { page -> key(page) { TvBrowse(page, nav.panel == null) } } } else Unit
+        if (!settings && !style) TvOptions(nav.panel, nav)
+        if (style) TvSubtitleStyle(container) else if (settings) {
             Column(Modifier.fillMaxSize().background(lucent.canvas).padding(48.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("Settings", color = lucent.ink, style = MaterialTheme.typography.headlineLarge)
                 Action("Appearance · ${mode.name}") { scope.launch { container.settings.updateTheme { it.copy(matchSystem = false, fixedMode = if (mode == ThemeMode.Dark) ThemeMode.Light else ThemeMode.Dark) } } }
+                Action("Subtitle Style") { style = true }
                 var confirmSignOut by remember { mutableStateOf(false) }
                 if (confirmSignOut) {
                     Text("Unlink this TV from Plex?", color = lucent.ink)

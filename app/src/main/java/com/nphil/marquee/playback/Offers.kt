@@ -243,6 +243,14 @@ internal class PlayerOffers(
 		cancelCountdown("watch-intro")
 	}
 
+	/** The TV's Watch/Back action dismisses this marker without seeking. */
+	fun dismissIntro() {
+		val shown = offer as? Offer.SkipIntro ?: return
+		watchIntro()
+		skippedIntroEnd = shown.end
+		offer = null
+	}
+
 	/** The viewer chose to watch the credits: Up Next stays away and the episode ends on its own screen. */
 	fun watchCredits() {
 		Diag.info(DiagCategory.Offers, "watch-credits")

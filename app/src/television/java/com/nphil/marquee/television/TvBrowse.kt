@@ -67,7 +67,7 @@ private suspend fun LazyListState.reveal(index: Int) {
 }
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
-@Composable internal fun TvBrowse(page: GlassesPage) {
+@Composable internal fun TvBrowse(page: GlassesPage, unobscured: Boolean) {
     // The grid is shared with the external-display client. Reading its stamp observes a move, not an animation frame.
     @Suppress("UNUSED_VARIABLE") val moved = page.stamp
     val focused = page.focusedTile
@@ -95,6 +95,12 @@ private suspend fun LazyListState.reveal(index: Int) {
             // Reuse the shaded backdrop while focus and shelves move. Blending three full-screen layers every frame is expensive on TV GPUs.
             Box(Modifier.fillMaxSize().graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }) {
                 PlexArt(it, this@BoxWithConstraints.maxWidth / 2, this@BoxWithConstraints.maxHeight / 2, Modifier.fillMaxSize())
+                Box(Modifier.fillMaxSize().background(across).background(down))
+            }
+        }
+        page.trailer?.let { trailer ->
+            if (unobscured && index == 0) key(trailer.ratingKey) {
+                com.nphil.marquee.playback.TrailerPreview(trailer, true, Modifier.fillMaxSize())
                 Box(Modifier.fillMaxSize().background(across).background(down))
             }
         }

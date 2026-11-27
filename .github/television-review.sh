@@ -8,9 +8,9 @@ pkg=$("$ANDROID_HOME/build-tools/37.0.0/aapt" dump badging "$apk" | sed -n "s/^p
 adb install -r "$apk"
 adb shell am start -W -n "$pkg/com.nphil.marquee.television.TelevisionActivity"
 wait_for() {
-  local word=$1
+  local word=$1 attribute=${2:-text}
   for (( i=0; i<20; i++ )); do
-    if adb shell uiautomator dump /sdcard/window.xml >/dev/null && adb shell cat /sdcard/window.xml >"$out/window.xml" && grep -Fq "text=\"$word\"" "$out/window.xml"; then return 0; fi
+    if adb shell uiautomator dump /sdcard/window.xml >/dev/null && adb shell cat /sdcard/window.xml >"$out/window.xml" && grep -Fq "$attribute=\"$word\"" "$out/window.xml"; then return 0; fi
     sleep 1
   done
   echo "Did not reach $word" >&2; return 1
@@ -37,3 +37,29 @@ wait_for 'Continue Watching'
 adb shell dumpsys gfxinfo "$pkg" reset >/dev/null
 for direction in RIGHT LEFT RIGHT LEFT; do key "KEYCODE_DPAD_$direction"; done
 adb shell dumpsys gfxinfo "$pkg" framestats >"$out/emulator-framestats.txt"
+key KEYCODE_DPAD_RIGHT
+key KEYCODE_MENU
+wait_for 'Play from Start'
+key KEYCODE_DPAD_CENTER
+wait_for 'Skip Intro'
+key KEYCODE_DPAD_LEFT
+capture intro
+key KEYCODE_DPAD_CENTER
+key KEYCODE_DPAD_RIGHT
+wait_for 'Seek preview' content-desc
+capture seek
+key KEYCODE_BACK
+key KEYCODE_MENU
+wait_for 'Playback Info'
+key KEYCODE_DPAD_DOWN
+key KEYCODE_DPAD_CENTER
+wait_for 'Blend with Video'
+key KEYCODE_DPAD_RIGHT
+wait_for 'Apple TV'
+capture subtitle-style
+key KEYCODE_BACK
+key KEYCODE_MENU
+wait_for 'Playback Info'
+key KEYCODE_DPAD_DOWN
+key KEYCODE_DPAD_CENTER
+wait_for 'Apple TV'

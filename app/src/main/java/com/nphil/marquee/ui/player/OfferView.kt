@@ -163,7 +163,7 @@ private fun UpNextCard(accent: Color, next: PlexItem, countdown: Countdown?, onP
 
 /** A ring that fills as the [countdown] runs out. It picks up where the clock is, so it is right when it comes back after a hide. */
 @Composable
-private fun CountdownRing(countdown: Countdown, color: Color, modifier: Modifier) {
+internal fun CountdownRing(countdown: Countdown, color: Color, modifier: Modifier) {
 	fun leftMs() = (countdown.lengthMs - (SystemClock.elapsedRealtime() - countdown.startedAt)).coerceIn(0L, countdown.lengthMs)
 	val progress = remember(countdown) { Animatable(1f - leftMs().toFloat() / countdown.lengthMs) }
 	LaunchedEffect(countdown) {

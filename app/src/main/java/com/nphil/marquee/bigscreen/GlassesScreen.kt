@@ -11,6 +11,10 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -80,6 +84,7 @@ import com.nphil.marquee.playback.PlayerPhase
 import com.nphil.marquee.playback.title
 import com.nphil.marquee.ui.components.PlexArt
 import com.nphil.marquee.ui.player.CaptionView
+import com.nphil.marquee.ui.player.CountdownRing
 import com.nphil.marquee.ui.theme.LucentTheme
 import com.nphil.marquee.ui.theme.MarqueeTheme
 import com.nphil.marquee.ui.theme.ThemeChoice
@@ -550,6 +555,8 @@ internal fun GlassesPlayerView(model: PlayerModel, navigator: GlassesNavigator, 
 		chrome = false
 	}
 	val scrubbed = navigator.scrubTime
+	val tv = navigator.link?.takeIf { navigator.isTelevision }
+	val intro = model.offers.offer as? Offer.SkipIntro
 	val controls = chrome || scrubbed != null || !model.isPlaying || model.phase != PlayerPhase.Playing
 	val profile by remember(container) { container.session.state.map { it.user?.uuid }.distinctUntilChanged() }.collectAsStateWithLifecycle(null)
 	val look by remember(container, profile) { container.settings.subtitleLook(profile) }.collectAsStateWithLifecycle(SubtitleLook())
@@ -574,7 +581,7 @@ internal fun GlassesPlayerView(model: PlayerModel, navigator: GlassesNavigator, 
 		AnimatedVisibility(controls, enter = fadeIn(), exit = fadeOut()) {
 			var positionMs by remember { mutableLongStateOf(model.movieMs()) }
 			LaunchedEffect(model) { while (true) { positionMs = model.movieMs(); delay(POSITION_POLL_MS) } }
-			PlayerOsd(model, positionMs, scrubbed, layout)
+			PlayerOsd(model, positionMs, scrubbed, layout, tv != null && intro != null && scrubbed == null)
 		}
 		if (controls && model.showsStats && layout.kind == DisplayKind.Tv) {
 			val lines = remember(stamp, model.phase) { model.stats().all.filter { it.label in setOf("Route", "Video", "Picture", "Start", "Frames", "Buffer") } }
@@ -583,12 +590,33 @@ internal fun GlassesPlayerView(model: PlayerModel, navigator: GlassesNavigator, 
 				lines.forEach { GlassesLabel("${it.label}: ${it.value}", GlassesText.Caption, lucent.ink, maxLines = 2) }
 			}
 		}
-		PlayerCenter(model, scrubbed)
+		PlayerCenter(model, scrubbed, navigator.isTelevision)
+		if (tv != null && intro != null && scrubbed == null && navigator.panel == null) {
+			val watch = tv.watchFocus === intro
+			Row(Modifier.align(Alignment.BottomEnd).padding(end = layout.marginX.toFloat().dp,
+				bottom = layout.marginY.toFloat().dp + if (controls) (GlassesCanvas.OPTION * 2).dp else 0.dp),
+				horizontalArrangement = Arrangement.spacedBy(GlassesCanvas.TITLE_GAP.dp)) {
+				IntroButton("Watch Intro", watch, { tv.finishIntro(true) })
+				IntroButton("Skip Intro", !watch, { tv.finishIntro(false) }) {
+					model.offers.countdown?.let { CountdownRing(it, if (watch) lucent.ink else lucent.accentInk, Modifier.size(GlassesText.Body.size.dp)) }
+				}
+			}
+		}
 	}
 }
 
 @Composable
-private fun PlayerOsd(model: PlayerModel, positionMs: Long, scrub: Double?, layout: BigScreenLayout) {
+private fun IntroButton(label: String, active: Boolean, press: () -> Unit, trailing: @Composable () -> Unit = {}) {
+	Row(Modifier.height(GlassesCanvas.OPTION.dp).clip(CircleShape).background(if (active) lucent.accent else lucent.sheet)
+		.semantics { selected = active }.clickable(role = Role.Button, onClick = press).padding(horizontal = GlassesCanvas.TILE_GAP.dp),
+		horizontalArrangement = Arrangement.spacedBy(GlassesCanvas.TITLE_GAP.dp), verticalAlignment = Alignment.CenterVertically) {
+		GlassesLabel(label, GlassesText.Headline, if (active) lucent.accentInk else lucent.ink)
+		trailing()
+	}
+}
+
+@Composable
+private fun PlayerOsd(model: PlayerModel, positionMs: Long, scrub: Double?, layout: BigScreenLayout, introControls: Boolean) {
 	Column(Modifier.fillMaxSize().padding(horizontal = layout.marginX.toFloat().dp, vertical = layout.marginY.toFloat().dp)) {
 		Column(
 			Modifier.clip(RoundedCornerShape(GlassesCanvas.RADIUS.dp)).background(lucent.glass).padding(GlassesCanvas.TILE_GAP.dp),
@@ -599,7 +627,7 @@ private fun PlayerOsd(model: PlayerModel, positionMs: Long, scrub: Double?, layo
 			if (layout.kind == DisplayKind.Tv) model.plan?.let { GlassesLabel(it.route.title(), GlassesText.Label, lucent.accentText) }
 		}
 		Box(Modifier.weight(1f))
-		offerText(model)?.let { text ->
+		if (!introControls) offerText(model)?.let { text ->
 			Box(Modifier.fillMaxWidth().padding(bottom = GlassesCanvas.ROW_GAP.dp), contentAlignment = Alignment.CenterEnd) {
 				Box(
 					Modifier.height(GlassesCanvas.OPTION.dp).clip(CircleShape).background(lucent.accent).padding(horizontal = GlassesCanvas.TILE_GAP.dp),
@@ -610,7 +638,11 @@ private fun PlayerOsd(model: PlayerModel, positionMs: Long, scrub: Double?, layo
 			}
 		}
 		Timeline(model, positionMs, scrub)
-		if (layout.kind == DisplayKind.Tv) GlassesLabel("OK  Play / pause     ·     ← →  Skip     ·     ↓  Options", GlassesText.Caption, lucent.ink, Modifier.clip(CircleShape).background(lucent.glass).padding(horizontal = GlassesCanvas.TILE_GAP.dp, vertical = GlassesCanvas.CAPTION_GAP.dp))
+		if (layout.kind == DisplayKind.Tv && !introControls) {
+			val help = if (scrub == null) "OK  Play / pause     ·     ← →  Seek     ·     ↓  Options"
+				else "← →  Preview     ·     OK  Jump here     ·     Back  Cancel" + if (model.plan?.chapters.isNullOrEmpty()) "" else "     ·     ↑ ↓  Chapters"
+			GlassesLabel(help, GlassesText.Caption, lucent.ink, Modifier.clip(CircleShape).background(lucent.glass).padding(horizontal = GlassesCanvas.TILE_GAP.dp, vertical = GlassesCanvas.CAPTION_GAP.dp))
+		}
 	}
 }
 
@@ -634,12 +666,21 @@ private fun Timeline(model: PlayerModel, positionMs: Long, scrub: Double?) {
 }
 
 @Composable
-private fun PlayerCenter(model: PlayerModel, scrub: Double?) {
+private fun PlayerCenter(model: PlayerModel, scrub: Double?, television: Boolean) {
 	Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
 		when (val phase = model.phase) {
 			is PlayerPhase.Failed -> Notice(R.drawable.ic_error, "Couldn\u2019t play", phase.message)
 			PlayerPhase.Starting -> LoadingIndicator(Modifier.size(GlassesCanvas.GLYPH.dp), color = lucent.ink)
 			else -> when {
+				scrub != null && television -> Column(Modifier.clip(RoundedCornerShape(GlassesCanvas.RADIUS.dp)).background(lucent.sheet).padding(GlassesCanvas.TITLE_GAP.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+					val frames = model.previews
+					val image = remember(frames, frames?.revision, scrub) { frames?.frame(scrub) }
+					image?.let { androidx.compose.foundation.Image(it, "Seek preview", Modifier.size(384.dp, 216.dp), contentScale = ContentScale.Fit) }
+					GlassesLabel(clock(scrub), GlassesText.Title, lucent.accentText)
+					val chapters = model.plan?.chapters.orEmpty()
+					val index = com.nphil.marquee.ui.player.chapterAt(chapters, (scrub * 1000).toLong())
+					chapters.getOrNull(index)?.let { GlassesLabel(com.nphil.marquee.ui.player.chapterName(it, index), GlassesText.Body, lucent.ink) }
+				}
 				model.isBuffering -> LoadingIndicator(Modifier.size(GlassesCanvas.GLYPH.dp), color = lucent.ink)
 				scrub != null -> Box(Modifier.clip(RoundedCornerShape(GlassesCanvas.RADIUS.dp)).background(lucent.glass).padding(GlassesCanvas.TILE_GAP.dp)) {
 					GlassesLabel(clock(scrub), GlassesText.Display, lucent.ink)

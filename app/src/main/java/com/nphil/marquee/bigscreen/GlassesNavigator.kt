@@ -25,6 +25,16 @@ import com.nphil.marquee.core.homeRows
 import com.nphil.marquee.core.item as itemOf
 import com.nphil.marquee.core.libraryPage as libraryItems
 import com.nphil.marquee.core.searchHubs
+import com.nphil.marquee.core.extras
+import com.nphil.marquee.core.related
+import com.nphil.marquee.core.titlesOf
+import com.nphil.marquee.ui.detail.trailerOf
+import com.nphil.marquee.core.libraryRecommended
+import com.nphil.marquee.core.libraryCollections
+import com.nphil.marquee.core.libraryGenres
+import com.nphil.marquee.core.watchlistPage
+import com.nphil.marquee.core.copiesOf
+import com.nphil.marquee.core.Page
 import com.nphil.marquee.diagnostics.Diag
 import com.nphil.marquee.diagnostics.DiagCategory
 import com.nphil.marquee.playback.Offer
@@ -76,6 +86,7 @@ internal class GlassesHero(val title: String, val meta: String?, val overview: S
 @Stable
 internal class GlassesPage(val title: String, style: FocusGrid.Style = FocusGrid.Style.Shelves) {
 	var hero by mutableStateOf<GlassesHero?>(null)
+	var trailer by mutableStateOf<PlexItem?>(null)
 	var rows by mutableStateOf<List<GlassesRow>>(emptyList())
 		private set
 	val focus = FocusGrid(emptyList(), style)
@@ -135,13 +146,26 @@ internal class GlassesOption(val id: String, val title: String, val section: Str
 
 /** The options of a tile or the player's tracks, a list the thumb steps through. */
 @Stable
-internal class GlassesPanel(val title: String, val options: List<GlassesOption>, focus: Int = 0) {
+internal class GlassesPanel(val title: String, val options: List<GlassesOption>, focus: Int = 0, val parent: GlassesPanel? = null) {
 	var focus by mutableIntStateOf(focus)
 }
 
 /** The player a [GlassesNavigator] drives: the phone's player, with the way to close it. */
 @Stable
-internal class GlassesPlayerLink(val model: PlayerModel, val close: () -> Unit)
+internal class GlassesPlayerLink(val model: PlayerModel, val close: () -> Unit) {
+	var watchFocus by mutableStateOf<Offer.SkipIntro?>(null)
+		private set
+
+	fun chooseWatch(intro: Offer.SkipIntro, watch: Boolean) {
+		watchFocus = if (watch) intro else null
+		if (watch) model.offers.watchIntro()
+	}
+
+	fun finishIntro(watch: Boolean) {
+		watchFocus = null
+		if (watch) model.offers.dismissIntro() else model.offers.skipIntro()
+	}
+}
 
 /**
  * The big screen's pages and what a press of the phone remote does to them. The remote is the only input: every touch
@@ -154,6 +178,7 @@ internal class GlassesNavigator(
 	private val center: GlassesCenter? = null,
 	private val openTitle: (String, String, Boolean) -> Unit = requireNotNull(center)::play,
 	private val tvSettings: (() -> Unit)? = null,
+	private val tvSubtitleStyle: (() -> Unit)? = null,
 ) {
 	val pages = mutableStateListOf<GlassesPage>()
 	var panel by mutableStateOf<GlassesPanel?>(null)
@@ -332,14 +357,30 @@ internal class GlassesNavigator(
 			}
 		}
 		GlassesInput.Back -> {
-			this.panel = null
+			this.panel = panel.parent
 			HapticCue.Back
 		}
 		else -> null
 	}
 
+	val isTelevision: Boolean get() = tvSettings != null
+
 	private fun inPlayer(input: GlassesInput, player: GlassesPlayerLink): HapticCue? {
 		val model = player.model
+		val intro = model.offers.offer as? Offer.SkipIntro
+		if (isTelevision && scrubTime != null) return televisionScrub(input, model)
+		if (tvSettings != null && intro != null) {
+			when (input) {
+				GlassesInput.Select -> { player.finishIntro(player.watchFocus === intro); return HapticCue.Select }
+				GlassesInput.Back -> { player.finishIntro(watch = true); return HapticCue.Back }
+				is GlassesInput.Move -> if (input.move.isHorizontal) {
+					player.chooseWatch(intro, input.move == FocusMove.Left)
+					return HapticCue.FocusStep
+				}
+				else -> Unit
+			}
+		}
+		if (isTelevision && input is GlassesInput.Move && input.move.isHorizontal) return televisionScrub(input, model)
 		return when (input) {
 			GlassesInput.Select -> when (model.offers.offer) {
 				is Offer.SkipIntro -> { model.offers.skipIntro(); HapticCue.Select }
@@ -418,6 +459,7 @@ internal class GlassesNavigator(
 			model.toggleStats()
 			chromeStamp++
 		}
+		tvSubtitleStyle?.let { options += GlassesOption("subtitle.style", "Subtitle Style", "Subtitles", run = it) }
 		options += GlassesOption("subtitle.off", "Off", "Subtitles", tracks.subtitleId == null) { model.pickSubtitle(SubtitlePick.Off) }
 		for (track in lists.menuSubtitles) {
 			options += GlassesOption("subtitle.${track.id}", track.label, "Subtitles", tracks.subtitleId == track.id) {
@@ -435,9 +477,63 @@ internal class GlassesNavigator(
 				panel?.let { open -> open.focus = open.options.indexOfFirst { it.id == id }.coerceAtLeast(0) }
 			}
 		}
+		if (isTelevision) {
+			fun submenu(label: String, choices: () -> List<GlassesOption>) {
+				val index = options.size
+				options += GlassesOption(label, label, "Playback") {
+					val rows = choices()
+					panel = GlassesPanel(label, rows, rows.indexOfFirst { it.checked }.coerceAtLeast(0), GlassesPanel(model.title, options, index))
+				}
+			}
+			if (!model.isOffline) submenu("Quality") {
+				com.nphil.marquee.core.QualityPreset.all.map { q ->
+					GlassesOption("quality.$q", com.nphil.marquee.core.QualityPreset.title(q), checked = model.quality == q) { model.setQuality(q) }
+				}
+			}
+			submenu("Playback Speed") {
+				(2..8).map { val v = it / 4f
+					GlassesOption("speed.$it", com.nphil.marquee.ui.player.speedTitle(v), checked = model.speed == v) { model.setSpeed(v) }
+				}
+			}
+			val chapters = model.plan?.chapters.orEmpty()
+			if (chapters.isNotEmpty()) submenu("Chapters") {
+				val active = com.nphil.marquee.ui.player.chapterAt(chapters, model.movieMs())
+				chapters.mapIndexed { i, c -> GlassesOption("chapter.$i", com.nphil.marquee.ui.player.chapterName(c, i), checked = i == active) { model.seekTo(c.start / 1000.0) } }
+			}
+		}
 		if (model.next != null) options += GlassesOption("next", "Next Episode", "Playback") { model.userActed(); model.playNext() }
 		options += hostOption("Playback")
 		panel = GlassesPanel(model.title, options)
+	}
+
+	private fun televisionScrub(input: GlassesInput, model: PlayerModel): HapticCue? {
+		val current = scrubTime ?: (model.movieMs() / 1000.0)
+		return when (input) {
+			is GlassesInput.Move -> {
+				if (model.durationMs <= 0) return HapticCue.Edge
+				val seconds = when (input.move) {
+					FocusMove.Left -> current - model.skipInterval
+					FocusMove.Right -> current + model.skipInterval
+					FocusMove.Up -> model.plan?.chapters?.lastOrNull { it.start < current * 1000 - 500 }?.start?.div(1000.0)
+					FocusMove.Down -> model.plan?.chapters?.firstOrNull { it.start > current * 1000 + 500 }?.start?.div(1000.0)
+				} ?: return HapticCue.Edge
+				if (scrubTime == null) model.userActed()
+				model.scrubbing = true
+				val target = seconds.coerceIn(0.0, model.durationMs / 1000.0)
+				scrubTime = target
+				model.previews?.want(target)
+				HapticCue.FocusStep
+			}
+			GlassesInput.Select, GlassesInput.Back -> {
+				model.previews?.settle()
+				model.scrubbing = false
+				scrubTime = null
+				if (input == GlassesInput.Select) model.seekTo(current)
+				chromeStamp++
+				if (input == GlassesInput.Select) HapticCue.Select else HapticCue.Back
+			}
+			else -> null
+		}
 	}
 
 	private fun hostOption(section: String? = null) = if (tvSettings != null) GlassesOption("settings", "Settings", section, run = tvSettings)
@@ -515,9 +611,10 @@ internal class GlassesNavigator(
 		for (section in sections) {
 			if (!section.isBrowsable || section.libraryId in hidden) continue
 			tiles += GlassesTile("library.${section.key}", section.title, art = GlassesArt.Symbol(if (section.type == "movie") R.drawable.ic_movie else R.drawable.ic_tv)) {
-				pages += libraryGrid(section)
+				pages += if (isTelevision) libraryLanding(section) else libraryGrid(section)
 			}
 		}
+		if (isTelevision) tiles += GlassesTile("watchlist", "Watchlist") { pages += watchlist() }
 		tvSettings?.let { tiles += GlassesTile("settings", "Settings", select = it) }
 		return GlassesRow("menu", null, TileShape.Card, tiles)
 	}
@@ -580,6 +677,7 @@ internal class GlassesNavigator(
 			}
 			page.hero = hero(full)
 			page.setRows(listOf(playActions(full)))
+			if (isTelevision) addDetailShelves(page, full)
 		}
 		return page
 	}
@@ -596,11 +694,49 @@ internal class GlassesNavigator(
 				show.onDeck?.let { rows += playActions(it, episodeNumber(it)) }
 				rows += GlassesRow("seasons", "Seasons", TileShape.Poster, seasons.map { tile(it, wide = false) })
 				page.setRows(rows)
+				if (isTelevision) addDetailShelves(page, show)
 			} catch (e: Exception) {
 				failure(page, e)
 			}
 		}
 		return page
+	}
+
+	private suspend fun addDetailShelves(page: GlassesPage, title: PlexItem) {
+		val rows = page.rows.toMutableList()
+		val cast = title.roles.distinctBy { it.id }.mapNotNull { role ->
+			val id = role.id ?: return@mapNotNull null
+			GlassesTile("person.$id", role.name, role.character, GlassesArt.Plex(role.thumb)) {
+				val person = GlassesPage(role.name, FocusGrid.Style.Grid)
+				pages += person
+				person.run(scope) {
+					try {
+						val credits = onServer { s, r -> titlesOf(s, r, id) }
+						person.setRows(gridRows(credits.map { tile(it, false) }, TileShape.Poster))
+					} catch (e: Exception) { failure(person, e) }
+				}
+			}
+		}
+		if (cast.isNotEmpty()) {
+			rows += GlassesRow("cast", "Cast", TileShape.Poster, cast)
+			page.setRows(rows.toList())
+		}
+		val bonus = optionalShelf("extras") { onServer { s, r -> extras(s, r, title.ratingKey) } }
+		if (bonus.isNotEmpty()) {
+			page.trailer = trailerOf(bonus, title.primaryExtraKey)
+			rows += GlassesRow("extras", "Trailers & Extras", TileShape.Landscape, bonus.map { tile(it, true) })
+			page.setRows(rows.toList())
+		}
+		val similar = optionalShelf("related") { onServer { s, r -> related(s, r, title.ratingKey) } }
+		val relatedRows = similar.mapNotNull(::resultRow)
+		if (relatedRows.isNotEmpty()) page.setRows(rows + relatedRows)
+	}
+
+	private suspend fun <T> optionalShelf(name: String, load: suspend () -> List<T>): List<T> = try {
+		load()
+	} catch (e: CancellationException) { throw e } catch (e: Exception) {
+		Diag.warning(DiagCategory.BigScreen, "shelf.failed", "shelf" to name, "error" to e.javaClass.simpleName)
+		emptyList()
 	}
 
 	private fun seasonPage(item: PlexItem): GlassesPage {
@@ -639,10 +775,70 @@ internal class GlassesNavigator(
 	private fun gridRows(tiles: List<GlassesTile>, shape: TileShape): List<GlassesRow> =
 		(center?.columns ?: 6).let { columns -> tiles.chunked(columns).mapIndexed { index, slice -> GlassesRow("grid.${index * columns}", null, shape, slice) } }
 
-	/** A library's titles in A\u2013Z order, a page at a time as the focus nears the end. */
-	private fun libraryGrid(section: LibrarySection): GlassesPage {
-		val page = GlassesPage(section.title, FocusGrid.Style.Grid)
-		val items = ArrayList<PlexItem>()
+	private fun libraryLanding(section: LibrarySection): GlassesPage {
+		val page = GlassesPage(section.title)
+		val base = SectionQuery(type = section.itemType)
+		val filters = listOf(
+			GlassesTile("all", "All Titles") { pages += libraryGrid(section) },
+			GlassesTile("unwatched", "Unwatched") { pages += libraryGrid(section, base.copy(unwatchedOnly = true)) },
+			GlassesTile("collections", "Collections") { pages += pagedGrid("Collections", { at ->
+				onServer { s, r -> libraryCollections(s, r, section.key, at, LIBRARY_PAGE) }
+			}) },
+			GlassesTile("sort", "Sort by…") {
+				val choices = SectionQuery.Sort.entries.flatMap { sort ->
+					val orders = sort.orders
+					(if (orders == null) listOf(false) else listOf(false, true)).map { reverse ->
+						val order = if (reverse) orders?.reversed else orders?.first
+						GlassesOption("${sort.raw}.$reverse", listOfNotNull(sort.title, order).joinToString(" · ")) {
+							pages += libraryGrid(section, base.copy(sort = sort, reversed = reverse))
+						}
+					}
+				}
+				panel = GlassesPanel("Sort by", choices)
+			},
+		)
+		val rows = mutableListOf(GlassesRow("library.views", "Browse Library", TileShape.Card, filters))
+		page.setRows(rows.toList())
+		page.run(scope) {
+			rows += optionalShelf("recommended") { onServer { s, r -> libraryRecommended(s, r, section.key) } }.mapNotNull(::resultRow)
+			page.setRows(rows.toList())
+			val genres = optionalShelf("genres") { onServer { s, r -> libraryGenres(s, r, section.key) } }
+			if (genres.isNotEmpty()) page.setRows(rows + GlassesRow("genres", "Genres", TileShape.Card, genres.map { genre ->
+				GlassesTile("genre.${genre.key}", genre.title) { pages += libraryGrid(section, base.copy(genre = genre)) }
+			}))
+		}
+		return page
+	}
+
+	private fun watchlist(): GlassesPage = pagedGrid("Watchlist", { at ->
+		container.browse.source.onAccount { token -> watchlistPage(token, at, LIBRARY_PAGE) } ?: error("No Plex account")
+	}) { item ->
+		GlassesTile(item.ratingKey, item.title, item.year?.toString(), GlassesArt.Plex(item.thumb)) {
+			// Watchlist keys belong to the catalogue, not the local Plex server.
+			val page = GlassesPage(item.title)
+			page.hero = hero(item)
+			pages += page
+			page.run(scope) {
+				try {
+					val guid = item.guid
+					val copies = if (guid == null) emptyList() else onServer { s, r -> copiesOf(s, r, guid) }
+					if (copies.isEmpty()) {
+						page.setRows(emptyList())
+						page.failed("Not in this server’s libraries")
+					} else {
+						page.setRows(listOf(GlassesRow("copies", "In This Library", TileShape.Poster, copies.map { tile(it, false) })))
+					}
+				} catch (e: Exception) { failure(page, e) }
+			}
+		}
+	}
+
+	private fun libraryGrid(section: LibrarySection, query: SectionQuery = SectionQuery(type = section.itemType)): GlassesPage =
+		pagedGrid(section.title, { at -> onServer { s, r -> libraryItems(s, r, section.key, query, at, LIBRARY_PAGE) } })
+
+	private fun pagedGrid(title: String, fetch: suspend (Int) -> Page<PlexItem>, card: (PlexItem) -> GlassesTile = { tile(it, false) }): GlassesPage {
+		val page = GlassesPage(title, FocusGrid.Style.Grid)
+		val items = ArrayList<GlassesTile>()
 		var total = Int.MAX_VALUE
 		var loading = false
 		fun load() {
@@ -650,12 +846,10 @@ internal class GlassesNavigator(
 			loading = true
 			page.run(scope) {
 				try {
-					val next = onServer { server, remembered ->
-						libraryItems(server, remembered, section.key, SectionQuery(type = section.itemType), items.size, LIBRARY_PAGE)
-					}
-					items += next.items
-					total = next.total
-					page.setRows(gridRows(items.map { tile(it, wide = false) }, TileShape.Poster))
+					val next = fetch(items.size)
+					items += next.items.map(card)
+					total = if (next.items.isEmpty()) items.size else next.total
+					page.setRows(gridRows(items, TileShape.Poster))
 				} catch (e: Exception) {
 					if (items.isEmpty()) failure(page, e) else if (e is CancellationException) throw e
 				} finally {
