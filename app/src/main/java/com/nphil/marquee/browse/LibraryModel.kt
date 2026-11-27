@@ -65,6 +65,10 @@ sealed interface LibraryChip {
 	}
 }
 
+enum class SeriesListing(val title: String, val type: MediaType) {
+	Shows("TV Shows", MediaType.Show), Seasons("Seasons", MediaType.Season), Episodes("Episodes", MediaType.Episode),
+}
+
 /** What the segment control, the View menu and the chips have chosen for one library. */
 @Immutable
 data class LibraryOptions(
@@ -73,8 +77,14 @@ data class LibraryOptions(
 	val reversed: Boolean = false,
 	val unwatchedOnly: Boolean = false,
 	val genre: PlexDirectory? = null,
+	val seriesListing: SeriesListing = SeriesListing.Shows,
 ) {
 	fun query(type: MediaType) = SectionQuery(type, sort, reversed, unwatchedOnly, genre)
+
+	fun tvQuery(sectionType: MediaType) = query(if (sectionType == MediaType.Show) seriesListing.type else sectionType)
+
+	fun listing(next: SeriesListing) = if (next == seriesListing) this else
+		copy(seriesListing = next, sort = Sort.Title, reversed = false, genre = null)
 
 	val isFiltered: Boolean get() = unwatchedOnly || genre != null
 

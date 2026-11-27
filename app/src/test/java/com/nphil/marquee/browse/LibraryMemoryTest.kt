@@ -1,6 +1,7 @@
 package com.nphil.marquee.browse
 
 import com.nphil.marquee.core.LibrarySection
+import com.nphil.marquee.core.MediaType
 import com.nphil.marquee.core.PlexDirectory
 import com.nphil.marquee.core.SectionQuery.Sort
 import org.junit.Assert.assertEquals
@@ -9,6 +10,15 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class LibraryMemoryTest {
+	@Test
+	fun episodeListingSurvivesReopeningWithoutSendingTheShowsGenreOrOrdering() {
+		val shows = LibraryOptions(sort = Sort.Rating, reversed = true, genre = PlexDirectory("12", "Drama"), unwatchedOnly = true)
+		val restored = decodeLibraryView(encodeLibraryView(shows.listing(SeriesListing.Episodes)))
+		assertEquals(com.nphil.marquee.core.SectionQuery(MediaType.Episode, unwatchedOnly = true), restored.tvQuery(MediaType.Show))
+		assertEquals(MediaType.Movie, restored.tvQuery(MediaType.Movie).type)
+		assertEquals(MediaType.Season, restored.listing(SeriesListing.Seasons).tvQuery(MediaType.Show).type)
+	}
+
 	@Test
 	fun everySortOrderAndFilterComesBackAsItWentIn() {
 		val genres = listOf(

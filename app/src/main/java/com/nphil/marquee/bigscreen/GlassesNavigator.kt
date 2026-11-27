@@ -1011,7 +1011,7 @@ internal class GlassesNavigator(
 							val size = minOf(LIBRARY_PAGE, letter.count - at)
 							val batch = onServer { s, r -> libraryItems(s, r, section.key, query, letter.offset + at, size) }
 							Page(if (batch.items.size <= size) batch.items else batch.items.subList(0, size), minOf(letter.count, (batch.total - letter.offset).coerceAtLeast(0)))
-						})
+						}, card = ::libraryTile, sort = query.sort)
 					}
 				}, TileShape.Card))
 			} catch (e: Exception) { failure(page, e) }
@@ -1030,7 +1030,7 @@ internal class GlassesNavigator(
 				fun render() {
 					val order = view.sort.orders?.let { if (view.reversed) it.reversed else it.first }
 					val orderLabel = listOfNotNull(view.sort.title, order).joinToString(" · ")
-					val query = view.query(section.itemType)
+					val query = view.tvQuery(section.itemType)
 					fun apply(next: LibraryOptions) {
 						if (next == view) return
 						view = next
@@ -1038,9 +1038,16 @@ internal class GlassesNavigator(
 						render()
 					}
 					val controls = buildList {
-						add(GlassesTile("titles", "Browse Titles", listOfNotNull(view.genre?.title, "Unwatched".takeIf { view.unwatchedOnly }, orderLabel).joinToString(" · ")) { pages += libraryGrid(section, query) })
+						val browse = if (section.itemType == MediaType.Show) "Browse ${view.seriesListing.title}" else "Browse Titles"
+						add(GlassesTile("titles", browse, listOfNotNull(view.genre?.title, "Unwatched".takeIf { view.unwatchedOnly }, orderLabel).joinToString(" · ")) { pages += libraryGrid(section, query) })
+						if (section.itemType == MediaType.Show) add(GlassesTile("type", "List", view.seriesListing.title) {
+							val choices = com.nphil.marquee.browse.SeriesListing.entries.map { kind ->
+								GlassesOption(kind.name, kind.title, checked = view.seriesListing == kind) { apply(view.listing(kind)) }
+							}
+							panel = GlassesPanel("List", choices, view.seriesListing.ordinal)
+						})
 						add(GlassesTile("unwatched", "Unwatched Only", if (view.unwatchedOnly) "On" else "Off") { apply(view.copy(unwatchedOnly = !view.unwatchedOnly)) })
-						if (genres.isNotEmpty() || view.genre != null) add(GlassesTile("genre", "Genre", view.genre?.title ?: "All Genres") {
+						if (query.type == section.itemType && (genres.isNotEmpty() || view.genre != null)) add(GlassesTile("genre", "Genre", view.genre?.title ?: "All Genres") {
 							val choices = listOf(GlassesOption("all", "All Genres", checked = view.genre == null) { apply(view.copy(genre = null)) }) +
 								genres.map { g -> GlassesOption(g.key, g.title, checked = g.key == view.genre?.key) { apply(view.copy(genre = g)) } }
 							panel = GlassesPanel("Genre", choices, choices.indexOfFirst { it.checked }.coerceAtLeast(0))
@@ -1133,8 +1140,10 @@ internal class GlassesNavigator(
 			}
 		}
 
+	private fun libraryTile(item: PlexItem) = tile(item, wide = false, inShow = item.type == MediaType.Episode)
+
 	private fun libraryGrid(section: LibrarySection, query: SectionQuery = SectionQuery(type = section.itemType)): GlassesPage =
-		pagedGrid(section.title, { at -> onServer { s, r -> libraryItems(s, r, section.key, query, at, LIBRARY_PAGE) } }, sort = query.sort)
+		pagedGrid(section.title, { at -> onServer { s, r -> libraryItems(s, r, section.key, query, at, LIBRARY_PAGE) } }, card = ::libraryTile, sort = query.sort)
 
 	private fun pagedGrid(title: String, fetch: suspend (Int) -> Page<PlexItem>, card: (PlexItem) -> GlassesTile = { tile(it, false) }, sort: SectionQuery.Sort? = null): GlassesPage {
 		val page = GlassesPage(title, FocusGrid.Style.Grid, posterSort = sort)

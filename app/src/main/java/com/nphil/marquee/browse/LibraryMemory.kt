@@ -70,6 +70,7 @@ private class StoredView(
 	val reversed: Boolean = false,
 	val unwatched: Boolean = false,
 	val genre: StoredGenre? = null,
+	val seriesList: String? = null,
 )
 
 /**
@@ -77,13 +78,14 @@ private class StoredView(
  * Recommended is showing. Versioned JSON; null while they are all the defaults.
  */
 fun encodeLibraryView(options: LibraryOptions): String? {
-	if (options.sort == Sort.Title && !options.reversed && !options.isFiltered) return null
+	if (options.sort == Sort.Title && !options.reversed && !options.isFiltered && options.seriesListing == SeriesListing.Shows) return null
 	val stored = StoredView(
 		v = VIEW_VERSION,
 		sort = options.sort.raw,
 		reversed = options.reversed,
 		unwatched = options.unwatchedOnly,
 		genre = options.genre?.let { StoredGenre(it.key, it.title) },
+		seriesList = options.seriesListing.takeUnless { it == SeriesListing.Shows }?.name,
 	)
 	return ViewJson.encodeToString(StoredView.serializer(), stored)
 }
@@ -102,5 +104,6 @@ fun decodeLibraryView(text: String?): LibraryOptions {
 		reversed = stored.reversed && sort.orders != null,
 		unwatchedOnly = stored.unwatched,
 		genre = stored.genre?.let { PlexDirectory(key = it.key, title = it.title) },
+		seriesListing = SeriesListing.entries.firstOrNull { it.name == stored.seriesList } ?: SeriesListing.Shows,
 	)
 }

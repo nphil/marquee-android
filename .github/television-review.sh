@@ -49,6 +49,21 @@ capture watchlist-shows
 key KEYCODE_BACK
 wait_for 'Continue Watching'
 key KEYCODE_DPAD_LEFT
+key KEYCODE_DPAD_CENTER
+wait_for 'Browse TV Shows'
+key KEYCODE_DPAD_RIGHT
+key KEYCODE_DPAD_CENTER
+wait_for Episodes
+key KEYCODE_DPAD_DOWN
+key KEYCODE_DPAD_DOWN
+key KEYCODE_DPAD_CENTER
+key KEYCODE_DPAD_LEFT
+key KEYCODE_DPAD_CENTER
+wait_for 'Big Buck Bunny'
+capture library-episodes
+key KEYCODE_BACK
+key KEYCODE_BACK
+wait_for 'Continue Watching'
 key KEYCODE_DPAD_LEFT
 key KEYCODE_DPAD_CENTER
 wait_for 'Browse Library'
