@@ -11,6 +11,7 @@ abi="$1"
 out="$2"
 case "$abi" in
 	arm64-v8a) arch=aarch64 ;;
+	armeabi-v7a) arch=armv7 ;;
 	x86_64) arch=x86_64 ;;
 	*) echo "build-android.sh: no bridge build for ABI $abi" >&2; exit 1 ;;
 esac
@@ -47,7 +48,9 @@ while ((${#queue[@]})); do
 			cp "$runtime/$needed" "$dest/"
 			queue+=("$dest/$needed")
 		elif [[ "$needed" == libc++_shared.so ]]; then
-			cp "$llvm/sysroot/usr/lib/$arch-linux-android/libc++_shared.so" "$dest/"
+			libdir="$arch-linux-android"
+			[[ "$abi" != armeabi-v7a ]] || libdir=arm-linux-androideabi
+			cp "$llvm/sysroot/usr/lib/$libdir/libc++_shared.so" "$dest/"
 		fi
 	done < <("$llvm/bin/llvm-readelf" --needed-libs "$lib" | sed -n 's/^ *\(lib[^ ]*\.so\)$/\1/p')
 done

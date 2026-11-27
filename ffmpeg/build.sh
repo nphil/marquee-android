@@ -119,6 +119,11 @@ build() {
       cpu=armv8-a
       triple=aarch64-linux-android
       ;;
+    armeabi-v7a)
+      arch=arm
+      cpu=armv7-a
+      triple=armv7a-linux-androideabi
+      ;;
     x86_64)
       # Only the emulator runs this ABI; skipping the assembly saves needing nasm.
       arch=x86_64
@@ -126,7 +131,7 @@ build() {
       triple=x86_64-linux-android
       extra=(--disable-asm)
       ;;
-    *) die "no build for ABI '$abi' (arm64-v8a, x86_64)" ;;
+    *) die "no build for ABI '$abi'" ;;
   esac
   local cc="$toolchain/$triple$ANDROID_API-clang" cxx="$toolchain/$triple$ANDROID_API-clang++"
   local out="$work/$abi" prefix="$work/$abi/prefix"
@@ -147,7 +152,7 @@ build() {
       --enable-shared --disable-static --enable-pic --optflags=-O2 --disable-debug \
       --extra-ldsoflags="-Wl,-z,defs -Wl,-z,max-page-size=16384 -Wl,-z,relro -Wl,-z,now" \
       --disable-everything --disable-autodetect --disable-iconv --disable-network --disable-doc --disable-programs \
-      --disable-avdevice --disable-avformat --disable-avfilter --disable-swscale --disable-postproc \
+      --disable-avdevice --disable-avformat --disable-avfilter --disable-swscale \
       --disable-symver --disable-v4l2-m2m --disable-vulkan --enable-swresample \
       "${extra[@]}" "${enable[@]}"
   ) 2>&1 | tee "$out/configure.log"

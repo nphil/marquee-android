@@ -53,7 +53,8 @@ class PlaybackFactory(private val context: Context, private val http: OkHttpClie
 		// ON, not PREFER: the FFmpeg audio renderer (:ffmpeg) then sits behind the platform's, so it plays only what the
 		// platform's decoders and any passthrough to a receiver cannot. FFmpeg's MPEG-2 video renderer is behind
 		// MediaCodec's too, and claims MPEG-2 only on a tablet whose codec list has no decoder for it.
-		val renderers = SoftVideoRenderers(context).setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
+		val renderers = SoftVideoRenderers(context).setEnableDecoderFallback(true)
+			.setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
 		val builder = ExoPlayer.Builder(context, renderers).setMediaSourceFactory(source)
 		if (kind == Kind.Player) builder.setLoadControl(titleLoadControl())
 		if (loadControl != null) builder.setLoadControl(loadControl)

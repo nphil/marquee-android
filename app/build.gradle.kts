@@ -84,6 +84,13 @@ android {
 			proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
 			signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
 		}
+		create("television") {
+			initWith(getByName("release"))
+			applicationIdSuffix = ".tv"
+			matchingFallbacks += "release"
+			// Private sideloads never need the phone application's publishing key.
+			signingConfig = signingConfigs.getByName("debug")
+		}
 	}
 
 	compileOptions {
@@ -116,6 +123,14 @@ android {
 	}
 
 	sourceSets {
+		// Reuse the offline profile account only in the simulator review, never in the sideload APK.
+		if (providers.gradleProperty("marquee.tvReview").orNull == "true") {
+			maybeCreate("nonMinifiedRelease").apply {
+				manifest.srcFile("src/television/AndroidManifest.xml")
+				kotlin.directories += "src/television/java"
+				res.directories += "src/television/res"
+			}
+		}
 		// The iPhone app's fake Plex fixtures ship in the test APK, and the fixture rules in androidTest's
 		// fakeplex/router are plain Kotlin that the JVM tests compile too.
 		getByName("androidTest") {

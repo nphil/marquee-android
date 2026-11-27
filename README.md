@@ -29,6 +29,21 @@ Physical acceptance needs an Android device, an LG CX, and a test Plex server wi
 unprotected H.264/AAC MP4. It checks discovery, the receiver's on-screen PIN, actual video
 at the resume position, seek, pause and disconnect back to the phone.
 
+## Android TV
+
+The television build uses the same Plex account, library and playback code as the phone app.
+Its separate Android TV launcher (`com.nphil.marquee.tv`) uses the remote: arrows browse,
+Select opens a title, holding Select opens options, and Back returns to the previous screen.
+Sign-in uses a code at plex.tv/link. The TV uses Android hardware decoding first, FFmpeg for
+additional audio formats and MPEG-2, and Plex conversion for incompatible direct-play streams.
+
+With the Android Swift SDK and NDK set up as for the phone build:
+
+```sh
+bash ffmpeg/build.sh arm64-v8a armeabi-v7a
+./gradlew :app:assembleTelevision -Pmarquee.abis=arm64-v8a,armeabi-v7a
+```
+
 ## Install
 
 Add this repository to [Obtainium](https://github.com/ImranR98/Obtainium):

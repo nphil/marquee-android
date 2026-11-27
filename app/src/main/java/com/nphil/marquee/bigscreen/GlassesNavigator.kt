@@ -151,7 +151,9 @@ internal class GlassesPlayerLink(val model: PlayerModel, val close: () -> Unit)
 internal class GlassesNavigator(
 	private val container: AppContainer,
 	private val scope: CoroutineScope,
-	private val center: GlassesCenter,
+	private val center: GlassesCenter? = null,
+	private val openTitle: (String, String, Boolean) -> Unit = requireNotNull(center)::play,
+	private val tvSettings: (() -> Unit)? = null,
 ) {
 	val pages = mutableStateListOf<GlassesPage>()
 	var panel by mutableStateOf<GlassesPanel?>(null)
@@ -256,7 +258,7 @@ internal class GlassesNavigator(
 		return cue
 	}
 
-	val tiltEnabled: Boolean get() = center.prefs.tilt
+	val tiltEnabled: Boolean get() = center?.prefs?.tilt == true
 
 	/** The remote's accessibility action for Options in a video: the tracks. */
 	fun openPlayerOptions() {
@@ -402,7 +404,7 @@ internal class GlassesNavigator(
 		if (item != null && item.viewOffset > 0 && (item.type == MediaType.Movie || item.type == MediaType.Episode)) {
 			options += GlassesOption("start", "Play from Start") { play(item, fromStart = true) }
 		}
-		options += phoneAppOption()
+		options += hostOption()
 		if (pages.size > 1) options += GlassesOption("home", "Home") { goHome() }
 		panel = GlassesPanel(tile?.title ?: page?.title ?: "Options", options)
 	}
@@ -422,7 +424,7 @@ internal class GlassesNavigator(
 			options += GlassesOption("audio.${track.id}", track.label, "Audio", tracks.audioId == track.id) { model.pickAudio(track.id) }
 		}
 		// The phone's own buttons are out of reach, so the screen offers the steps; the list stays open.
-		for ((id, title, up) in listOf(Triple("volume.up", "Volume Up", true), Triple("volume.down", "Volume Down", false))) {
+		if (center != null) for ((id, title, up) in listOf(Triple("volume.up", "Volume Up", true), Triple("volume.down", "Volume Down", false))) {
 			options += GlassesOption(id, title, "Volume") {
 				center.stepVolume(up)
 				openTracks(model)
@@ -430,11 +432,12 @@ internal class GlassesNavigator(
 			}
 		}
 		if (model.next != null) options += GlassesOption("next", "Next Episode", "Playback") { model.userActed(); model.playNext() }
-		options += phoneAppOption("Playback")
+		options += hostOption("Playback")
 		panel = GlassesPanel(model.title, options)
 	}
 
-	private fun phoneAppOption(section: String? = null) = GlassesOption("phone", "Use the Phone App", section) { center.leaveRemote() }
+	private fun hostOption(section: String? = null) = if (tvSettings != null) GlassesOption("settings", "Settings", section, run = tvSettings)
+		else GlassesOption("phone", "Use the Phone App", section) { center?.leaveRemote() }
 
 	private fun goHome() {
 		while (pages.size > 1) pages.removeAt(pages.lastIndex).cancel()
@@ -452,7 +455,7 @@ internal class GlassesNavigator(
 	// MARK: Opening things
 
 	fun play(item: PlexItem, fromStart: Boolean = false) {
-		center.play(item.ratingKey, item.grandparentRatingKey ?: item.ratingKey, fromStart)
+		openTitle(item.ratingKey, item.grandparentRatingKey ?: item.ratingKey, fromStart)
 	}
 
 	private fun open(item: PlexItem) {
@@ -511,6 +514,7 @@ internal class GlassesNavigator(
 				pages += libraryGrid(section)
 			}
 		}
+		tvSettings?.let { tiles += GlassesTile("settings", "Settings", select = it) }
 		return GlassesRow("menu", null, TileShape.Card, tiles)
 	}
 
@@ -629,7 +633,7 @@ internal class GlassesNavigator(
 	}
 
 	private fun gridRows(tiles: List<GlassesTile>, shape: TileShape): List<GlassesRow> =
-		tiles.chunked(center.columns).mapIndexed { index, slice -> GlassesRow("grid.${index * center.columns}", null, shape, slice) }
+		(center?.columns ?: 6).let { columns -> tiles.chunked(columns).mapIndexed { index, slice -> GlassesRow("grid.${index * columns}", null, shape, slice) } }
 
 	/** A library's titles in A\u2013Z order, a page at a time as the focus nears the end. */
 	private fun libraryGrid(section: LibrarySection): GlassesPage {

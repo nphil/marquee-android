@@ -539,7 +539,7 @@ private const val POSITION_POLL_MS = 250L
  */
 @OptIn(UnstableApi::class)
 @Composable
-private fun GlassesPlayerView(model: PlayerModel, navigator: GlassesNavigator, container: AppContainer, layout: BigScreenLayout) {
+internal fun GlassesPlayerView(model: PlayerModel, navigator: GlassesNavigator, container: AppContainer, layout: BigScreenLayout) {
 	val engine = model.player
 	var chrome by remember { mutableStateOf(true) }
 	val stamp = navigator.chromeStamp
