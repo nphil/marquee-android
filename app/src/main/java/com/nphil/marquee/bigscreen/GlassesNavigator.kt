@@ -1275,7 +1275,10 @@ internal class GlassesNavigator(
 		val place = container.browse.source.place.value ?: return page.apply { failed("Select a server to search") }
 		page.withModel<SearchModel>({ SearchModel(container.browse, place) }) { model ->
 			val peopleOnly = kotlinx.coroutines.flow.MutableStateFlow(false)
-			fun type(text: String) { page.query = text; model.type(text) }
+			fun type(text: String) {
+				page.query = text
+				model.type(if (isTelevision) GlassesKeyboard.tvSearchTerm(text) else text)
+			}
 			val keyboard = GlassesKeyboard.rows.mapIndexed { index, row ->
 				GlassesRow("keys.$index", null, TileShape.Key, row.map { key ->
 					GlassesTile("key.${key.label}", key.label) { type(GlassesKeyboard.type(key, page.query)) }

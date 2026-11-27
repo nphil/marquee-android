@@ -161,6 +161,8 @@ key KEYCODE_DPAD_UP
 key KEYCODE_DPAD_CENTER
 wait_for A
 key KEYCODE_DPAD_CENTER
+for i in {1..11}; do key KEYCODE_DPAD_RIGHT; done
+key KEYCODE_DPAD_CENTER
 wait_for 'Search in'
 for i in 1 2 3; do key KEYCODE_DPAD_DOWN; done
 key KEYCODE_DPAD_CENTER

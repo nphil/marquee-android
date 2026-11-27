@@ -284,6 +284,10 @@ object GlassesKeyboard {
 		"1234567890".map(GlassesKey::Character) + listOf(GlassesKey.Space, GlassesKey.Delete),
 	)
 
+	internal fun tvSearchTerm(draft: String): String = draft.trim().let {
+		if (it.codePointCount(0, it.length) >= 2) it else ""
+	}
+
 	fun type(key: GlassesKey, text: String): String = when (key) {
 		is GlassesKey.Character -> text + key.char
 		// Two spaces in a row, or one leading, add nothing to a search.

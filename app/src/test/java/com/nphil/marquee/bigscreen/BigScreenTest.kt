@@ -62,6 +62,13 @@ class BigScreenTest {
 	}
 
 	@Test
+	fun tvSearchKeepsRecentsUntilTwoCharactersHaveBeenEntered() {
+		assertEquals("", GlassesKeyboard.tvSearchTerm(" a "))
+		assertEquals("", GlassesKeyboard.tvSearchTerm("🎬"))
+		assertEquals("al", GlassesKeyboard.tvSearchTerm(" al "))
+	}
+
+	@Test
 	fun scrubbingStaysInsideTheVideoAndClicksEveryTenSeconds() {
 		val scrub = Scrub(at = 100.0, duration = 3600.0)
 		assertEquals(Scrub.Tick.Detent, scrub.slid(60.0, 100.0))
