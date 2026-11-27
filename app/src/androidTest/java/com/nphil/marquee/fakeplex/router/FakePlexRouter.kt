@@ -193,7 +193,7 @@ class FakePlexRouter(private val fixtures: Fixtures) {
 	// MARK: Fixtures
 
 	private fun prefix(host: String): String = when {
-		host == "plex.tv" -> "plextv"
+		host == "plex.tv" || host == "clients.plex.tv" -> "plextv"
 		host == "discover.provider.plex.tv" -> "discover"
 		host.startsWith("bazarr") -> "bazarr"
 		host.startsWith("seerr") -> "seerr"

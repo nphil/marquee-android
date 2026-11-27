@@ -150,7 +150,7 @@ class AppSessionIdentityTest {
 		val child = PlexHomeUser(2, "child", "Child", isAdmin = false, isProtected = false, isRestricted = true, isGuest = false)
 
 		fun resources(profile: String) = """[
-			{"name":"Fixture","provides":"server","product":"Plex Media Server","clientIdentifier":"session-server",
+			{"name":"Fixture","provides":"controller","product":"Plex Media Server","clientIdentifier":"session-server",
 			"accessToken":"$profile-server","presence":true,"owned":true,
 			"connections":[{"uri":"http://session.invalid:32400","local":true}]}
 		]""".trimIndent()
