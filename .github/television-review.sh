@@ -263,6 +263,22 @@ for name in watchlist series library people details playback settings credits; d
     trap 'if [ "$?" -ne 0 ]; then capture "failure-$name"; cp "$out/window.xml" "$out/failure-$name.xml"; adb logcat -b crash -d >"$out/crash-$name.txt"; fi' EXIT
     adb shell pm clear "$pkg" >/dev/null
     adb shell am start -W -n "$pkg/com.nphil.marquee.television.TelevisionActivity" >/dev/null
+    wait_for 'Browse the shelves'
+    if [[ $name == watchlist ]]; then
+      key KEYCODE_DPAD_RIGHT
+      wait_for 'Return to the picture'
+      key KEYCODE_DPAD_LEFT
+      wait_for 'Browse the shelves'
+      capture remote-tour
+      for _ in 1 2 3 4 5; do key KEYCODE_DPAD_CENTER; done
+      wait_for 'Switch profiles'
+      key KEYCODE_DPAD_CENTER
+      wait_for 'Continue Watching'
+      adb shell am force-stop "$pkg"
+      adb shell am start -W -n "$pkg/com.nphil.marquee.television.TelevisionActivity" >/dev/null
+    else
+      key KEYCODE_BACK
+    fi
     wait_for 'Continue Watching'
     journey "$name"
   )

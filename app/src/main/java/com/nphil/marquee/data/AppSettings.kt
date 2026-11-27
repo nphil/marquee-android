@@ -54,6 +54,13 @@ class AppSettings(context: Context) : BrowsePreferences {
 		store.edit { prefs -> prefs.setPosterLabels(profile, change(prefs.posterLabels(profile))) }
 	}
 
+	internal fun tvTourSeen(profile: String): Flow<Boolean> =
+		store.data.map { it[booleanPreferencesKey("tv.tour.seen.$profile")] == true }.distinctUntilChanged()
+
+	internal suspend fun finishTvTour(profile: String) {
+		store.edit { it[booleanPreferencesKey("tv.tour.seen.$profile")] = true }
+	}
+
 	internal fun hiddenTvShortcuts(profile: String): Flow<Set<String>> =
 		store.data.map { it[tvShortcutsKey(profile)].orEmpty() }.distinctUntilChanged()
 

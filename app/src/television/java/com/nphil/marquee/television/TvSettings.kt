@@ -17,6 +17,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.*
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nphil.marquee.AppContainer
@@ -43,6 +44,7 @@ private enum class Destination(val label: String, val group: String, val summary
     Bazarr("Bazarr", "Integrations", "Find subtitles for films and episodes."),
     Speech("SpeechDock", "Integrations", "Connect the speech service for subtitle transcription."),
     Logs("Diagnostics", "System", "Review the app’s diagnostic log and reporting options."),
+    Tour("Remote tour", "System", "Revisit the six remote controls lessons."),
     Licences("Licences", "System", "Third-party software and its licences."),
     SignOut("Sign Out", "System", "Unlink this TV from the current Plex account.")
 }
@@ -82,6 +84,7 @@ private enum class Destination(val label: String, val group: String, val summary
         return
     }
     if (current == Destination.Subtitles) { TvSubtitleStyle(container); return }
+    if (current == Destination.Tour) { TvTour { page = null }; return }
     Column(Modifier.fillMaxSize().background(lucent.canvas).padding(horizontal = 28.dp, vertical = 16.dp)) {
         Text("Settings  /  ${current.group}", color = lucent.ink2, style = MaterialTheme.typography.labelLarge)
         Text(current.label, Modifier.padding(bottom = 8.dp), color = lucent.ink, style = MaterialTheme.typography.headlineMedium)
@@ -92,7 +95,7 @@ private enum class Destination(val label: String, val group: String, val summary
                     AppearancePage(container.themes, choice, { change -> container.scope.launch { container.settings.updateTheme(change) } }, padding)
                 }
                 Destination.Playback -> VideoPlaybackPage(padding)
-                Destination.Subtitles -> Unit // Has its own preview layout.
+                Destination.Subtitles, Destination.Tour -> Unit // These have their own full-screen layouts.
                 Destination.Libraries -> FavoriteLibrariesPage(container.session, padding)
                 Destination.HomeRows -> TvHomeRows(container)
                 Destination.Posters -> UnderPostersPage(container, state.user?.uuid.orEmpty(), padding)
@@ -131,4 +134,37 @@ private enum class Destination(val label: String, val group: String, val summary
             }
         }
     }
+}
+
+private val lessons = listOf(
+    "Browse the shelves" to "Move across a shelf to explore titles or down to the next shelf. Select a poster to open it.",
+    "Return to the picture" to "Back closes the current panel first. In the player it hides the controls before leaving the video.",
+    "Open a title’s menu" to "Hold the center of the remote on a poster to see actions for that title.",
+    "Playback controls" to "Open the timeline while watching. Audio and subtitles sit above it, with information and chapters below.",
+    "Preview a seek" to "Move left or right on the timeline to preview a moment. Select to jump there, or return without moving playback.",
+    "Switch profiles" to "Open Profiles in Settings to change who’s watching. Each profile keeps its own preferences and Watchlist.",
+)
+
+@Composable internal fun TvTour(close: () -> Unit) {
+    var step by rememberSaveable { mutableIntStateOf(0) }
+    val focus = remember { FocusRequester() }
+    fun next() { if (step == lessons.lastIndex) close() else step++ }
+    BackHandler(onBack = close)
+    Column(Modifier.fillMaxSize().background(lucent.canvas).onPreviewKeyEvent {
+        if (it.key != Key.DirectionLeft && it.key != Key.DirectionRight) false
+        else {
+            if (it.type == KeyEventType.KeyUp) {
+                if (it.key == Key.DirectionLeft) step = (step - 1).coerceAtLeast(0) else next()
+            }
+            true
+        }
+    }.padding(42.dp), verticalArrangement = Arrangement.Center) {
+        Text("Remote tour  ·  ${step + 1} of ${lessons.size}", color = lucent.accentText, style = MaterialTheme.typography.labelLarge)
+        Text(lessons[step].first, Modifier.padding(vertical = 10.dp), color = lucent.ink, style = MaterialTheme.typography.headlineLarge)
+        Text(lessons[step].second, Modifier.widthIn(max = 520.dp), color = lucent.ink2, style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.height(22.dp))
+        Box(Modifier.focusRequester(focus)) { Action(if (step == lessons.lastIndex) "Done" else "Next", ::next) }
+        Action("Close tour", close)
+    }
+    LaunchedEffect(Unit) { focus.requestFocus() }
 }

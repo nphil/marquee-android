@@ -55,7 +55,12 @@ class TelevisionActivity : ComponentActivity() {
                         if (state.phase == AppSession.Phase.Ready) key(state.server?.id, state.user?.uuid) {
                             val profile = state.user?.uuid.orEmpty()
                             val labels by remember(profile) { container.settings.posterLabels(profile) }.collectAsStateWithLifecycle(com.nphil.marquee.data.PosterLabels())
-                            CompositionLocalProvider(com.nphil.marquee.ui.browse.LocalPosterLabels provides labels) { Library(profile) }
+                            val tourSeen by remember(profile) { container.settings.tvTourSeen(profile) }.collectAsStateWithLifecycle<Boolean?>(null)
+                            when (tourSeen) {
+                                null -> Unit
+                                false -> TvTour { container.scope.launch { container.settings.finishTvTour(profile) } }
+                                true -> CompositionLocalProvider(com.nphil.marquee.ui.browse.LocalPosterLabels provides labels) { Library(profile) }
+                            }
                         }
                         else Account(state)
                         if (state.phase == AppSession.Phase.Ready && playing == null)
