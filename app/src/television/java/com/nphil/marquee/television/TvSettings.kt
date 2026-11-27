@@ -36,6 +36,7 @@ private enum class Destination(val label: String, val group: String, val summary
     Libraries("Libraries", "Personalize", "Choose which libraries appear in Marquee."),
     HomeRows("Home Rows", "Personalize", "Choose which shelves appear on Home and their order."),
     Posters("Under Posters", "Personalize", "Choose the title, details and sort value shown under posters."),
+    TopBar("Top Bar", "Personalize", "Choose which shortcuts appear above the Home shelves."),
     Profiles("Profiles", "Plex Home", "Switch who is watching, with their own settings and Watchlist."),
     Servers("Servers", "Plex Home", "Choose a server owned by or shared with this account."),
     Seerr("Seerr", "Integrations", "Connect Seerr to browse and request titles not in the library."),
@@ -95,6 +96,7 @@ private enum class Destination(val label: String, val group: String, val summary
                 Destination.Libraries -> FavoriteLibrariesPage(container.session, padding)
                 Destination.HomeRows -> TvHomeRows(container)
                 Destination.Posters -> UnderPostersPage(container, state.user?.uuid.orEmpty(), padding)
+                Destination.TopBar -> TvTopBar(container, state.user?.uuid.orEmpty())
                 Destination.Profiles -> ProfilesPage(container.session, padding)
                 Destination.Servers -> ServerList(container.session, false, close, padding)
                 Destination.Seerr -> SeerrPage(padding)
@@ -106,6 +108,25 @@ private enum class Destination(val label: String, val group: String, val summary
                     Text("Unlink this TV from Plex?", color = lucent.ink)
                     Action("Keep linked") { page = null }
                     Action("Unlink account") { container.session.signOut() }
+                }
+            }
+        }
+    }
+}
+
+@Composable private fun TvTopBar(container: AppContainer, profile: String) {
+    val hidden by remember(profile) { container.settings.hiddenTvShortcuts(profile) }.collectAsStateWithLifecycle(emptySet())
+    val requests by container.seerr.enabled.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
+    Column(Modifier.widthIn(max = 480.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("Home and Settings are always available.", color = lucent.ink2)
+        for (shortcut in com.nphil.marquee.data.TvShortcut.entries) {
+            if (shortcut == com.nphil.marquee.data.TvShortcut.Requests && !requests) continue
+            val shown = shortcut.name !in hidden
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(shortcut.label, Modifier.weight(1f), color = lucent.ink)
+                Action(if (shown) "Hide ${shortcut.label}" else "Show ${shortcut.label}") {
+                    scope.launch { container.settings.setTvShortcut(profile, shortcut, !shown) }
                 }
             }
         }

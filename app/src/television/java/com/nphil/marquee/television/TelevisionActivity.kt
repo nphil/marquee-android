@@ -55,7 +55,7 @@ class TelevisionActivity : ComponentActivity() {
                         if (state.phase == AppSession.Phase.Ready) key(state.server?.id, state.user?.uuid) {
                             val profile = state.user?.uuid.orEmpty()
                             val labels by remember(profile) { container.settings.posterLabels(profile) }.collectAsStateWithLifecycle(com.nphil.marquee.data.PosterLabels())
-                            CompositionLocalProvider(com.nphil.marquee.ui.browse.LocalPosterLabels provides labels) { Library() }
+                            CompositionLocalProvider(com.nphil.marquee.ui.browse.LocalPosterLabels provides labels) { Library(profile) }
                         }
                         else Account(state)
                         if (state.phase == AppSession.Phase.Ready && playing == null)
@@ -93,17 +93,18 @@ class TelevisionActivity : ComponentActivity() {
         }
     }
 
-    @Composable private fun Library() {
+    @Composable private fun Library(profile: String) {
         val scope = rememberCoroutineScope()
         var settings by remember { mutableStateOf(false) }
         var style by remember { mutableStateOf(false) }
         var requests by remember { mutableStateOf(false) }
         val requestsAvailable by container.seerr.enabled.collectAsStateWithLifecycle()
+        val hiddenShortcuts by remember(profile) { container.settings.hiddenTvShortcuts(profile) }.collectAsStateWithLifecycle(emptySet())
         var about by remember { mutableStateOf<com.nphil.marquee.core.PlexItem?>(null) }
         var request by remember { mutableStateOf<com.nphil.marquee.ui.player.PlayRequest.Title?>(null) }
         val nav = remember { GlassesNavigator(container, scope, openTitle = { id, title, start, file -> request = com.nphil.marquee.ui.player.PlayRequest.Title(id, fromStart = start, titleKey = title, recordingMediaID = file) },
             tvSettings = { settings = true }, tvSubtitleStyle = { style = true }, tvRequests = { requests = true }, tvAbout = { about = it }) }
-        LaunchedEffect(requestsAvailable) { nav.refreshRequestsEntry(); if (!requestsAvailable) requests = false }
+        LaunchedEffect(requestsAvailable, hiddenShortcuts) { nav.updateTvMenu(hiddenShortcuts); if (!requestsAvailable) requests = false }
         DisposableEffect(nav) { nav.start(); onDispose { nav.close() } }
         SideEffect { input = if (settings || style || requests || about != null) null else nav }
         DisposableEffect(Unit) { onDispose { input = null } }

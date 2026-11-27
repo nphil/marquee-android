@@ -27,6 +27,8 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import java.util.UUID
 
+internal enum class TvShortcut(val label: String) { Movies("Movies"), Shows("Shows"), Requests("Requests"), Watchlist("Watchlist"), Search("Search") }
+
 /** What the app keeps that is not secret: themes, the chosen server, server addresses and how browsing is set up. */
 class AppSettings(context: Context) : BrowsePreferences {
 	internal val store = PreferenceDataStoreFactory.create { context.preferencesDataStoreFile("settings") }
@@ -50,6 +52,18 @@ class AppSettings(context: Context) : BrowsePreferences {
 
 	internal suspend fun updatePosterLabels(profile: String, change: (PosterLabels) -> PosterLabels) {
 		store.edit { prefs -> prefs.setPosterLabels(profile, change(prefs.posterLabels(profile))) }
+	}
+
+	internal fun hiddenTvShortcuts(profile: String): Flow<Set<String>> =
+		store.data.map { it[tvShortcutsKey(profile)].orEmpty() }.distinctUntilChanged()
+
+	internal suspend fun setTvShortcut(profile: String, shortcut: TvShortcut, shown: Boolean) {
+		val key = tvShortcutsKey(profile)
+		store.edit { prefs ->
+			val hidden = prefs[key].orEmpty()
+			val next = if (shown) hidden - shortcut.name else hidden + shortcut.name
+			if (next.isEmpty()) prefs.remove(key) else prefs[key] = next
+		}
 	}
 
 	/** The trailer and theme music choices of a Home profile; defaults for one that never chose, or no profile. */
@@ -280,6 +294,7 @@ class AppSettings(context: Context) : BrowsePreferences {
 		fun dismissalsKey(profile: String) = stringPreferencesKey("home.rewatchDismissed.$profile")
 		fun recentsKey(profile: String) = stringPreferencesKey("search.recents.$profile")
 		fun hiddenLibrariesKey(profile: String) = stringSetPreferencesKey("library.hidden.$profile")
+		fun tvShortcutsKey(profile: String) = stringSetPreferencesKey("tv.shortcuts.hidden.$profile")
 		fun libraryChoiceKey(profile: String) = stringPreferencesKey("library.chosen.$profile")
 		fun libraryViewKey(profile: String, libraryKey: String) = stringPreferencesKey("library.view.$profile.$libraryKey")
 		fun liveListsKey(scope: String) = stringPreferencesKey("live.channels.$scope")

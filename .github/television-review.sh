@@ -159,8 +159,16 @@ key KEYCODE_DPAD_CENTER
 wait_for 'Sort Value'
 capture under-posters
 key KEYCODE_BACK
+key KEYCODE_DPAD_DOWN
+key KEYCODE_DPAD_CENTER
+wait_for 'Hide Movies'
+key KEYCODE_DPAD_CENTER
+wait_for 'Show Movies'
+capture top-bar
+key KEYCODE_BACK
 key KEYCODE_BACK
 wait_for 'Continue Watching'
+! grep -Fq 'text="Movies"' "$out/window.xml" || { echo "Hidden movie shortcut still shown"; exit 1; }
 key KEYCODE_MENU
 wait_for 'Play from Start'
 key KEYCODE_DPAD_CENTER

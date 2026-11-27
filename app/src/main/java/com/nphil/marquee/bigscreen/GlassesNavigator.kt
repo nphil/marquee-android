@@ -28,6 +28,7 @@ import com.nphil.marquee.browse.SearchScope
 import com.nphil.marquee.browse.StoredLibraryMemory
 import com.nphil.marquee.browse.decodeLibraryView
 import com.nphil.marquee.browse.encodeLibraryView
+import com.nphil.marquee.data.TvShortcut
 import com.nphil.marquee.core.PlexDirectory
 import com.nphil.marquee.core.libraryLetters
 import com.nphil.marquee.core.HomeLoad
@@ -242,7 +243,8 @@ internal class GlassesNavigator(
 	private var swipe = SwipeSteps()
 	private var coast: Job? = null
 	private var toastJob: Job? = null
-	private val sectionsCache = ArrayList<LibrarySection>()
+	private var menuLibraries: List<LibrarySection> = emptyList()
+	private var hiddenShortcuts: Set<String> = emptySet()
 	private val watchedChanges = HashMap<String, Boolean>()
 
 	val page: GlassesPage? get() = pages.lastOrNull()
@@ -749,16 +751,15 @@ internal class GlassesNavigator(
 		page.failed("Could not load this page")
 	}
 
-	fun refreshRequestsEntry() {
+	fun updateTvMenu(hidden: Set<String>) {
+		hiddenShortcuts = hidden
 		val home = pages.firstOrNull() ?: return
 		val menu = home.rows.firstOrNull()?.takeIf { it.id == "menu" } ?: return
-		val enabled = tvRequests != null && container.seerr.enabled.value
-		if (menu.tiles.any { it.id == "requests" } == enabled) return
+		val updated = menuRow()
+		if (menu.tiles.size == updated.tiles.size && menu.tiles.indices.all { menu.tiles[it].id == updated.tiles[it].id }) return
 		val focused = home.focusedTile?.id.takeIf { home.focus.row == 0 }
-		val tiles = menu.tiles.filterNot { it.id == "requests" }.toMutableList()
-		if (enabled) tiles.add(tiles.indexOfFirst { it.id == "settings" }.takeIf { it >= 0 } ?: tiles.size, GlassesTile("requests", "Requests", select = requireNotNull(tvRequests)))
-		home.setRows(listOf(GlassesRow(menu.id, menu.title, menu.shape, tiles)) + home.rows.drop(1), home.loading)
-		if (focused != null) tiles.indexOfFirst { it.id == focused }.takeIf { it >= 0 }?.let { home.focusOn(0, it) }
+		home.setRows(listOf(updated) + home.rows.drop(1), home.loading)
+		if (focused != null) updated.tiles.indexOfFirst { it.id == focused }.takeIf { it >= 0 }?.let { home.focusOn(0, it) }
 	}
 
 	private fun homePage(): GlassesPage {
@@ -766,21 +767,20 @@ internal class GlassesNavigator(
 		page.run(scope) {
 			try {
 				val sections = onServer { server, remembered -> sections(server, remembered) }
-				sectionsCache.clear()
-				sectionsCache += sections
 				val prefs = container.browse.preferences
 				val profile = profile()
 				combine(prefs.homeLayout(profile), prefs.hiddenLibraries(profile)) { layout, hidden -> layout to hidden }
 					.collectLatest { (layout, hidden) ->
+						menuLibraries = browsableLibraries(sections, hidden)
 						val first = page.rows.isEmpty()
-						if (first) page.setRows(listOf(menuRow(sections, hidden)), loading = true)
+						if (first) page.setRows(listOf(menuRow()), loading = true)
 						val dismissed = prefs.rewatchDismissals(profile)
 						val load = HomeLoad(layout.shownLibraries.toList(), hidden.toList(), dismissed, SnapshotMode.Live, null, false)
 						val reply = onServer { server, remembered -> homeRows(server, remembered, load) }
 						val shown = layout.arrange(reply.rows).filter { it.shown && it.hub.items.isNotEmpty() }
 						val rowId = page.rows.getOrNull(page.focus.row)?.id
 						val tileId = page.focusedTile?.id
-						val rows = listOf(menuRow(sections, hidden)) + shown.map(::row)
+						val rows = listOf(menuRow()) + shown.map(::row)
 						page.setRows(rows)
 						if (first && shown.firstOrNull()?.continueWatching == true) page.focusOn(1, 0)
 						else {
@@ -796,16 +796,17 @@ internal class GlassesNavigator(
 	}
 
 	/** Search and the libraries, as cards above Home's rows. */
-	private fun menuRow(sections: List<LibrarySection>, hidden: Set<String>): GlassesRow {
+	private fun menuRow(): GlassesRow {
 		val tiles = ArrayList<GlassesTile>()
-		tiles += GlassesTile("search", "Search", art = GlassesArt.Symbol(R.drawable.ic_search)) { pages += searchPage() }
-		for (section in browsableLibraries(sections, hidden)) {
+		if (TvShortcut.Search.name !in hiddenShortcuts) tiles += GlassesTile("search", "Search", art = GlassesArt.Symbol(R.drawable.ic_search)) { pages += searchPage() }
+		for (section in menuLibraries) {
+			if ((if (section.type == "movie") TvShortcut.Movies else TvShortcut.Shows).name in hiddenShortcuts) continue
 			tiles += GlassesTile("library.${section.key}", section.title, art = GlassesArt.Symbol(if (section.type == "movie") R.drawable.ic_movie else R.drawable.ic_tv)) {
 				pages += if (isTelevision) libraryLanding(section) else libraryGrid(section)
 			}
 		}
-		if (isTelevision) tiles += GlassesTile("watchlist", "Watchlist") { pages += watchlist() }
-		if (tvRequests != null && container.seerr.enabled.value) tiles += GlassesTile("requests", "Requests", select = tvRequests)
+		if (isTelevision && TvShortcut.Watchlist.name !in hiddenShortcuts) tiles += GlassesTile("watchlist", "Watchlist") { pages += watchlist() }
+		if (tvRequests != null && container.seerr.enabled.value && TvShortcut.Requests.name !in hiddenShortcuts) tiles += GlassesTile("requests", "Requests", select = tvRequests)
 		tvSettings?.let { tiles += GlassesTile("settings", "Settings", select = it) }
 		return GlassesRow("menu", null, TileShape.Card, tiles)
 	}
