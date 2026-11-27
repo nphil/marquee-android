@@ -16,6 +16,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.media3.common.text.Cue
+import androidx.media3.extractor.text.SubtitleParser
+import androidx.media3.extractor.text.subrip.SubripParser
+import androidx.media3.extractor.text.webvtt.WebvttParser
 import com.nphil.marquee.data.SubtitleLook
 import com.nphil.marquee.ui.player.TvCaptions
 
@@ -31,15 +34,20 @@ class CaptionReviewActivity : ComponentActivity() {
             Canvas(it).drawText("EXIT →", 10f, 36f, Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 36f })
         }
         val cues = buildList {
-            add(Cue.Builder().setText("The last train.").build())
+            addAll(decoded(SubripParser(), "1\n00:00:00,000 --> 00:00:05,000\nThe last train.\n"))
+            addAll(decoded(SubripParser(), "1\n00:00:00,000 --> 00:00:05,000\n{\\an9}<font color=\"#ffff00\">North exit</font>\n"))
             add(Cue.Builder().setText(ink("Platform 2", android.graphics.Color.GREEN))
                 .setPosition(.1f).setPositionAnchor(Cue.ANCHOR_TYPE_START).build())
             add(Cue.Builder().setBitmap(bitmap).setPosition(.12f).setPositionAnchor(Cue.ANCHOR_TYPE_START)
                 .setLine(.22f, Cue.LINE_TYPE_FRACTION).setLineAnchor(Cue.ANCHOR_TYPE_START).setSize(.12f).build())
-            if (intent.getBooleanExtra("vertical", false)) add(Cue.Builder().setText(ink("終電時刻", android.graphics.Color.MAGENTA))
-                .setVerticalType(Cue.VERTICAL_TYPE_RL).setPosition(.24f).setPositionAnchor(Cue.ANCHOR_TYPE_START).build())
+            if (intent.getBooleanExtra("vertical", false)) addAll(decoded(WebvttParser(),
+                "WEBVTT\n\n00:00:00.000 --> 00:00:05.000 vertical:rl line:65% position:24%,line-left\n<c.magenta>終電時刻</c>\n"))
         }
         setContent { TvCaptions(cues, look, controls, Modifier.fillMaxSize().background(Color.Black)) }
+    }
+
+    private fun decoded(parser: SubtitleParser, input: String): List<Cue> = buildList {
+        parser.parse(input.toByteArray(), SubtitleParser.OutputOptions.allCues()) { addAll(it.cues) }
     }
 
     private fun ink(text: String, color: Int) = SpannableString(text).apply {
