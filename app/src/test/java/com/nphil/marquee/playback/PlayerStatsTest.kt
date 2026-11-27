@@ -11,6 +11,13 @@ import org.junit.Test
 
 class PlayerStatsTest {
 	@Test
+	fun aSmoothNetworkDoesNotHideSkippedVideoFrames() {
+		val health = healthLines("ready", EngineReading(skippedFrames = 15, stalls = 0), null, emptyList())
+		assertEquals("0 dropped · 15 skipped · 0 stalls", health.single { it.label == "Frames" }.value)
+		assertFalse(health.any { it.label == "A/V sync" })
+	}
+
+	@Test
 	fun aStreamIsDescribedAsPlexListsIt() {
 		val hevc = PlexStream(codec = "hevc", profile = "main 10", level = 153, width = 3840, height = 2160, bitDepth = 10, colorTrc = "smpte2084")
 		val avc = PlexStream(codec = "h264", profile = "high", level = 41, width = 1920, height = 800)

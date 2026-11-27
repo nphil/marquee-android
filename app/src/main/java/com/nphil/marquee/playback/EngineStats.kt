@@ -120,6 +120,8 @@ internal class EngineStats : AnalyticsListener {
 		networkBps = DefaultBandwidthMeter.getSingletonInstance(app).bitrateEstimate,
 		streamBps = engine.videoFormat?.bitrate?.takeIf { it > 0 } ?: 0,
 		droppedFrames = droppedFrames,
+		skippedFrames = engine.videoDecoderCounters?.run { ensureUpdated(); skippedOutputBufferCount },
+		hardwareSync = engine.isTunnelingEnabled,
 		stalls = stalls,
 		bufferSeconds = engine.totalBufferedDuration / 1000.0,
 		errors = errors,

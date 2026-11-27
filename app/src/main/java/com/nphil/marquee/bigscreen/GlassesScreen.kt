@@ -603,7 +603,10 @@ internal fun GlassesPlayerView(model: PlayerModel, navigator: GlassesNavigator, 
 			PlayerOsd(model, positionMs, scrubbed, layout, tv, tvOffer, navigator)
 		}
 		if (controls && model.showsStats && layout.kind == DisplayKind.Tv) {
-			val lines = remember(stamp, model.phase) { model.stats().all.filter { it.label in setOf("Route", "Video", "Picture", "Start", "Frames", "Buffer") } }
+			val lines by androidx.compose.runtime.produceState(initialValue = emptyList<com.nphil.marquee.playback.StatLine>(), model) {
+				val labels = setOf("Route", "Video", "Picture", "Start", "Frames", "A/V sync", "Buffer")
+				while (true) { value = model.stats().all.filter { it.label in labels }; delay(1_000) }
+			}
 			Column(Modifier.align(Alignment.TopEnd).padding(horizontal = layout.marginX.toFloat().dp, vertical = layout.marginY.toFloat().dp)
 				.width(580.dp).clip(RoundedCornerShape(GlassesCanvas.RADIUS.dp)).background(lucent.sheet).padding(GlassesCanvas.TILE_GAP.dp)) {
 				lines.forEach { GlassesLabel("${it.label}: ${it.value}", GlassesText.Caption, lucent.ink, maxLines = 2) }

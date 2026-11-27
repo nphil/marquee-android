@@ -129,9 +129,12 @@ class PlayerModel(
 	private var fromStart: Boolean,
 	downloadId: String? = null,
 	private var recordingMediaID: Int? = null,
+	private val television: Boolean = false,
 ) : ViewModel() {
 	private val app = context.applicationContext
 	private val factory = PlaybackFactory(app, http)
+	private var preferHardwareSync = true
+	private var pictureProcessing = false
 
 	/** A saved file is the source, even with Wi-Fi on or before the player has opened. */
 	val isOffline = downloadId != null
@@ -377,7 +380,7 @@ class PlayerModel(
 		Diag.beginPlayback()
 		viewModelScope.launch { open(startAt = null) }
 		viewModelScope.launch { for (tap in taps) answerTap(tap) }
-		viewModelScope.launch { container.playbackPrefsFlow().map { it.pictureEnhance }.distinctUntilChanged().collect(enhance::setOptions) }
+		viewModelScope.launch { container.playbackPrefsFlow().map { it.pictureEnhance }.distinctUntilChanged().collect(::tuneEnhance) }
 	}
 
 	/** Where the title is, in milliseconds on the title's clock, regardless of which player is playing it. */
@@ -418,8 +421,25 @@ class PlayerModel(
 	@JvmName("pickSpeed")
 	fun setSpeed(value: Float) {
 		speed = value.coerceIn(MIN_SPEED, MAX_SPEED)
+		player?.let(::updateHardwareSync)
 		player?.setPlaybackSpeed(speed)
 		Diag.info(DiagCategory.Player, "speed", "to" to speed)
+	}
+
+	internal val wantsHardwareSync get() = preferHardwareSync
+
+	internal fun toggleHardwareSync() {
+		preferHardwareSync = !preferHardwareSync
+		player?.let(::updateHardwareSync)
+	}
+
+	private fun updateHardwareSync(engine: ExoPlayer) {
+		if (!television) return
+		val selector = engine.trackSelector as? androidx.media3.exoplayer.trackselection.DefaultTrackSelector ?: return
+		// Media3 selects tunneled playback only when both selected renderers can share a hardware clock.
+		val wanted = preferHardwareSync && speed == 1f && !pictureProcessing
+		if (selector.parameters.tunnelingEnabled != wanted)
+			selector.parameters = selector.parameters.buildUpon().setTunnelingEnabled(wanted).build()
 	}
 
 	/** Plays the title at the quality [preset] from where it is: the stream opens again. */
@@ -494,7 +514,11 @@ class PlayerModel(
 	fun enhanceDragging(on: Boolean) = enhance.dragged(on)
 
 	/** A strength dragged in the player's menu applies to the picture at once; [saveEnhance] keeps it when the finger lets go. */
-	fun tuneEnhance(setting: PictureEnhance) = enhance.setOptions(setting)
+	fun tuneEnhance(setting: PictureEnhance) {
+		pictureProcessing = setting.isOn
+		player?.let(::updateHardwareSync)
+		enhance.setOptions(setting)
+	}
 
 	/** Saves the Enhance Picture setting in the profile, where Settings reads it too; a new scaler restarts the title once. */
 	fun saveEnhance(change: (PictureEnhance) -> PictureEnhance) {
@@ -1101,6 +1125,8 @@ class PlayerModel(
 		val source = factory.source(opens.headers, opens.url, hls, mediaMetadata(chosen), reconnects = true)
 		if (hls) engine.setMediaSource(source) else engine.setMediaSource(source, (chosen.startAt * 1000).toLong())
 		enhance.attach(engine, chosen.item.ratingKey, prefs.pictureEnhance, chosen)
+		pictureProcessing = prefs.pictureEnhance.isOn
+		updateHardwareSync(engine)
 		engine.playWhenReady = autoplay
 		engine.prepare()
 		player = engine

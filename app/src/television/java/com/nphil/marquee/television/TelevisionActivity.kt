@@ -107,7 +107,7 @@ class TelevisionActivity : ComponentActivity() {
         }
         request?.let { item -> key(item) {
             val owner = remember { object : ViewModelStoreOwner { override val viewModelStore = ViewModelStore() } }
-            val model = viewModel<PlayerModel>(viewModelStoreOwner = owner) { PlayerModel(container, container.http, this@TelevisionActivity, item.ratingKey, item.titleKey ?: item.ratingKey, item.fromStart, recordingMediaID = item.recordingMediaID) }
+            val model = viewModel<PlayerModel>(viewModelStoreOwner = owner) { PlayerModel(container, container.http, this@TelevisionActivity, item.ratingKey, item.titleKey ?: item.ratingKey, item.fromStart, recordingMediaID = item.recordingMediaID, television = true) }
             MatchFilmRate(window, model.player, model.plan?.takeUnless { it.route.reencodesVideo }?.videoStream()?.frameRate)
             val covered = nav.panel != null || settings || style || about != null
             SideEffect { model.menusOpen = covered }

@@ -637,6 +637,7 @@ internal class GlassesNavigator(
 					panel = GlassesPanel(label, rows, rows.indexOfFirst { it.checked }.coerceAtLeast(0), parent(label))
 				}
 			}
+			options += GlassesOption("sync.hardware", "Prefer hardware A/V sync", "Playback", model.wantsHardwareSync, model::toggleHardwareSync)
 			if (!model.isOffline) submenu("Quality") {
 				com.nphil.marquee.core.QualityPreset.all.map { q ->
 					GlassesOption("quality.$q", com.nphil.marquee.core.QualityPreset.title(q), checked = model.quality == q) { model.setQuality(q) }

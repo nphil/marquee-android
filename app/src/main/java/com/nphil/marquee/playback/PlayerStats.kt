@@ -46,6 +46,8 @@ internal data class EngineReading(
 	/** The video stream's declared rate, in bits per second. */
 	val streamBps: Int = 0,
 	val droppedFrames: Int = 0,
+	val skippedFrames: Int? = null,
+	val hardwareSync: Boolean = false,
 	val stalls: Int = 0,
 	val bufferSeconds: Double = 0.0,
 	val errors: Int = 0,
@@ -233,7 +235,8 @@ internal fun healthLines(start: String, reading: EngineReading, transcode: Strin
 	var network = if (reading.networkBps > 0) mbps(reading.networkBps.toDouble()) else "–"
 	if (reading.streamBps > 0) network += " · stream ${mbps(reading.streamBps.toDouble())}"
 	add(StatLine("Network", network))
-	add(StatLine("Frames", "${reading.droppedFrames} dropped · ${reading.stalls} stalls"))
+	add(StatLine("Frames", listOfNotNull("${reading.droppedFrames} dropped", reading.skippedFrames?.let { "$it skipped" }, "${reading.stalls} stalls").joinToString(" · ")))
+	if (reading.hardwareSync) add(StatLine("A/V sync", "Hardware"))
 	add(StatLine("Buffer", String.format(Locale.ROOT, "%.1f s ahead", reading.bufferSeconds)))
 	if (reading.errors > 0) add(StatLine("Errors", "${reading.errors} · last ${reading.lastError}"))
 	transcode?.let { add(StatLine("Transcode", it)) }
