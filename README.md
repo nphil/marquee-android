@@ -45,7 +45,7 @@ Home highlights the new selection immediately and waits 240 ms before loading it
 The 5% card lift uses the [Android TV focus treatment](https://developer.android.com/design/ui/tv/guides/styles/focus-system);
 the shelves and options drawer ease to a stop without delaying the next remote press.
 
-With the Android Swift SDK and NDK set up as for the phone build:
+The Onn 4K Pro runs 32-bit Android. The TV package includes both ARM runtimes; the handset's default 64-bit build cannot be installed on the Onn. With the Android Swift SDK and NDK set up:
 
 ```sh
 bash ffmpeg/build.sh arm64-v8a armeabi-v7a

@@ -34,6 +34,13 @@ val appVersionCode: Int = (System.getenv("MARQUEE_VERSION_CODE")?.toIntOrNull()
 val bridgeAbis: List<String> = providers.gradleProperty("marquee.abis").get()
 	.split(',').map(String::trim).filter(String::isNotEmpty)
 
+// The Onn 4K Pro runs 32-bit Android even though its processor supports 64-bit code.
+if (!bridgeAbis.containsAll(listOf("armeabi-v7a", "arm64-v8a"))) {
+	tasks.matching { it.name == "preTelevisionBuild" }.configureEach {
+		doFirst { throw GradleException("TV sideload requires -Pmarquee.abis=arm64-v8a,armeabi-v7a") }
+	}
+}
+
 android {
 	namespace = "com.nphil.marquee"
 	compileSdk = 37
