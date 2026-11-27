@@ -123,14 +123,6 @@ android {
 	}
 
 	sourceSets {
-		// Reuse the offline profile account only in the simulator review, never in the sideload APK.
-		if (providers.gradleProperty("marquee.tvReview").orNull == "true") {
-			maybeCreate("nonMinifiedRelease").apply {
-				manifest.srcFile("src/television/AndroidManifest.xml")
-				kotlin.directories += "src/television/java"
-				res.directories += "src/television/res"
-			}
-		}
 		// The iPhone app's fake Plex fixtures ship in the test APK, and the fixture rules in androidTest's
 		// fakeplex/router are plain Kotlin that the JVM tests compile too.
 		getByName("androidTest") {
@@ -260,6 +252,13 @@ androidComponents {
 	// The baseline profile is recorded against the nonMinifiedRelease build, which answers from the iPhone app's fake
 	// Plex fixtures (src/nonMinifiedRelease). No other variant gets the fixtures or the server that serves them.
 	onVariants(selector().withBuildType("nonMinifiedRelease")) { variant ->
+		if (providers.gradleProperty("marquee.tvReview").orNull == "true") {
+			// The baseline-profile plugin owns this build type's manifest. Add the TV overlay to the finished variant.
+			variant.applicationId.set("com.nphil.marquee.tv.review")
+			variant.sources.manifests.addStaticManifestFile("src/television/AndroidManifest.xml")
+			variant.sources.kotlin?.addStaticSourceDirectory("src/television/java")
+			variant.sources.res?.addStaticSourceDirectory("src/television/res")
+		}
 		variant.manifestPlaceholders.put("marqueeApplication", "com.nphil.marquee.profile.ProfilingApplication")
 		variant.sources.assets?.addStaticSourceDirectory(rootProject.file("core/UITests/FakePlex").path)
 		variant.sources.kotlin?.addStaticSourceDirectory("src/androidTest/java/com/nphil/marquee/fakeplex")

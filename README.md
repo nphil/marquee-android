@@ -37,6 +37,10 @@ Select opens a title, holding Select opens options, and Back returns to the prev
 Sign-in uses a code at plex.tv/link. The TV uses Android hardware decoding first, FFmpeg for
 additional audio formats and MPEG-2, and Plex conversion for incompatible direct-play streams.
 
+During playback, Up shows the timeline and Down opens options. Playback Info shows the actual
+route, decoder, startup time and dropped frames. When Android TV permits non-seamless frame-rate
+matching, playback requests the film rate at the current resolution and releases it on exit.
+
 With the Android Swift SDK and NDK set up as for the phone build:
 
 ```sh

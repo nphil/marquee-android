@@ -27,6 +27,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.nphil.marquee.bigscreen.*
 import com.nphil.marquee.container
 import com.nphil.marquee.playback.PlayerModel
+import com.nphil.marquee.playback.videoStream
 import com.nphil.marquee.session.AppSession
 import com.nphil.marquee.ui.components.ProvidePlexImages
 import com.nphil.marquee.ui.theme.*
@@ -99,6 +100,7 @@ class TelevisionActivity : ComponentActivity() {
         request?.let { item -> key(item) {
             val owner = remember { object : ViewModelStoreOwner { override val viewModelStore = ViewModelStore() } }
             val model = viewModel<PlayerModel>(viewModelStoreOwner = owner) { PlayerModel(container, container.http, this@TelevisionActivity, item.first, item.second, item.third) }
+            MatchFilmRate(window, model.player, model.plan?.takeUnless { it.route.reencodesVideo }?.videoStream()?.frameRate)
             DisposableEffect(model) {
                 playing = model; nav.link = GlassesPlayerLink(model) { request = null }
                 onDispose { window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON); nav.link = null; nav.leftPlayer(); playing = null; owner.viewModelStore.clear() }

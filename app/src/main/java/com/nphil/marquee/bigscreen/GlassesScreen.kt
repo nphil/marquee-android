@@ -77,6 +77,7 @@ import com.nphil.marquee.data.SubtitleLook
 import com.nphil.marquee.playback.Offer
 import com.nphil.marquee.playback.PlayerModel
 import com.nphil.marquee.playback.PlayerPhase
+import com.nphil.marquee.playback.title
 import com.nphil.marquee.ui.components.PlexArt
 import com.nphil.marquee.ui.player.CaptionView
 import com.nphil.marquee.ui.theme.LucentTheme
@@ -548,19 +549,12 @@ internal fun GlassesPlayerView(model: PlayerModel, navigator: GlassesNavigator, 
 		delay(CHROME_DWELL_MS)
 		chrome = false
 	}
-	var positionMs by remember { mutableLongStateOf(model.movieMs()) }
-	LaunchedEffect(model) {
-		while (true) {
-			positionMs = model.movieMs()
-			delay(POSITION_POLL_MS)
-		}
-	}
+	val scrubbed = navigator.scrubTime
+	val controls = chrome || scrubbed != null || !model.isPlaying || model.phase != PlayerPhase.Playing
 	val profile by remember(container) { container.session.state.map { it.user?.uuid }.distinctUntilChanged() }.collectAsStateWithLifecycle(null)
 	val look by remember(container, profile) { container.settings.subtitleLook(profile) }.collectAsStateWithLifecycle(SubtitleLook())
 	LaunchedEffect(model, look.reveal) { model.tracks.setReveal(look.reveal) }
-	val scrubbed = navigator.scrubTime
-	val controls = chrome || scrubbed != null || !model.isPlaying || model.phase != PlayerPhase.Playing
-	Box(Modifier.fillMaxSize().background(if (layout.usesBlackCanvas) Color.Black else lucent.canvas)) {
+	Box(Modifier.fillMaxSize().background(Color.Black)) {
 		if (engine != null) {
 			AndroidView(
 				factory = { context ->
@@ -578,7 +572,16 @@ internal fun GlassesPlayerView(model: PlayerModel, navigator: GlassesNavigator, 
 			CaptionView(cues = model.tracks.cues, look = look, controlsUp = controls, modifier = Modifier.fillMaxSize())
 		}
 		AnimatedVisibility(controls, enter = fadeIn(), exit = fadeOut()) {
+			var positionMs by remember { mutableLongStateOf(model.movieMs()) }
+			LaunchedEffect(model) { while (true) { positionMs = model.movieMs(); delay(POSITION_POLL_MS) } }
 			PlayerOsd(model, positionMs, scrubbed, layout)
+		}
+		if (controls && model.showsStats && layout.kind == DisplayKind.Tv) {
+			val lines = remember(stamp, model.phase) { model.stats().all.filter { it.label in setOf("Route", "Video", "Picture", "Start", "Frames", "Buffer") } }
+			Column(Modifier.align(Alignment.TopEnd).padding(horizontal = layout.marginX.toFloat().dp, vertical = layout.marginY.toFloat().dp)
+				.width(580.dp).clip(RoundedCornerShape(GlassesCanvas.RADIUS.dp)).background(lucent.sheet).padding(GlassesCanvas.TILE_GAP.dp)) {
+				lines.forEach { GlassesLabel("${it.label}: ${it.value}", GlassesText.Caption, lucent.ink, maxLines = 2) }
+			}
 		}
 		PlayerCenter(model, scrubbed)
 	}
@@ -593,6 +596,7 @@ private fun PlayerOsd(model: PlayerModel, positionMs: Long, scrub: Double?, layo
 		) {
 			GlassesLabel(model.title, GlassesText.Title, lucent.ink)
 			model.subtitle?.let { GlassesLabel(it, GlassesText.Body, lucent.ink2) }
+			if (layout.kind == DisplayKind.Tv) model.plan?.let { GlassesLabel(it.route.title(), GlassesText.Label, lucent.accentText) }
 		}
 		Box(Modifier.weight(1f))
 		offerText(model)?.let { text ->
@@ -606,6 +610,7 @@ private fun PlayerOsd(model: PlayerModel, positionMs: Long, scrub: Double?, layo
 			}
 		}
 		Timeline(model, positionMs, scrub)
+		if (layout.kind == DisplayKind.Tv) GlassesLabel("OK  Play / pause     ·     ← →  Skip     ·     ↓  Options", GlassesText.Caption, lucent.ink, Modifier.clip(CircleShape).background(lucent.glass).padding(horizontal = GlassesCanvas.TILE_GAP.dp, vertical = GlassesCanvas.CAPTION_GAP.dp))
 	}
 }
 

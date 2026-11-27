@@ -414,6 +414,10 @@ internal class GlassesNavigator(
 		val options = ArrayList<GlassesOption>()
 		val tracks = model.tracks
 		val lists = tracks.lists
+		if (tvSettings != null) options += GlassesOption("stats", "Playback Info", "Playback", model.showsStats) {
+			model.toggleStats()
+			chromeStamp++
+		}
 		options += GlassesOption("subtitle.off", "Off", "Subtitles", tracks.subtitleId == null) { model.pickSubtitle(SubtitlePick.Off) }
 		for (track in lists.menuSubtitles) {
 			options += GlassesOption("subtitle.${track.id}", track.label, "Subtitles", tracks.subtitleId == track.id) {
