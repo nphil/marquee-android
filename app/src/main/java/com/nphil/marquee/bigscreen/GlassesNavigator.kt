@@ -39,6 +39,7 @@ import com.nphil.marquee.core.HomeRow
 import com.nphil.marquee.core.LibrarySection
 import com.nphil.marquee.core.MediaType
 import com.nphil.marquee.core.PlexHub
+import com.nphil.marquee.core.PlexServer
 import com.nphil.marquee.core.PlexItem
 import com.nphil.marquee.core.SectionQuery
 import com.nphil.marquee.core.SnapshotMode
@@ -227,6 +228,7 @@ internal class GlassesNavigator(
 	private val tvSubtitleStyle: (() -> Unit)? = null,
 	private val tvRequests: (() -> Unit)? = null,
 	private val tvAbout: ((PlexItem) -> Unit)? = null,
+	private val switchToTitle: ((PlexServer, PlexItem) -> Unit)? = null,
 ) {
 	val pages = mutableStateListOf<GlassesPage>()
 	var panel by mutableStateOf<GlassesPanel?>(null)
@@ -268,6 +270,8 @@ internal class GlassesNavigator(
 
 	val inPlayer: Boolean get() = link != null
 	val isScrubbing: Boolean get() = scrub != null
+
+	fun startWithTitle(item: PlexItem) { start(); open(item) }
 
 	/** Home for the signed-in server; nothing changes while it stays the same. */
 	fun start() {
@@ -572,20 +576,28 @@ internal class GlassesNavigator(
 		if (isTelevision && item != null) {
 			val series = item.type == MediaType.Show || item.type == MediaType.Season
 			if (series || item.type == MediaType.Movie || item.type == MediaType.Episode) {
-				val next = !(watchedChanges[item.ratingKey] ?: item.isWatched)
-				val state = if (next) "watched" else "unwatched"
-				val label = if (series) "Mark all episodes $state" else "Mark as $state"
-				options += GlassesOption("watched", label) {
-					fun apply() {
-						val previous = watchedChanges[item.ratingKey]
-						ItemActions(container.browse).setWatched(next, item) { value ->
-							if (value != next && previous == null) watchedChanges.remove(item.ratingKey)
-							else watchedChanges[item.ratingKey] = value
+				val previous = watchedChanges[item.ratingKey]
+				val partial = previous == null && if (series) {
+					val seen = item.viewedLeafCount ?: 0
+					seen > 0 && seen < (item.leafCount ?: 0)
+				} else item.viewOffset > 0
+				fun addMark(next: Boolean) {
+					val state = if (next) "watched" else "unwatched"
+					val label = if (series) "Mark all episodes $state" else "Mark as $state"
+					options += GlassesOption("mark.$state", label) {
+						fun apply() {
+							// Inverting a mark cannot restore a resume point or a partially watched season.
+							ItemActions(container.browse).setWatched(next, item, reversible = !partial) { value ->
+								if (value != next && previous == null) watchedChanges.remove(item.ratingKey)
+								else watchedChanges[item.ratingKey] = value
+							}
 						}
+						if (!series && !partial) apply() else panel = GlassesPanel("${item.title}: $label?", listOf(
+							GlassesOption("cancel", "Cancel") {}, GlassesOption("confirm", label, run = ::apply)))
 					}
-					if (!series) apply() else panel = GlassesPanel("${item.title}: $label?", listOf(
-						GlassesOption("cancel", "Cancel") {}, GlassesOption("confirm", label, run = ::apply)))
 				}
+				if (partial) { addMark(true); addMark(false) }
+				else addMark(!(previous ?: item.isWatched))
 			}
 			val guid = item.guid
 			if ((item.type == MediaType.Movie || item.type == MediaType.Show) && guid != null && Watchlist.catalogueKey(guid) != null && container.browse.source.accountToken != null)
@@ -1202,6 +1214,40 @@ internal class GlassesNavigator(
 		return page
 	}
 
+	private fun otherSources(): List<PlexServer> {
+		if (switchToTitle == null) return emptyList()
+		val state = container.session.state.value
+		return state.servers.filter { it.id != state.server?.id }
+	}
+
+	private fun otherLibraries(title: String, sources: List<PlexServer>, lookup: suspend (PlexServer, String?) -> List<PlexItem>) {
+		val page = GlassesPage(title)
+		pages += page
+		page.run(scope) {
+			kotlinx.coroutines.coroutineScope {
+				val found = mutableMapOf<String, GlassesRow>()
+				fun render() = page.setRows(sources.mapNotNull { found[it.id] }, loading = found.size < sources.size)
+				for (server in sources) launch {
+					val matches = try { lookup(server, container.session.state.value.addresses[server.id]) }
+					catch (e: CancellationException) { throw e }
+					catch (_: Exception) { null }
+					val tiles = matches.orEmpty().distinctBy { it.ratingKey }.map { hit ->
+						// Do not expose a server-local key to active-server art, hold actions or playback.
+						GlassesTile("${server.id}.${hit.ratingKey}", hit.title, hit.year?.toString(), GlassesArt.Symbol(R.drawable.ic_tv)) {
+							panel = GlassesPanel("Open ${hit.title} on ${server.name}?", listOf(
+								GlassesOption("cancel", "Cancel") {},
+								GlassesOption("open", "Switch to ${server.name}") { switchToTitle?.invoke(server, hit) }))
+						}
+					}
+					found[server.id] = GlassesRow(server.id, server.name, TileShape.Card, tiles.ifEmpty {
+						listOf(GlassesTile("back", if (matches == null) "Couldn’t check this server" else "No matching titles", "Back") { handle(GlassesInput.Back) })
+					})
+					render()
+				}
+			}
+		}
+	}
+
 	private fun watchlistCard(item: PlexItem) =
 		GlassesTile(item.ratingKey, item.title, item.year?.toString(), GlassesArt.Plex(item.thumb), captionItem = item) {
 			// Watchlist keys belong to the catalogue, not the local Plex server.
@@ -1215,6 +1261,10 @@ internal class GlassesNavigator(
 					val rows = arrayListOf<GlassesRow>()
 					if (copies.isNotEmpty()) rows += GlassesRow("copies", "In This Library", TileShape.Poster, copies.map { tile(it, false) })
 					val actions = buildList {
+						val sources = otherSources()
+						if (guid != null && sources.isNotEmpty()) add(GlassesTile("other", "Check other libraries") {
+							otherLibraries(item.title, sources) { server, address -> container.core.copiesOf(server, address, guid) }
+						})
 						if (guid != null && Watchlist.catalogueKey(guid) != null) add(GlassesTile("watchlist", "Manage Watchlist") { watchlistOptions(item.title, guid) })
 						if (copies.isEmpty() && tvRequests != null && container.seerr.enabled.value) add(GlassesTile("requests", "Open Requests", select = tvRequests))
 					}
@@ -1328,6 +1378,16 @@ internal class GlassesNavigator(
 						}
 						if (rows.size == before && ui.results.value != null && !ui.results.isLoading) rows += GlassesRow("empty", if (people) "No matching people" else "No matches", TileShape.Card, listOf(GlassesTile("clear", "Clear Search") { type("") }))
 					}
+					val sources = otherSources()
+					if (!people && sources.isNotEmpty()) rows += GlassesRow("other", null, TileShape.Card, listOf(
+						GlassesTile("search-other", "Search other servers", ui.query) {
+							model.keep(ui.query)
+							otherLibraries(ui.query, sources) { server, address ->
+								container.core.searchHubs(server, address, ui.query.trim(), 25)
+									.filter { ui.scope.hub == null || it.type == ui.scope.hub }
+									.flatMap { hub -> hub.items.filter { it.type in SEARCHABLE } }
+							}
+						}))
 				}
 				page.setRows(rows)
 			}

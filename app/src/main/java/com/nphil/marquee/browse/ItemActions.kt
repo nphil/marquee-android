@@ -44,17 +44,17 @@ class ItemActions(private val env: BrowseEnvironment) {
 	 * Marks [item] watched or unwatched. [show] puts a state on screen; Undo and a failure call it again with the state
 	 * to return to. A show or season passes its own rating key, and Plex marks every episode under it.
 	 */
-	fun setWatched(watched: Boolean, item: PlexItem, show: (Boolean) -> Unit) {
+	fun setWatched(watched: Boolean, item: PlexItem, reversible: Boolean = true, show: (Boolean) -> Unit) {
 		val scope = when (item.type) {
 			MediaType.Show -> Scope.Show
 			MediaType.Season -> Scope.Season
 			else -> Scope.Title
 		}
-		setWatched(watched, item.ratingKey, listOf(item.parentRatingKey, item.grandparentRatingKey), scope, show)
+		setWatched(watched, item.ratingKey, listOf(item.parentRatingKey, item.grandparentRatingKey), scope, reversible, show)
 	}
 
 	/** The same for the title with rating key [key], whose parents [touching] names. A screen that shows an episode and offers its show passes the show's key. */
-	fun setWatched(watched: Boolean, key: String, touching: List<String?>, scope: Scope, show: (Boolean) -> Unit) {
+	fun setWatched(watched: Boolean, key: String, touching: List<String?>, scope: Scope, reversible: Boolean = true, show: (Boolean) -> Unit) {
 		val touched = (listOf(key) + touching).filterNotNull().toSet()
 
 		fun send(watched: Boolean, onSuccess: () -> Unit, onFailure: () -> Unit) {
@@ -78,7 +78,7 @@ class ItemActions(private val env: BrowseEnvironment) {
 			onSuccess = {
 				env.toasts.show(
 					scope.marked(watched),
-					undo = {
+					undo = if (!reversible) null else ({
 						show(!watched)
 						send(
 							!watched,
@@ -88,7 +88,7 @@ class ItemActions(private val env: BrowseEnvironment) {
 								env.toasts.show("Couldn't undo")
 							},
 						)
-					},
+					}),
 				)
 			},
 			onFailure = {

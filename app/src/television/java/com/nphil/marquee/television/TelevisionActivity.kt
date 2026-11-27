@@ -35,6 +35,8 @@ import kotlinx.coroutines.launch
 
 class TelevisionActivity : ComponentActivity() {
     private var input: GlassesNavigator? = null
+    private data class SourceTitle(val profile: String, val serverId: String, val item: com.nphil.marquee.core.PlexItem)
+    private var sourceTitle: SourceTitle? = null
     private var playing: PlayerModel? = null
     private val trailerRemote = TvTrailerTransport()
     private var heldSelect = false
@@ -108,9 +110,24 @@ class TelevisionActivity : ComponentActivity() {
         var about by remember { mutableStateOf<com.nphil.marquee.core.PlexItem?>(null) }
         var request by remember { mutableStateOf<com.nphil.marquee.ui.player.PlayRequest.Title?>(null) }
         val nav = remember { GlassesNavigator(container, scope, openTitle = { id, title, start, file -> request = com.nphil.marquee.ui.player.PlayRequest.Title(id, fromStart = start, titleKey = title, recordingMediaID = file) },
-            tvSettings = { settings = true }, tvSubtitleStyle = { style = true }, tvRequests = { requests = true }, tvAbout = { about = it }) }
+            tvSettings = { settings = true }, tvSubtitleStyle = { style = true }, tvRequests = { requests = true }, tvAbout = { about = it },
+            switchToTitle = { source, item ->
+                val state = container.session.state.value
+                val granted = state.servers.firstOrNull { it.id == source.id }
+                if (granted != null && state.user?.uuid.orEmpty() == profile) {
+                    sourceTitle = SourceTitle(profile, granted.id, item)
+                    container.session.choose(granted)
+                }
+            }) }
         LaunchedEffect(requestsAvailable, hiddenShortcuts) { nav.updateTvMenu(hiddenShortcuts); if (!requestsAvailable) requests = false }
-        DisposableEffect(nav) { nav.start(); onDispose { nav.close() } }
+        DisposableEffect(nav) {
+            val target = sourceTitle
+            sourceTitle = null
+            if (target != null && target.profile == profile && target.serverId == container.session.state.value.server?.id)
+                nav.startWithTitle(target.item)
+            else nav.start()
+            onDispose { nav.close() }
+        }
         SideEffect { input = if (settings || style || requests || about != null) null else nav }
         DisposableEffect(Unit) { onDispose { input = null } }
         BackHandler(style || settings || requests || about != null || nav.panel != null || nav.pages.size > 1 || request != null) {

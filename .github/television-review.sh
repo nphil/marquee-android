@@ -407,6 +407,9 @@ fi
 key KEYCODE_DPAD_RIGHT
 key KEYCODE_MENU
 wait_for 'Play from Start'
+wait_for 'Mark as watched'
+wait_for 'Mark as unwatched'
+capture partial-watch-menu
 key KEYCODE_DPAD_CENTER
 wait_for 'Skip Intro'
 key KEYCODE_DPAD_LEFT
