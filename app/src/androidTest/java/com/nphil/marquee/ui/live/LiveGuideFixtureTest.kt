@@ -73,6 +73,33 @@ class LiveGuideFixtureTest {
 		val guide = runBlocking { withTimeout(10_000) { container.live.guide.filterNotNull().first() } }
 		var mode by mutableStateOf(ThemeMode.Dark)
 		val display = InstrumentationRegistry.getInstrumentation().uiAutomation
+		// Only the CI emulator's launcher error may be dismissed. An app error must remain visible.
+		fun screenshot(): Bitmap {
+			if (android.os.Build.HARDWARE in setOf("ranchu", "goldfish")) {
+				val info = display.serviceInfo
+				val original = info.flags
+				try {
+					info.flags = original or android.accessibilityservice.AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS or
+						android.accessibilityservice.AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS
+					display.serviceInfo = info
+					fun launcherError() = display.windows.asSequence().mapNotNull { it.root }.firstOrNull { root ->
+						root.packageName?.toString() == "android" && root.findAccessibilityNodeInfosByText("Pixel Launcher").any {
+							it.text?.toString()?.endsWith("responding") == true
+						}
+					}
+					launcherError()?.let { dialog ->
+						val close = dialog.findAccessibilityNodeInfosByViewId("android:id/aerr_close").single()
+						check(close.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK))
+						rule.waitUntil(5_000) { launcherError() == null }
+						display.waitForIdle(250, 5_000)
+					}
+				} finally {
+					info.flags = original
+					display.serviceInfo = info
+				}
+			}
+			return checkNotNull(display.takeScreenshot())
+		}
 		rule.setContent {
 			val palette = if (mode == ThemeMode.Dark) LucentTheme.DEFAULT_DARK else LucentTheme.DEFAULT_LIGHT
 			val theme = container.themes.resolve(palette, mode)
@@ -93,7 +120,7 @@ class LiveGuideFixtureTest {
 				view.invalidate()
 			}
 			val ready = committed.await(5, java.util.concurrent.TimeUnit.SECONDS)
-			val frame = checkNotNull(display.takeScreenshot())
+			val frame = screenshot()
 			val pixels = if (frame.config == Bitmap.Config.HARDWARE) frame.copy(Bitmap.Config.ARGB_8888, false) else frame
 			try {
 				pixels.saveScreenshot(name)
@@ -115,14 +142,14 @@ class LiveGuideFixtureTest {
 		rule.onNodeWithText("Rules").performClick()
 		rule.waitUntil(10_000) { rule.onAllNodesWithText("Wild Coasts").fetchSemanticsNodes().isNotEmpty() }
 		rule.waitForIdle()
-		display.takeScreenshot().saveScreenshot("recording-rules-light")
+		screenshot().saveScreenshot("recording-rules-light")
 		rule.onNodeWithText("Wild Coasts").performClick()
 		rule.onNodeWithText("Edit rule").performClick()
 		rule.waitUntil(10_000) { rule.onAllNodesWithText("New Episodes").fetchSemanticsNodes().isNotEmpty() }
 		rule.onNodeWithText("New Episodes").performClick()
 		rule.waitUntil(5_000) { rule.onAllNodesWithText("Records new episodes of Wild Coasts", substring = true).fetchSemanticsNodes().isNotEmpty() }
 		rule.waitForIdle()
-		display.takeScreenshot().saveScreenshot("recording-editor-new-episodes-light")
+		screenshot().saveScreenshot("recording-editor-new-episodes-light")
 		assertTrue(barMismatches.joinToString("; "), barMismatches.isEmpty())
 	}
 
