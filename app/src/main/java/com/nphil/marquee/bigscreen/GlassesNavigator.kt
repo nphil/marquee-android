@@ -21,6 +21,7 @@ import com.nphil.marquee.browse.ItemActions
 import com.nphil.marquee.browse.WatchlistModel
 import com.nphil.marquee.core.Watchlist
 import com.nphil.marquee.core.onWatchlist
+import com.nphil.marquee.core.releasedWatchlist
 import com.nphil.marquee.browse.LibraryOptions
 import com.nphil.marquee.browse.browsableLibraries
 import com.nphil.marquee.browse.SearchModel
@@ -67,6 +68,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import java.util.Locale
 import kotlin.math.abs
@@ -1095,9 +1098,12 @@ internal class GlassesNavigator(
 		val page = GlassesPage("Watchlist", FocusGrid.Style.Grid)
 		page.withModel<WatchlistModel>({ WatchlistModel(container.browse) }) { model ->
 			val choices = kotlinx.coroutines.flow.MutableStateFlow(TvWatchlistOrder())
+			val retryRelease = kotlinx.coroutines.flow.MutableStateFlow(0)
+			val revision = container.browse.changes.state.map { it.watchlistRevision }.distinctUntilChanged()
+			var membership: Pair<Int, Set<String>>? = null
 			page.onMove = { if (!choices.value.needsWholeList) page.focusedTile?.id?.let(model::nearEnd) }
-			choices.collectLatest { order ->
-				val tools = GlassesRow("watchlist.filters", "Sort & Filter", TileShape.Card, listOf(
+			combine(choices, revision, retryRelease) { order, rev, _ -> order to rev }.collectLatest { (order, rev) ->
+				val tools = GlassesRow("watchlist.filters", "Sort & Filter", TileShape.Card, listOfNotNull(
 					GlassesTile("kind", order.typeLabel) {
 						panel = GlassesPanel("Show", listOf(null, MediaType.Movie, MediaType.Show).map { type ->
 							val next = order.copy(type = type)
@@ -1112,9 +1118,26 @@ internal class GlassesNavigator(
 							}
 						})
 					},
+					if (tvSettings == null) null else GlassesTile("release", "Released only", if (order.releasedOnly) "On" else "Off") {
+						choices.value = order.copy(releasedOnly = !order.releasedOnly)
+					},
 				))
+				if (!order.releasedOnly) membership = null
+				else if (membership?.first != rev) {
+					page.setRows(listOf(tools), loading = true)
+					try {
+						val guids = container.browse.source.onAccount { token -> releasedWatchlist(token) } ?: error("Signed out")
+						membership = rev to guids
+					} catch (e: CancellationException) { throw e }
+					catch (_: Exception) {
+						val retry = GlassesTile("retry-release", "Retry") { retryRelease.value++ }
+						page.setRows(listOf(tools, GlassesRow("release-error", "Couldn’t load released titles", TileShape.Card, listOf(retry))))
+						return@collectLatest
+					}
+				}
+				val released = membership?.second.orEmpty()
 				model.state.collect { state ->
-					val rows = gridRows(order.apply(state.items).map(::watchlistCard), TileShape.Poster)
+					val rows = gridRows(order.apply(state.items, released).map(::watchlistCard), TileShape.Poster)
 					val retry = if (state.failure == null) emptyList() else listOf(GlassesRow("retry", "Couldn’t load the full Watchlist", TileShape.Card, listOf(GlassesTile("retry", "Retry") { model.load() })))
 					page.setRows(listOf(tools) + retry + rows, state.isLoading)
 					if (order.needsWholeList && !state.isLoading && state.failure == null) model.fillNextPage()

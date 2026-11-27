@@ -31,6 +31,14 @@ PY
 }
 key() { adb shell input keyevent "$1"; }
 capture() { adb exec-out screencap -p >"$out/$1.png"; }
+open_settings() {
+  key KEYCODE_DPAD_RIGHT
+  key KEYCODE_MENU
+  wait_for 'Play from Start'
+  key KEYCODE_DPAD_DOWN
+  key KEYCODE_DPAD_CENTER
+  wait_for 'Video & Playback'
+}
 journey() {
 case "$1" in
 watchlist)
@@ -41,6 +49,17 @@ key KEYCODE_DPAD_RIGHT
 key KEYCODE_DPAD_RIGHT
 key KEYCODE_DPAD_CENTER
 wait_for 'Sort & Filter'
+key KEYCODE_DPAD_RIGHT
+key KEYCODE_DPAD_RIGHT
+key KEYCODE_DPAD_CENTER
+wait_for 'Spring'
+wait_for 'On'
+! grep -Fq 'text="Wing It!"' "$out/window.xml" || exit 1
+capture watchlist-released
+key KEYCODE_DPAD_CENTER
+wait_for 'Wing It!'
+key KEYCODE_DPAD_LEFT
+key KEYCODE_DPAD_LEFT
 key KEYCODE_DPAD_CENTER
 wait_for 'Show'
 key KEYCODE_DPAD_DOWN
@@ -193,12 +212,7 @@ key KEYCODE_BACK
 key KEYCODE_BACK
 ;;
 settings)
-key KEYCODE_DPAD_RIGHT
-key KEYCODE_MENU
-wait_for 'Play from Start'
-key KEYCODE_DPAD_DOWN
-key KEYCODE_DPAD_CENTER
-wait_for 'Video & Playback'
+open_settings
 capture settings
 key KEYCODE_DPAD_DOWN
 key KEYCODE_DPAD_DOWN
@@ -226,6 +240,36 @@ key KEYCODE_BACK
 key KEYCODE_BACK
 wait_for 'Continue Watching'
 ! grep -Fq 'text="Movies"' "$out/window.xml" || { echo "Hidden movie shortcut still shown"; exit 1; }
+;;
+account-services)
+open_settings
+for _ in 1 2 3 4 5 6 7; do key KEYCODE_DPAD_DOWN; done
+key KEYCODE_DPAD_CENTER
+wait_for Alex
+wait_for Restricted
+capture profiles
+key KEYCODE_BACK
+key KEYCODE_DPAD_DOWN
+key KEYCODE_DPAD_CENTER
+wait_for 'Living Room'
+capture servers
+key KEYCODE_BACK
+key KEYCODE_DPAD_DOWN
+key KEYCODE_DPAD_CENTER
+wait_for Enabled
+capture seerr-setup
+key KEYCODE_BACK
+key KEYCODE_DPAD_DOWN
+key KEYCODE_DPAD_CENTER
+wait_for 'API Key'
+capture bazarr-setup
+key KEYCODE_BACK
+key KEYCODE_DPAD_DOWN
+key KEYCODE_DPAD_CENTER
+wait_for 'Test Connection'
+wait_for 'SpeechDock'
+! grep -Fq 'text="API Key"' "$out/window.xml" || exit 1
+capture speechdock-setup
 ;;
 credits)
 key KEYCODE_DPAD_RIGHT
@@ -256,7 +300,7 @@ esac
 
 # A missing trailer must not discard the independent credits, settings or library evidence.
 failed=0
-for name in watchlist series library people details playback settings credits; do
+for name in watchlist series library people details playback settings account-services credits; do
   set +e
   (
     set -e

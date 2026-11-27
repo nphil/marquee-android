@@ -108,6 +108,9 @@ suspend fun MarqueeCore.searchHubs(server: PlexServer, remembered: String?, quer
 		},
 	)
 
+internal suspend fun MarqueeCore.releasedWatchlist(token: String): Set<String> =
+	call("watchlist.released", buildJsonObject { put("token", token) })
+
 /** A page of the account's plex.tv Watchlist. With a [snapshot] the answer is recorded, or in saved mode replayed. */
 suspend fun MarqueeCore.watchlistPage(
 	token: String, start: Int, size: Int, snapshot: SnapshotSpec? = null, mode: SnapshotMode = SnapshotMode.Live,

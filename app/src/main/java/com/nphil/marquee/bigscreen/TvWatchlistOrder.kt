@@ -9,13 +9,15 @@ internal enum class TvWatchlistSort(val label: String, val first: String, val re
 	Release("Release date", "Newest first", "Oldest first"), Rating("Rating", "Highest first", "Lowest first"),
 }
 
-internal data class TvWatchlistOrder(val sort: TvWatchlistSort = TvWatchlistSort.Added, val reversed: Boolean = false, val type: MediaType? = null) {
+internal data class TvWatchlistOrder(val sort: TvWatchlistSort = TvWatchlistSort.Added, val reversed: Boolean = false, val type: MediaType? = null, val releasedOnly: Boolean = false) {
 	val typeLabel get() = when (type) { MediaType.Movie -> "Movies"; MediaType.Show -> "TV Shows"; else -> "All titles" }
 	val direction get() = if (reversed) sort.reverse else sort.first
-	val needsWholeList get() = sort != TvWatchlistSort.Added || reversed || type != null
+	val needsWholeList get() = sort != TvWatchlistSort.Added || reversed || type != null || releasedOnly
 
-	fun apply(items: List<PlexItem>): List<PlexItem> {
-		val rows = if (type == null) items else items.filter { it.type == type }
+	fun apply(items: List<PlexItem>, released: Set<String> = emptySet()): List<PlexItem> {
+		val rows = if (type == null && !releasedOnly) items else items.filter {
+			(type == null || it.type == type) && (!releasedOnly || it.guid in released)
+		}
 		return when (sort) {
 			TvWatchlistSort.Added -> if (reversed) rows.asReversed() else rows
 			TvWatchlistSort.Title -> {

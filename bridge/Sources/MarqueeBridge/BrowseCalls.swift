@@ -22,13 +22,14 @@ import Synchronization
 /// - `library.removeFromContinueWatching {ratingKeys}` takes the first one off the row.
 /// - `search.hubs {query, limit?}` answers hubs.
 /// - `watchlist.items {token, start, size?, snapshot?, mode?}` answers `{items, total}` from plex.tv.
+/// - `watchlist.released {token}` answers catalogue GUIDs after every released page succeeds.
 /// - `snapshot.remove {directory, profile?}` forgets one profile's saved answers, or every profile's.
 enum BrowseCalls {
     private static let names: Set<String> = [
         "home.load", "home.follow", "home.catalogue", "home.dismissRewatch", "home.restoreRewatch",
         "library.items", "library.alphabet", "library.genres", "library.collections", "library.recommended",
         "library.list", "library.refetch", "library.removeFromContinueWatching",
-        "search.hubs", "watchlist.items",
+        "search.hubs", "watchlist.items", "watchlist.released",
         "snapshot.remove",
     ]
 
@@ -103,6 +104,9 @@ enum BrowseCalls {
             let library = try services.library(decode(ServerCall.self, payload))
             let call = try decode(SearchCall.self, payload)
             return try Reply.ok(try await library.search(call.query, limit: call.limit ?? 10).map(HubWire.init))
+        case "watchlist.released":
+            let watchlist = try services.watchlist(decode(Account.self, payload).token)
+            return try Reply.ok(try await releasedWatchlist(watchlist))
         case "watchlist.items":
             let call = try decode(WatchlistPageCall.self, payload)
             var watchlist = try services.watchlist(call.token)
