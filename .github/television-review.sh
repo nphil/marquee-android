@@ -73,6 +73,14 @@ key KEYCODE_DPAD_DOWN
 key KEYCODE_DPAD_CENTER
 wait_for Resume
 capture details
+wait_for 'Trailer playing' content-desc
+key KEYCODE_DPAD_UP
+wait_for 'Trailer'
+key KEYCODE_MEDIA_PAUSE
+key KEYCODE_DPAD_RIGHT
+capture trailer-transport
+key KEYCODE_BACK
+wait_for 'Resume'
 wait_for 'About'
 key KEYCODE_DPAD_DOWN
 key KEYCODE_DPAD_CENTER
@@ -145,6 +153,11 @@ key KEYCODE_DPAD_DOWN
 key KEYCODE_DPAD_CENTER
 wait_for 'Hide'
 capture home-row-editor
+key KEYCODE_BACK
+key KEYCODE_DPAD_DOWN
+key KEYCODE_DPAD_CENTER
+wait_for 'Sort Value'
+capture under-posters
 key KEYCODE_BACK
 key KEYCODE_BACK
 wait_for 'Continue Watching'

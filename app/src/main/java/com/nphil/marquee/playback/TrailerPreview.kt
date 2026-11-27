@@ -39,7 +39,7 @@ internal val LocalPlaybackHttp = staticCompositionLocalOf<OkHttpClient?> { null 
  * it shows nothing. [visible] is true while the page is on top and the hero is on screen.
  */
 @Composable
-fun TrailerPreview(trailer: PlexItem, visible: Boolean, modifier: Modifier = Modifier) {
+fun TrailerPreview(trailer: PlexItem, visible: Boolean, modifier: Modifier = Modifier, onPicture: ((Player?) -> Unit)? = null) {
 	val context = LocalContext.current
 	val container = context.container
 	val coordinator = container.playback
@@ -86,6 +86,13 @@ fun TrailerPreview(trailer: PlexItem, visible: Boolean, modifier: Modifier = Mod
 	val wantsSound = active && verdict == TrailerAutoplay.Verdict.Play(muted = false)
 	val current = run
 	val soundOn = wantsSound && current?.focus?.held == true
+	if (onPicture != null) {
+		val picture = current?.takeIf { active && it.rendered && !it.stopped }?.player
+		DisposableEffect(onPicture, picture) {
+			onPicture(picture)
+			onDispose { onPicture(null) }
+		}
+	}
 
 	LaunchedEffect(active, trailer.ratingKey) {
 		if (!active) {

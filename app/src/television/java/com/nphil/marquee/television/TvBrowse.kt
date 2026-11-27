@@ -33,6 +33,9 @@ import androidx.compose.ui.unit.sp
 import com.nphil.marquee.bigscreen.*
 import com.nphil.marquee.ui.components.PlexArt
 import com.nphil.marquee.ui.theme.lucent
+import com.nphil.marquee.browse.posterLine
+import com.nphil.marquee.core.SectionQuery
+import com.nphil.marquee.ui.browse.LocalPosterLabels
 
 private val focusIn = tween<Float>(220, easing = LinearOutSlowInEasing)
 private val focusOut = tween<Float>(160, easing = LinearOutSlowInEasing)
@@ -67,7 +70,7 @@ private suspend fun LazyListState.reveal(index: Int) {
 }
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
-@Composable internal fun TvBrowse(page: GlassesPage, unobscured: Boolean) {
+@Composable internal fun TvBrowse(page: GlassesPage, unobscured: Boolean, trailerRemote: TvTrailerTransport) {
     // The grid is shared with the external-display client. Reading its stamp observes a move, not an animation frame.
     @Suppress("UNUSED_VARIABLE") val moved = page.stamp
     val focused = page.focusedTile
@@ -100,9 +103,15 @@ private suspend fun LazyListState.reveal(index: Int) {
         }
         page.trailer?.let { trailer ->
             if (unobscured && index == 0) key(trailer.ratingKey) {
-                com.nphil.marquee.playback.TrailerPreview(trailer, true, Modifier.fillMaxSize())
-                Box(Modifier.fillMaxSize().background(across).background(down))
+                com.nphil.marquee.playback.TrailerPreview(trailer, true, Modifier.fillMaxSize(), remember(trailerRemote) { trailerRemote::attach })
+                if (!trailerRemote.full) Box(Modifier.fillMaxSize().background(across).background(down))
             }
+        }
+        androidx.activity.compose.BackHandler(trailerRemote.full) { trailerRemote.collapse() }
+        if (trailerRemote.full) {
+            val name = page.trailer?.title?.trim()?.takeUnless { it.isEmpty() || it.equals("Trailer", ignoreCase = true) }
+            TvTrailerHud(trailerRemote, name ?: page.hero?.title ?: page.title)
+            return@BoxWithConstraints
         }
         val railWidth = maxWidth - TvSpace.edge * 2
         Column(Modifier.fillMaxSize().padding(horizontal = TvSpace.edge, vertical = TvSpace.inset), verticalArrangement = Arrangement.spacedBy(TvSpace.gap)) {
@@ -150,21 +159,25 @@ private suspend fun LazyListState.reveal(index: Int) {
         if (width * count + TvSpace.gap * (count - 1).coerceAtLeast(0) + 10.dp <= railWidth) {
             // A library grid already splits titles into screen-width rows; it needs only the outer vertical scroller.
             Row(Modifier.padding(padding), horizontalArrangement = Arrangement.spacedBy(TvSpace.gap)) {
-                row.tiles.forEachIndexed { c, t -> key(t.id) { TvTile(t, c == col, width, height) { page.focusOn(r,c); t.select() } } }
+                row.tiles.forEachIndexed { c, t -> key(t.id) { TvTile(t, c == col, width, height, row.shape == TileShape.Poster, page.posterSort) { page.focusOn(r,c); t.select() } } }
             }
         } else {
             val rail = rememberLazyListState()
             LaunchedEffect(col) { if (col in row.tiles.indices) rail.reveal(col) }
             LazyRow(state = rail, horizontalArrangement = Arrangement.spacedBy(TvSpace.gap), contentPadding = padding) {
-                itemsIndexed(row.tiles, key = { _, t -> t.id }) { c, t -> TvTile(t, c == col, width, height) { page.focusOn(r,c); t.select() } }
+                itemsIndexed(row.tiles, key = { _, t -> t.id }) { c, t -> TvTile(t, c == col, width, height, row.shape == TileShape.Poster, page.posterSort) { page.focusOn(r,c); t.select() } }
             }
         }
     }
 }
 
-@Composable private fun TvTile(t: GlassesTile, selected: Boolean, width: androidx.compose.ui.unit.Dp, height: androidx.compose.ui.unit.Dp, select: () -> Unit) {
+@Composable private fun TvTile(t: GlassesTile, selected: Boolean, width: androidx.compose.ui.unit.Dp, height: androidx.compose.ui.unit.Dp, poster: Boolean, sort: SectionQuery.Sort?, select: () -> Unit) {
+    val labels = if (poster && t.captionItem != null) LocalPosterLabels.current else null
     val scale = animateFloatAsState(if (selected) 1.05f else 1f, if (selected) focusIn else focusOut, label = "remote focus")
-    Column(Modifier.width(width).graphicsLayer { scaleX = scale.value; scaleY = scale.value }.semantics { this.selected = selected }.clickable(onClick = select)) {
+    Column(Modifier.width(width).graphicsLayer { scaleX = scale.value; scaleY = scale.value }.semantics {
+        this.selected = selected
+        if (labels?.showsTitle == false) contentDescription = t.title
+    }.clickable(onClick = select)) {
         Box(Modifier.fillMaxWidth().height(height).clip(TvSpace.card).then(if (selected) Modifier.border(2.dp, lucent.accent, TvSpace.card) else Modifier).background(if (selected) lucent.glassRaised else lucent.sheet), contentAlignment = Alignment.Center) {
             when (val picture = t.art) {
                 is GlassesArt.Plex -> PlexArt(picture.path, width, height)
@@ -173,7 +186,10 @@ private suspend fun LazyListState.reveal(index: Int) {
             }
             t.progress?.let { Box(Modifier.align(Alignment.BottomStart).fillMaxWidth(it).height(3.dp).background(lucent.accent)) }
         }
-        if (t.art !is GlassesArt.None) Text(t.title, Modifier.padding(top = 3.dp), color = if (selected) lucent.accentText else lucent.ink, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 14.sp)
+        if (t.art !is GlassesArt.None && labels?.showsTitle != false) Text(t.title, Modifier.padding(top = 3.dp), color = if (selected) lucent.accentText else lucent.ink, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 14.sp)
+        if (labels != null) remember(t, labels, sort) { t.captionItem?.posterLine(labels, sort, null) }?.let { line ->
+            Text(line.text, color = lucent.ink2, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 12.sp)
+        }
     }
 }
 

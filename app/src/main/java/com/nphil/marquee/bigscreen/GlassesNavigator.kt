@@ -93,6 +93,7 @@ internal class GlassesTile(
 	val progress: Float? = null,
 	/** The title behind the tile, for Play from Start among the options. */
 	val item: PlexItem? = null,
+	val captionItem: PlexItem? = item,
 	val select: () -> Unit,
 )
 
@@ -104,7 +105,7 @@ internal class GlassesHero(val title: String, val meta: String?, val overview: S
 
 /** One page of the big screen: rows of tiles and where the focus sits among them. */
 @Stable
-internal class GlassesPage(val title: String, style: FocusGrid.Style = FocusGrid.Style.Shelves) {
+internal class GlassesPage(val title: String, style: FocusGrid.Style = FocusGrid.Style.Shelves, val posterSort: SectionQuery.Sort? = null) {
 	var hero by mutableStateOf<GlassesHero?>(null)
 	var trailer by mutableStateOf<PlexItem?>(null)
 	var rows by mutableStateOf<List<GlassesRow>>(emptyList())
@@ -969,7 +970,7 @@ internal class GlassesNavigator(
 				val episodes = onServer { server, remembered -> children(server, remembered, item.ratingKey) }
 				val tiles = episodes.map { episode ->
 					val base = tile(episode, wide = true, inShow = true)
-					GlassesTile(base.id, listOfNotNull(episodeNumber(episode), episode.title).joinToString(" \u00B7 "), base.subtitle, base.art, base.progress, base.item, base.select)
+					GlassesTile(base.id, listOfNotNull(episodeNumber(episode), episode.title).joinToString(" \u00B7 "), base.subtitle, base.art, base.progress, base.item, select = base.select)
 				}
 				page.setRows(listOf(GlassesRow("episodes", "Episodes", TileShape.Landscape, tiles)))
 				val next = episodes.indexOfFirst { it.viewCount == 0 }
@@ -1108,7 +1109,7 @@ internal class GlassesNavigator(
 	}
 
 	private fun watchlistCard(item: PlexItem) =
-		GlassesTile(item.ratingKey, item.title, item.year?.toString(), GlassesArt.Plex(item.thumb)) {
+		GlassesTile(item.ratingKey, item.title, item.year?.toString(), GlassesArt.Plex(item.thumb), captionItem = item) {
 			// Watchlist keys belong to the catalogue, not the local Plex server.
 			val page = GlassesPage(item.title)
 			page.hero = hero(item)
@@ -1131,10 +1132,10 @@ internal class GlassesNavigator(
 		}
 
 	private fun libraryGrid(section: LibrarySection, query: SectionQuery = SectionQuery(type = section.itemType)): GlassesPage =
-		pagedGrid(section.title, { at -> onServer { s, r -> libraryItems(s, r, section.key, query, at, LIBRARY_PAGE) } })
+		pagedGrid(section.title, { at -> onServer { s, r -> libraryItems(s, r, section.key, query, at, LIBRARY_PAGE) } }, sort = query.sort)
 
-	private fun pagedGrid(title: String, fetch: suspend (Int) -> Page<PlexItem>, card: (PlexItem) -> GlassesTile = { tile(it, false) }): GlassesPage {
-		val page = GlassesPage(title, FocusGrid.Style.Grid)
+	private fun pagedGrid(title: String, fetch: suspend (Int) -> Page<PlexItem>, card: (PlexItem) -> GlassesTile = { tile(it, false) }, sort: SectionQuery.Sort? = null): GlassesPage {
+		val page = GlassesPage(title, FocusGrid.Style.Grid, posterSort = sort)
 		val items = ArrayList<GlassesTile>()
 		var total = Int.MAX_VALUE
 		var loading = false

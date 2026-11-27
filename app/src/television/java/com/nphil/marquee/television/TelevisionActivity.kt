@@ -36,6 +36,7 @@ import kotlinx.coroutines.launch
 class TelevisionActivity : ComponentActivity() {
     private var input: GlassesNavigator? = null
     private var playing: PlayerModel? = null
+    private val trailerRemote = TvTrailerTransport()
     private var heldSelect = false
     private val localAccess = registerForActivityResult(ActivityResultContracts.RequestPermission()) { if (it) container.session.retry() }
 
@@ -51,7 +52,11 @@ class TelevisionActivity : ComponentActivity() {
             MarqueeTheme(theme, container.typography) {
                 ProvidePlexImages(container) {
                     Box(Modifier.fillMaxSize().background(lucent.canvas), contentAlignment = Alignment.Center) {
-                        if (state.phase == AppSession.Phase.Ready) key(state.server?.id, state.user?.uuid) { Library() }
+                        if (state.phase == AppSession.Phase.Ready) key(state.server?.id, state.user?.uuid) {
+                            val profile = state.user?.uuid.orEmpty()
+                            val labels by remember(profile) { container.settings.posterLabels(profile) }.collectAsStateWithLifecycle(com.nphil.marquee.data.PosterLabels())
+                            CompositionLocalProvider(com.nphil.marquee.ui.browse.LocalPosterLabels provides labels) { Library() }
+                        }
                         else Account(state)
                         if (state.phase == AppSession.Phase.Ready && playing == null)
                             com.nphil.marquee.ui.components.ToastHost(container.browse.toasts, Modifier.align(Alignment.BottomCenter))
@@ -125,7 +130,7 @@ class TelevisionActivity : ComponentActivity() {
             val layout = BigScreenLayout.of(DisplayKind.Tv, pixels.width, pixels.height)
             val density = (pixels.height / 1080f).coerceAtLeast(0.5f)
             CompositionLocalProvider(LocalDensity provides Density(density, LocalDensity.current.fontScale)) { GlassesPlayerView(model, nav, container, layout) }
-        } } ?: if (!settings && !style && !requests && about == null) { nav.page?.let { page -> key(page) { TvBrowse(page, nav.panel == null) } } } else Unit
+        } } ?: if (!settings && !style && !requests && about == null) { nav.page?.let { page -> key(page) { TvBrowse(page, nav.panel == null, trailerRemote) } } } else Unit
         when {
             about != null -> about?.let { TvAbout(it) }
             style -> TvSubtitleStyle(container)
@@ -136,6 +141,7 @@ class TelevisionActivity : ComponentActivity() {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (trailerRemote.key(event)) return true
         val nav = input ?: return super.dispatchKeyEvent(event)
         val action = when (event.keyCode) {
             KeyEvent.KEYCODE_DPAD_UP -> GlassesInput.Move(FocusMove.Up)
