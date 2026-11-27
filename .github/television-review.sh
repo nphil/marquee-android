@@ -81,9 +81,20 @@ key KEYCODE_BACK
 key KEYCODE_DPAD_LEFT
 key KEYCODE_DPAD_CENTER
 wait_for A
-key KEYCODE_DPAD_RIGHT
 key KEYCODE_DPAD_CENTER
+wait_for 'Search in'
+for i in 1 2 3; do key KEYCODE_DPAD_DOWN; done
+key KEYCODE_DPAD_CENTER
+wait_for 'People'
+for i in 1 2 3 4; do key KEYCODE_DPAD_DOWN; done
+key KEYCODE_DPAD_CENTER
+key KEYCODE_DPAD_DOWN
+wait_for 'Halina Reijn'
 capture search
+key KEYCODE_DPAD_CENTER
+wait_for 'Sintel'
+capture person-library
+key KEYCODE_BACK
 key KEYCODE_BACK
 wait_for 'Continue Watching'
 key KEYCODE_DPAD_DOWN

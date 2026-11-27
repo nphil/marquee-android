@@ -31,6 +31,7 @@ import com.nphil.marquee.browse.encodeLibraryView
 import com.nphil.marquee.data.TvShortcut
 import com.nphil.marquee.core.logoPath
 import com.nphil.marquee.core.PlexDirectory
+import com.nphil.marquee.core.searchHubs
 import com.nphil.marquee.core.libraryLetters
 import com.nphil.marquee.core.HomeLoad
 import com.nphil.marquee.core.HomeRow
@@ -929,21 +930,20 @@ internal class GlassesNavigator(
 			rows += GlassesRow("more", "More", TileShape.Card, details)
 			page.setRows(rows.toList())
 		}
-		val cast = title.roles.distinctBy { it.id }.mapNotNull { role ->
-			val id = role.id ?: return@mapNotNull null
-			GlassesTile("person.$id", role.name, role.character, GlassesArt.Plex(role.thumb)) {
-				val person = GlassesPage(role.name, FocusGrid.Style.Grid)
-				pages += person
-				person.run(scope) {
-					try {
-						val credits = onServer { s, r -> titlesOf(s, r, id) }
-						person.setRows(gridRows(credits.map { tile(it, false) }, TileShape.Poster))
-					} catch (e: Exception) { failure(person, e) }
-				}
-			}
+		val cast = title.roles.distinctBy { it.id ?: it.name }.map { role ->
+			GlassesTile("actor.${role.id ?: role.name}", role.name, role.character, GlassesArt.Plex(role.thumb)) { openPerson(role.name, role.id, "actor") }
 		}
 		if (cast.isNotEmpty()) {
 			rows += GlassesRow("cast", "Cast", TileShape.Poster, cast)
+			page.setRows(rows.toList())
+		}
+		val crew = buildList {
+			for ((role, names) in listOf("director" to title.directors, "writer" to title.writers)) {
+				for (name in names.distinct().filter(String::isNotBlank)) add(GlassesTile("$role.$name", name, if (role == "director") "Director" else "Writer") { openPerson(name, null, role) })
+			}
+		}
+		if (crew.isNotEmpty()) {
+			rows += GlassesRow("crew", "Crew", TileShape.Card, crew)
 			page.setRows(rows.toList())
 		}
 		val bonus = optionalShelf("extras") { onServer { s, r -> extras(s, r, title.ratingKey) } }
@@ -1181,34 +1181,64 @@ internal class GlassesNavigator(
 		}
 	}
 
+	private fun openPerson(name: String, localId: String?, role: String? = null) {
+		val person = GlassesPage(name, FocusGrid.Style.Grid)
+		pages += person
+		person.run(scope) {
+			try {
+				val credits = onServer { server, address ->
+					val id = localId ?: role?.let { searchHubs(server, address, name, 100).uniqueCredit(name, it) }
+					id?.let { titlesOf(server, address, it) }
+				}
+				if (credits.isNullOrEmpty()) person.failed(if (credits == null) "No unique credit for $name on this server" else "No library titles for $name")
+				else person.setRows(gridRows(credits.map(::libraryTile), TileShape.Poster))
+			} catch (e: Exception) { failure(person, e) }
+		}
+	}
+
 	private fun searchPage(): GlassesPage {
 		val page = GlassesPage("Search")
 		val place = container.browse.source.place.value ?: return page.apply { failed("Select a server to search") }
 		page.withModel<SearchModel>({ SearchModel(container.browse, place) }) { model ->
+			val peopleOnly = kotlinx.coroutines.flow.MutableStateFlow(false)
 			fun type(text: String) { page.query = text; model.type(text) }
 			val keyboard = GlassesKeyboard.rows.mapIndexed { index, row ->
 				GlassesRow("keys.$index", null, TileShape.Key, row.map { key ->
 					GlassesTile("key.${key.label}", key.label) { type(GlassesKeyboard.type(key, page.query)) }
 				})
 			}
-			model.ui.collect { ui ->
+			combine(model.ui, peopleOnly) { ui, people -> ui to people }.collect { (ui, people) ->
 				val rows = keyboard.toMutableList()
 				if (ui.query.isBlank() && ui.recents.isNotEmpty()) {
 					rows += GlassesRow("recent", "Recent Searches", TileShape.Card,
 						ui.recents.map { text -> GlassesTile("recent.$text", text) { type(text) } } + GlassesTile("clear", "Clear Recent Searches") { model.clearRecents() })
 				} else if (ui.query.isNotBlank()) {
-					rows += GlassesRow("scope", "Search in", TileShape.Card, listOf(GlassesTile("scope", ui.scope.label) {
-						panel = GlassesPanel("Search in", SearchScope.entries.map { s ->
-							GlassesOption(s.name, s.label, checked = s == ui.scope) { model.choose(s) }
-						}, ui.scope.ordinal)
+					rows += GlassesRow("scope", "Search in", TileShape.Card, listOf(GlassesTile("scope", if (people) "People" else ui.scope.label) {
+						val choices = buildList {
+							for (s in SearchScope.entries) add(GlassesOption(s.name, s.label, checked = !people && s == ui.scope) { peopleOnly.value = false; model.choose(s) })
+							if (isTelevision) add(GlassesOption("people", "People", checked = people) { peopleOnly.value = true })
+						}
+						panel = GlassesPanel("Search in", choices, choices.indexOfFirst { it.checked }.coerceAtLeast(0))
 					}))
 					if (ui.results.failure != null) rows += GlassesRow("retry", "Couldn’t search this server", TileShape.Card, listOf(GlassesTile("retry", "Retry", select = model::retry)))
-					else if (ui.groups.isEmpty() && ui.results.value != null && !ui.results.isLoading) rows += GlassesRow("empty", "No matching titles", TileShape.Card, listOf(GlassesTile("clear", "Clear Search") { type("") }))
-					else ui.groups.mapNotNullTo(rows) { hub ->
-						val items = hub.items.filter { it.type in SEARCHABLE }
-						if (items.isEmpty()) null else GlassesRow("hub.${hub.identifier}", hub.title, TileShape.Poster, items.map { item ->
-							tile(item, false, beforeOpen = { model.keep(ui.query) })
-						})
+					else {
+						val before = rows.size
+						if (!people) ui.groups.mapNotNullTo(rows) { hub ->
+							val items = hub.items.filter { it.type in SEARCHABLE }
+							if (items.isEmpty()) null else GlassesRow("hub.${hub.identifier}", hub.title, TileShape.Poster, items.map { item ->
+								tile(item, false, beforeOpen = { model.keep(ui.query) })
+							})
+						}
+						if (isTelevision && (people || ui.scope == SearchScope.All)) {
+							val persons = LinkedHashMap<String, GlassesTile>()
+							for (entry in ui.results.value.orEmpty().peopleIn()) {
+								val id = entry.id ?: continue
+								val name = entry.personName ?: continue
+								persons.getOrPut(id) { GlassesTile("person.$id", name, art = GlassesArt.Plex(entry.thumb)) { model.keep(ui.query); openPerson(name, id) } }
+							}
+							if (persons.isNotEmpty()) rows += GlassesRow("people", "People", TileShape.Poster, persons.values.toList())
+						}
+						if (rows.size == before && ui.results.value != null && !ui.results.isLoading) rows += GlassesRow("empty", if (people) "No matching people" else "No matches", TileShape.Card, listOf(GlassesTile("clear", "Clear Search") { type("") }))
 					}
 				}
 				page.setRows(rows)

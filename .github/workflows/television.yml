@@ -80,6 +80,9 @@ jobs:
           ffmpeg -v error -f lavfi -i testsrc2=size=320x180:rate=24 -t 146 -c:v libx264 -preset ultrafast -pix_fmt yuv420p -movflags +faststart -f mp4 "$clip"
           metadata=core/UITests/FakePlex/pms/library/metadata
           mkdir -p "$metadata/108"
+          people=core/UITests/FakePlex/pms/library/people
+          mkdir -p "$people/3001"
+          cp core/UITests/FakePlex/pms/library/sections/1/all@actor=3001.json "$people/3001/media.json"
           # A transparent wordmark for the offline title; no network artwork in the review.
           ffmpeg -v error -f lavfi -i "color=c=black@0:s=540x108,format=rgba,drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf:text=Sintel:fontsize=86:fontcolor=white:x=0:y=(h-th)/2" -frames:v 1 -threads 1 core/UITests/FakePlex/art/sintel-review-logo.png
           jq '.MediaContainer.Metadata[0].Image = [{"type":"clearLogo","url":"/art/sintel-review-logo.png"}]' "$metadata/108.json" > "$RUNNER_TEMP/title.json"
