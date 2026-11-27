@@ -550,6 +550,13 @@ internal fun GlassesPlayerView(model: PlayerModel, navigator: GlassesNavigator, 
 	var chrome by remember { mutableStateOf(true) }
 	val stamp = navigator.chromeStamp
 	val tv = navigator.link?.takeIf { navigator.isTelevision }
+	LaunchedEffect(model, tv?.sleepTimer?.deadline) {
+		val timer = tv?.sleepTimer ?: return@LaunchedEffect
+		if (!timer.set) return@LaunchedEffect
+		delay(timer.remainingMs())
+		model.pause()
+		timer.cancel()
+	}
 	LaunchedEffect(stamp, tv, navigator.panel != null, model.menusOpen, model.isPlaying) {
 		chrome = true
 		if (navigator.panel != null || model.menusOpen || !model.isPlaying) return@LaunchedEffect

@@ -34,6 +34,7 @@ private enum class Destination(val label: String, val group: String, val summary
     Playback("Video & Playback", "Personalize", "Trailers, streaming quality, picture enhancement and autoplay."),
     Subtitles("Subtitle Style", "Personalize", "Change how subtitles look over the picture."),
     Libraries("Libraries", "Personalize", "Choose which libraries appear in Marquee."),
+    HomeRows("Home Rows", "Personalize", "Choose which shelves appear on Home and their order."),
     Profiles("Profiles", "Plex Home", "Switch who is watching, with their own settings and Watchlist."),
     Servers("Servers", "Plex Home", "Choose a server owned by or shared with this account."),
     Seerr("Seerr", "Integrations", "Connect Seerr to browse and request titles not in the library."),
@@ -91,6 +92,7 @@ private enum class Destination(val label: String, val group: String, val summary
                 Destination.Playback -> VideoPlaybackPage(padding)
                 Destination.Subtitles -> Unit // Has its own preview layout.
                 Destination.Libraries -> FavoriteLibrariesPage(container.session, padding)
+                Destination.HomeRows -> TvHomeRows(container)
                 Destination.Profiles -> ProfilesPage(container.session, padding)
                 Destination.Servers -> ServerList(container.session, false, close, padding)
                 Destination.Seerr -> SeerrPage(padding)

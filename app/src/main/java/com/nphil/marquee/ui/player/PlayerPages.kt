@@ -40,7 +40,7 @@ import com.nphil.marquee.ui.theme.lucent
 private val SPEEDS = listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
 
 /** The lengths of the sleep timer on the menu, in minutes. */
-private val SLEEP_MINUTES = listOf(15, 30, 60)
+internal val SLEEP_MINUTES = listOf(15, 30, 60)
 
 private val CHAPTER_ART_WIDTH = 96.dp
 private val CHAPTER_ART_HEIGHT = 54.dp

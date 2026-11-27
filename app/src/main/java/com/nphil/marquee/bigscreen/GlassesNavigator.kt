@@ -11,6 +11,25 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.nphil.marquee.AppContainer
 import com.nphil.marquee.R
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.ViewModelStoreOwner
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
+import com.nphil.marquee.browse.ItemActions
+import com.nphil.marquee.browse.WatchlistModel
+import com.nphil.marquee.core.Watchlist
+import com.nphil.marquee.core.onWatchlist
+import com.nphil.marquee.browse.LibraryOptions
+import com.nphil.marquee.browse.browsableLibraries
+import com.nphil.marquee.browse.SearchModel
+import com.nphil.marquee.browse.SearchScope
+import com.nphil.marquee.browse.StoredLibraryMemory
+import com.nphil.marquee.browse.decodeLibraryView
+import com.nphil.marquee.browse.encodeLibraryView
+import com.nphil.marquee.core.PlexDirectory
+import com.nphil.marquee.core.libraryLetters
 import com.nphil.marquee.core.HomeLoad
 import com.nphil.marquee.core.HomeRow
 import com.nphil.marquee.core.LibrarySection
@@ -24,7 +43,6 @@ import com.nphil.marquee.core.children
 import com.nphil.marquee.core.homeRows
 import com.nphil.marquee.core.item as itemOf
 import com.nphil.marquee.core.libraryPage as libraryItems
-import com.nphil.marquee.core.searchHubs
 import com.nphil.marquee.core.extras
 import com.nphil.marquee.core.related
 import com.nphil.marquee.core.titlesOf
@@ -32,7 +50,6 @@ import com.nphil.marquee.ui.detail.trailerOf
 import com.nphil.marquee.core.libraryRecommended
 import com.nphil.marquee.core.libraryCollections
 import com.nphil.marquee.core.libraryGenres
-import com.nphil.marquee.core.watchlistPage
 import com.nphil.marquee.core.copiesOf
 import com.nphil.marquee.core.versionLabel
 import com.nphil.marquee.core.Page
@@ -44,6 +61,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.util.Locale
@@ -157,6 +176,7 @@ internal enum class HudRow { Tracks, Timeline, Sections }
 @Stable
 internal class GlassesPlayerLink(val model: PlayerModel, val close: () -> Unit) {
 	var aspect by mutableStateOf(com.nphil.marquee.ui.player.PlayerAspect.Fit)
+	val sleepTimer = com.nphil.marquee.ui.player.SleepTimer()
 	var row by mutableStateOf(HudRow.Timeline)
 	var track by mutableIntStateOf(0)
 	var section by mutableIntStateOf(0)
@@ -222,6 +242,7 @@ internal class GlassesNavigator(
 	private var coast: Job? = null
 	private var toastJob: Job? = null
 	private val sectionsCache = ArrayList<LibrarySection>()
+	private val watchedChanges = HashMap<String, Boolean>()
 
 	val page: GlassesPage? get() = pages.lastOrNull()
 
@@ -525,6 +546,10 @@ internal class GlassesNavigator(
 	private fun openOptions(tile: GlassesTile?) {
 		val options = ArrayList<GlassesOption>()
 		val item = tile?.item
+		val toasts = container.browse.toasts
+		if (isTelevision) toasts.current.value?.takeIf { it.undo != null }?.let { shown ->
+			options += GlassesOption("undo", "Undo: ${shown.message}") { if (toasts.current.value?.id == shown.id) toasts.undo() }
+		}
 		if (item != null && item.viewOffset > 0 && (item.type == MediaType.Movie || item.type == MediaType.Episode)) {
 			options += GlassesOption("start", "Play from Start") { play(item, fromStart = true) }
 		}
@@ -535,8 +560,42 @@ internal class GlassesNavigator(
 				options += GlassesOption("show", "Go to Show") { pages += showPage(PlexItem(key, title = item.grandparentTitle.orEmpty(), type = MediaType.Show)) }
 			}
 		}
+		if (isTelevision && item != null) {
+			val series = item.type == MediaType.Show || item.type == MediaType.Season
+			if (series || item.type == MediaType.Movie || item.type == MediaType.Episode) {
+				val next = !(watchedChanges[item.ratingKey] ?: item.isWatched)
+				val state = if (next) "watched" else "unwatched"
+				val label = if (series) "Mark all episodes $state" else "Mark as $state"
+				options += GlassesOption("watched", label) {
+					fun apply() { ItemActions(container.browse).setWatched(next, item) { watchedChanges[item.ratingKey] = it } }
+					if (!series) apply() else panel = GlassesPanel("${item.title}: $label?", listOf(
+						GlassesOption("cancel", "Cancel") {}, GlassesOption("confirm", label, run = ::apply)))
+				}
+			}
+			val guid = item.guid
+			if ((item.type == MediaType.Movie || item.type == MediaType.Show) && guid != null && Watchlist.catalogueKey(guid) != null && container.browse.source.accountToken != null)
+				options += GlassesOption("watchlist", "Watchlist…") { watchlistOptions(item.title, guid) }
+		}
 		if (pages.size > 1) options += GlassesOption("home", "Home") { goHome() }
 		panel = GlassesPanel(tile?.title ?: page?.title ?: "Options", options)
+	}
+
+	private fun watchlistOptions(title: String, guid: String) {
+		val loading = GlassesPanel("Checking Watchlist…", listOf(GlassesOption("cancel", "Cancel") {}))
+		panel = loading
+		scope.launch {
+			try {
+				val listed = container.browse.source.onAccount { token -> onWatchlist(token, guid) } ?: error("Signed out")
+				if (panel !== loading) return@launch
+				val label = if (listed) "Remove from Watchlist" else "Add to Watchlist"
+				panel = GlassesPanel(title, listOf(GlassesOption("change", label) {
+					ItemActions(container.browse).setWatchlisted(!listed, guid) { on ->
+						if (on) container.browse.changes.showInWatchlist(guid) else container.browse.changes.hideFromWatchlist(guid)
+					}
+				}, GlassesOption("cancel", "Cancel") {}))
+			} catch (e: CancellationException) { throw e }
+			catch (e: Exception) { if (panel === loading) panel = GlassesPanel("Couldn’t check Watchlist", listOf(GlassesOption("retry", "Retry") { watchlistOptions(title, guid) }, GlassesOption("cancel", "Cancel") {})) }
+		}
 	}
 
 	/** Subtitles and audio, then the rest of what the player offers. */
@@ -568,11 +627,14 @@ internal class GlassesNavigator(
 			}
 		}
 		if (isTelevision) {
+			fun parent(id: String): GlassesPanel {
+				val items = if (section == null) options else options.filter { it.section == section }
+				return GlassesPanel(section ?: model.title, items, items.indexOfFirst { it.id == id }.coerceAtLeast(0))
+			}
 			fun submenu(label: String, choices: () -> List<GlassesOption>) {
-				val index = options.size
 				options += GlassesOption(label, label, "Playback") {
 					val rows = choices()
-					panel = GlassesPanel(label, rows, rows.indexOfFirst { it.checked }.coerceAtLeast(0), GlassesPanel(model.title, options, index))
+					panel = GlassesPanel(label, rows, rows.indexOfFirst { it.checked }.coerceAtLeast(0), parent(label))
 				}
 			}
 			if (!model.isOffline) submenu("Quality") {
@@ -588,11 +650,20 @@ internal class GlassesNavigator(
 			link?.let { player -> submenu("Aspect Ratio") {
 				com.nphil.marquee.ui.player.PlayerAspect.entries.map { a -> GlassesOption(a.name, a.label, checked = player.aspect == a) { player.aspect = a } }
 			} }
-			options += GlassesOption("sleep.end", "Stop at End", "Playback", model.sleepAtEnd) { model.sleepAtEnd = !model.sleepAtEnd }
+			link?.sleepTimer?.let { timer -> submenu("Sleep Timer") {
+				buildList {
+					add(GlassesOption("off", "Off", checked = !timer.set && !model.sleepAtEnd) { timer.cancel(); model.sleepAtEnd = false })
+					add(GlassesOption("end", "Stop at End", checked = model.sleepAtEnd) { timer.cancel(); model.sleepAtEnd = true })
+					for (minutes in com.nphil.marquee.ui.player.SLEEP_MINUTES) {
+						val active = timer.set && timer.minutes == minutes
+						val label = if (active) "$minutes minutes · ${timer.minutesLeft()} min left" else "$minutes minutes"
+						add(GlassesOption("minutes.$minutes", label, checked = active) { model.sleepAtEnd = false; timer.start(minutes) })
+					}
+				}
+			} }
 			val chapters = model.plan?.chapters.orEmpty()
 			if (chapters.isNotEmpty()) {
-				val index = options.size
-				options += GlassesOption("chapters", "Chapters", "Playback") { openChapters(model, GlassesPanel(model.title, options, index)) }
+				options += GlassesOption("chapters", "Chapters", "Playback") { openChapters(model, parent("chapters")) }
 			}
 		}
 		if (model.next != null) options += GlassesOption("next", "Next Episode", "Playback") { model.userActed(); model.playNext() }
@@ -693,17 +764,26 @@ internal class GlassesNavigator(
 				val sections = onServer { server, remembered -> sections(server, remembered) }
 				sectionsCache.clear()
 				sectionsCache += sections
-				val hidden = container.browse.preferences.hiddenLibraries(profile()).first()
-				val menu = menuRow(sections, hidden)
-				page.setRows(listOf(menu), loading = true)
-				val layout = container.browse.preferences.homeLayout(profile()).first()
-				val dismissed = container.browse.preferences.rewatchDismissals(profile())
-				val load = HomeLoad(layout.shownLibraries.toList(), hidden.toList(), dismissed, SnapshotMode.Live, null, false)
-				val reply = onServer { server, remembered -> homeRows(server, remembered, load) }
-				val shown = layout.arrange(reply.rows).filter { it.shown && it.hub.items.isNotEmpty() }
-				page.setRows(listOf(page.rows.first()) + shown.map(::row))
-				// Continue Watching is what most visits are for.
-				if (shown.firstOrNull()?.continueWatching == true) page.focusOn(1, 0)
+				val prefs = container.browse.preferences
+				val profile = profile()
+				combine(prefs.homeLayout(profile), prefs.hiddenLibraries(profile)) { layout, hidden -> layout to hidden }
+					.collectLatest { (layout, hidden) ->
+						val first = page.rows.isEmpty()
+						if (first) page.setRows(listOf(menuRow(sections, hidden)), loading = true)
+						val dismissed = prefs.rewatchDismissals(profile)
+						val load = HomeLoad(layout.shownLibraries.toList(), hidden.toList(), dismissed, SnapshotMode.Live, null, false)
+						val reply = onServer { server, remembered -> homeRows(server, remembered, load) }
+						val shown = layout.arrange(reply.rows).filter { it.shown && it.hub.items.isNotEmpty() }
+						val rowId = page.rows.getOrNull(page.focus.row)?.id
+						val tileId = page.focusedTile?.id
+						val rows = listOf(menuRow(sections, hidden)) + shown.map(::row)
+						page.setRows(rows)
+						if (first && shown.firstOrNull()?.continueWatching == true) page.focusOn(1, 0)
+						else {
+							val r = rows.indexOfFirst { it.id == rowId }
+							if (r >= 0) page.focusOn(r, rows[r].tiles.indexOfFirst { it.id == tileId }.coerceAtLeast(0))
+						}
+					}
 			} catch (e: Exception) {
 				failure(page, e)
 			}
@@ -715,8 +795,7 @@ internal class GlassesNavigator(
 	private fun menuRow(sections: List<LibrarySection>, hidden: Set<String>): GlassesRow {
 		val tiles = ArrayList<GlassesTile>()
 		tiles += GlassesTile("search", "Search", art = GlassesArt.Symbol(R.drawable.ic_search)) { pages += searchPage() }
-		for (section in sections) {
-			if (!section.isBrowsable || section.libraryId in hidden) continue
+		for (section in browsableLibraries(sections, hidden)) {
 			tiles += GlassesTile("library.${section.key}", section.title, art = GlassesArt.Symbol(if (section.type == "movie") R.drawable.ic_movie else R.drawable.ic_tv)) {
 				pages += if (isTelevision) libraryLanding(section) else libraryGrid(section)
 			}
@@ -732,7 +811,7 @@ internal class GlassesNavigator(
 		return GlassesRow(row.id, row.title, if (wide) TileShape.Landscape else TileShape.Poster, row.hub.items.map { tile(it, wide) })
 	}
 
-	private fun tile(item: PlexItem, wide: Boolean, inShow: Boolean = false): GlassesTile {
+	private fun tile(item: PlexItem, wide: Boolean, inShow: Boolean = false, beforeOpen: (() -> Unit)? = null): GlassesTile {
 		val episode = item.type == MediaType.Episode
 		val title = if (episode && !inShow) item.grandparentTitle ?: item.title else item.title
 		val subtitle = when {
@@ -746,7 +825,7 @@ internal class GlassesNavigator(
 			else -> item.thumb ?: item.parentThumb
 		}
 		val progress = if (item.duration > 0 && item.viewOffset > 0) (item.viewOffset.toFloat() / item.duration).coerceIn(0f, 1f) else null
-		return GlassesTile(item.ratingKey, title, subtitle, GlassesArt.Plex(path), progress, item) { open(item) }
+		return GlassesTile(item.ratingKey, title, subtitle, GlassesArt.Plex(path), progress, item) { beforeOpen?.invoke(); open(item) }
 	}
 
 	private fun hero(item: PlexItem): GlassesHero {
@@ -824,6 +903,23 @@ internal class GlassesNavigator(
 					GlassesOption("file.${file.id}", file.versionLabel) { play(title, mediaID = file.id) }
 				})
 			}
+			val guid = title.guid
+			if (guid != null && Watchlist.catalogueKey(guid) != null && (title.type == MediaType.Movie || title.type == MediaType.Show)) {
+				details += GlassesTile("watchlist", "Watchlist…") { watchlistOptions(title.title, guid) }
+				details += GlassesTile("copies", "Library Copies") {
+					val copiesPage = GlassesPage("Library Copies")
+					pages += copiesPage
+					copiesPage.run(scope) {
+						try {
+							val copies = onServer { s, r -> copiesOf(s, r, guid) }.ifEmpty { listOf(title) }
+							copiesPage.setRows(gridRows(copies.map { copy ->
+								GlassesTile(copy.ratingKey, copy.librarySectionTitle ?: copy.title,
+									listOfNotNull(copy.title, copy.media.firstOrNull()?.versionLabel).joinToString(" · "), GlassesArt.Plex(copy.thumb)) { open(copy) }
+							}, TileShape.Poster))
+						} catch (e: Exception) { failure(copiesPage, e) }
+					}
+				}
+			}
 			rows += GlassesRow("more", "More", TileShape.Card, details)
 			page.setRows(rows.toList())
 		}
@@ -898,44 +994,97 @@ internal class GlassesNavigator(
 	private fun gridRows(tiles: List<GlassesTile>, shape: TileShape): List<GlassesRow> =
 		(center?.columns ?: 6).let { columns -> tiles.chunked(columns).mapIndexed { index, slice -> GlassesRow("grid.${index * columns}", null, shape, slice) } }
 
-	private fun libraryLanding(section: LibrarySection): GlassesPage {
-		val page = GlassesPage(section.title)
-		val base = SectionQuery(type = section.itemType)
-		val filters = listOf(
-			GlassesTile("all", "All Titles") { pages += libraryGrid(section) },
-			GlassesTile("unwatched", "Unwatched") { pages += libraryGrid(section, base.copy(unwatchedOnly = true)) },
-			GlassesTile("collections", "Collections") { pages += pagedGrid("Collections", { at ->
-				onServer { s, r -> libraryCollections(s, r, section.key, at, LIBRARY_PAGE) }
-			}) },
-			GlassesTile("sort", "Sort by…") {
-				val choices = SectionQuery.Sort.entries.flatMap { sort ->
-					val orders = sort.orders
-					(if (orders == null) listOf(false) else listOf(false, true)).map { reverse ->
-						val order = if (reverse) orders?.reversed else orders?.first
-						GlassesOption("${sort.raw}.$reverse", listOfNotNull(sort.title, order).joinToString(" · ")) {
-							pages += libraryGrid(section, base.copy(sort = sort, reversed = reverse))
-						}
-					}
-				}
-				panel = GlassesPanel("Sort by", choices)
-			},
-		)
-		val rows = mutableListOf(GlassesRow("library.views", "Browse Library", TileShape.Card, filters))
-		page.setRows(rows.toList())
+	private fun libraryLettersPage(section: LibrarySection, query: SectionQuery): GlassesPage {
+		val page = GlassesPage("Jump to Letter")
 		page.run(scope) {
-			rows += optionalShelf("recommended") { onServer { s, r -> libraryRecommended(s, r, section.key) } }.mapNotNull(::resultRow)
-			page.setRows(rows.toList())
-			val genres = optionalShelf("genres") { onServer { s, r -> libraryGenres(s, r, section.key) } }
-			if (genres.isNotEmpty()) page.setRows(rows + GlassesRow("genres", "Genres", TileShape.Card, genres.map { genre ->
-				GlassesTile("genre.${genre.key}", genre.title) { pages += libraryGrid(section, base.copy(genre = genre)) }
-			}))
+			try {
+				val letters = onServer { s, r -> libraryLetters(s, r, section.key, query) }
+				page.setRows(gridRows(letters.filter { it.count > 0 && it.offset >= 0 }.map { letter ->
+					GlassesTile("letter.${letter.offset}", letter.character, letter.count.toString()) {
+						pages += pagedGrid("${section.title} · ${letter.character}", { at ->
+							val size = minOf(LIBRARY_PAGE, letter.count - at)
+							val batch = onServer { s, r -> libraryItems(s, r, section.key, query, letter.offset + at, size) }
+							Page(if (batch.items.size <= size) batch.items else batch.items.subList(0, size), minOf(letter.count, (batch.total - letter.offset).coerceAtLeast(0)))
+						})
+					}
+				}, TileShape.Card))
+			} catch (e: Exception) { failure(page, e) }
 		}
 		return page
 	}
 
-	private fun watchlist(): GlassesPage = pagedGrid("Watchlist", { at ->
-		container.browse.source.onAccount { token -> watchlistPage(token, at, LIBRARY_PAGE) } ?: error("No Plex account")
-	}) { item ->
+	private fun libraryLanding(section: LibrarySection): GlassesPage {
+		val page = GlassesPage(section.title)
+		val memory = StoredLibraryMemory(container.browse.preferences, profile())
+		page.run(scope) {
+			try {
+				var view = decodeLibraryView(memory.view(section.key))
+				var genres: List<PlexDirectory> = emptyList()
+				var recommended: List<GlassesRow> = emptyList()
+				fun render() {
+					val order = view.sort.orders?.let { if (view.reversed) it.reversed else it.first }
+					val orderLabel = listOfNotNull(view.sort.title, order).joinToString(" · ")
+					val query = view.query(section.itemType)
+					fun apply(next: LibraryOptions) {
+						if (next == view) return
+						view = next
+						container.scope.launch { memory.keepView(section.key, encodeLibraryView(next)) }
+						render()
+					}
+					val controls = buildList {
+						add(GlassesTile("titles", "Browse Titles", listOfNotNull(view.genre?.title, "Unwatched".takeIf { view.unwatchedOnly }, orderLabel).joinToString(" · ")) { pages += libraryGrid(section, query) })
+						add(GlassesTile("unwatched", "Unwatched Only", if (view.unwatchedOnly) "On" else "Off") { apply(view.copy(unwatchedOnly = !view.unwatchedOnly)) })
+						if (genres.isNotEmpty() || view.genre != null) add(GlassesTile("genre", "Genre", view.genre?.title ?: "All Genres") {
+							val choices = listOf(GlassesOption("all", "All Genres", checked = view.genre == null) { apply(view.copy(genre = null)) }) +
+								genres.map { g -> GlassesOption(g.key, g.title, checked = g.key == view.genre?.key) { apply(view.copy(genre = g)) } }
+							panel = GlassesPanel("Genre", choices, choices.indexOfFirst { it.checked }.coerceAtLeast(0))
+						})
+						add(GlassesTile("sort", "Sort by", orderLabel) {
+							val choices = SectionQuery.Sort.entries.flatMap { sort ->
+								val orders = sort.orders
+								(if (orders == null) listOf(false) else listOf(false, true)).map { reverse ->
+									val direction = if (reverse) orders?.reversed else orders?.first
+									GlassesOption("${sort.raw}.$reverse", listOfNotNull(sort.title, direction).joinToString(" · "), checked = sort == view.sort && reverse == view.reversed) {
+										apply(view.copy(sort = sort, reversed = reverse))
+									}
+								}
+							}
+							panel = GlassesPanel("Sort by", choices, choices.indexOfFirst { it.checked }.coerceAtLeast(0))
+						})
+						if (query.isAlphabetical) add(GlassesTile("az", "Jump to Letter") { pages += libraryLettersPage(section, query) })
+						add(GlassesTile("collections", "Collections") { pages += pagedGrid("Collections", { at ->
+							onServer { s, r -> libraryCollections(s, r, section.key, at, LIBRARY_PAGE) }
+						}) })
+						if (view.isFiltered) add(GlassesTile("clear", "Clear Filters") { apply(view.cleared()) })
+					}
+					val focused = page.focusedTile?.id.takeIf { page.focus.row == 0 }
+					page.setRows(listOf(GlassesRow("library.views", "Browse Library", TileShape.Card, controls)) + recommended)
+					if (focused != null) page.focusOn(0, controls.indexOfFirst { it.id == focused }.coerceAtLeast(0))
+				}
+				render()
+				genres = optionalShelf("genres") { onServer { s, r -> libraryGenres(s, r, section.key) } }
+				render()
+				recommended = optionalShelf("recommended") { onServer { s, r -> libraryRecommended(s, r, section.key) } }.mapNotNull(::resultRow)
+				render()
+			} catch (e: Exception) { failure(page, e) }
+		}
+		return page
+	}
+
+	private fun watchlist(): GlassesPage {
+		val page = GlassesPage("Watchlist", FocusGrid.Style.Grid)
+		page.withModel<WatchlistModel>({ WatchlistModel(container.browse) }) { model ->
+			page.onMove = { page.focusedTile?.id?.let(model::nearEnd) }
+			model.state.collect { state ->
+				val rows = gridRows(state.items.map(::watchlistCard), TileShape.Poster)
+				if (rows.isEmpty() && state.failure != null) page.setRows(listOf(GlassesRow("retry", "Couldn’t load Watchlist", TileShape.Card, listOf(GlassesTile("retry", "Retry") { model.load() }))))
+				else page.setRows(rows, state.isLoading)
+			}
+		}
+		return page
+	}
+
+	private fun watchlistCard(item: PlexItem) =
 		GlassesTile(item.ratingKey, item.title, item.year?.toString(), GlassesArt.Plex(item.thumb)) {
 			// Watchlist keys belong to the catalogue, not the local Plex server.
 			val page = GlassesPage(item.title)
@@ -945,16 +1094,18 @@ internal class GlassesNavigator(
 				try {
 					val guid = item.guid
 					val copies = if (guid == null) emptyList() else onServer { s, r -> copiesOf(s, r, guid) }
-					if (copies.isEmpty()) {
-						page.setRows(emptyList())
-						page.failed("Not in this server’s libraries")
-					} else {
-						page.setRows(listOf(GlassesRow("copies", "In This Library", TileShape.Poster, copies.map { tile(it, false) })))
+					val rows = arrayListOf<GlassesRow>()
+					if (copies.isNotEmpty()) rows += GlassesRow("copies", "In This Library", TileShape.Poster, copies.map { tile(it, false) })
+					val actions = buildList {
+						if (guid != null && Watchlist.catalogueKey(guid) != null) add(GlassesTile("watchlist", "Manage Watchlist") { watchlistOptions(item.title, guid) })
+						if (copies.isEmpty() && tvRequests != null && container.seerr.enabled.value) add(GlassesTile("requests", "Open Requests", select = tvRequests))
 					}
+					if (actions.isNotEmpty()) rows += GlassesRow("actions", if (copies.isEmpty()) "Not in this server’s libraries" else "More", TileShape.Card, actions)
+					page.setRows(rows)
+					if (rows.isEmpty()) page.failed("Not in this server’s libraries")
 				} catch (e: Exception) { failure(page, e) }
 			}
 		}
-	}
 
 	private fun libraryGrid(section: LibrarySection, query: SectionQuery = SectionQuery(type = section.itemType)): GlassesPage =
 		pagedGrid(section.title, { at -> onServer { s, r -> libraryItems(s, r, section.key, query, at, LIBRARY_PAGE) } })
@@ -985,43 +1136,52 @@ internal class GlassesNavigator(
 		return page
 	}
 
-	/** The letter board, then what the libraries found for what was typed. */
+	private inline fun <reified M : ViewModel> GlassesPage.withModel(noinline create: () -> M, crossinline display: suspend (M) -> Unit) {
+		run(scope) {
+			val owner = object : ViewModelStoreOwner { override val viewModelStore = ViewModelStore() }
+			try {
+				val model = ViewModelProvider.create(owner, viewModelFactory { initializer { create() } })[M::class]
+				display(model)
+			} finally { owner.viewModelStore.clear() }
+		}
+	}
+
 	private fun searchPage(): GlassesPage {
 		val page = GlassesPage("Search")
-		page.setRows(keyboardRows(page, emptyList()))
+		val place = container.browse.source.place.value ?: return page.apply { failed("Select a server to search") }
+		page.withModel<SearchModel>({ SearchModel(container.browse, place) }) { model ->
+			fun type(text: String) { page.query = text; model.type(text) }
+			val keyboard = GlassesKeyboard.rows.mapIndexed { index, row ->
+				GlassesRow("keys.$index", null, TileShape.Key, row.map { key ->
+					GlassesTile("key.${key.label}", key.label) { type(GlassesKeyboard.type(key, page.query)) }
+				})
+			}
+			model.ui.collect { ui ->
+				val rows = keyboard.toMutableList()
+				if (ui.query.isBlank() && ui.recents.isNotEmpty()) {
+					rows += GlassesRow("recent", "Recent Searches", TileShape.Card,
+						ui.recents.map { text -> GlassesTile("recent.$text", text) { type(text) } } + GlassesTile("clear", "Clear Recent Searches") { model.clearRecents() })
+				} else if (ui.query.isNotBlank()) {
+					rows += GlassesRow("scope", "Search in", TileShape.Card, listOf(GlassesTile("scope", ui.scope.label) {
+						panel = GlassesPanel("Search in", SearchScope.entries.map { s ->
+							GlassesOption(s.name, s.label, checked = s == ui.scope) { model.choose(s) }
+						}, ui.scope.ordinal)
+					}))
+					if (ui.results.failure != null) rows += GlassesRow("retry", "Couldn’t search this server", TileShape.Card, listOf(GlassesTile("retry", "Retry", select = model::retry)))
+					else if (ui.groups.isEmpty() && ui.results.value != null && !ui.results.isLoading) rows += GlassesRow("empty", "No matching titles", TileShape.Card, listOf(GlassesTile("clear", "Clear Search") { type("") }))
+					else ui.groups.mapNotNullTo(rows) { hub ->
+						val items = hub.items.filter { it.type in SEARCHABLE }
+						if (items.isEmpty()) null else GlassesRow("hub.${hub.identifier}", hub.title, TileShape.Poster, items.map { item ->
+							tile(item, false, beforeOpen = { model.keep(ui.query) })
+						})
+					}
+				}
+				page.setRows(rows)
+			}
+		}
 		return page
 	}
 
-	private fun keyboardRows(page: GlassesPage, results: List<GlassesRow>): List<GlassesRow> {
-		val keys = GlassesKeyboard.rows.mapIndexed { index, row ->
-			GlassesRow("keys.$index", null, TileShape.Key, row.map { key ->
-				GlassesTile("key.${key.label}", key.label) {
-					page.query = GlassesKeyboard.type(key, page.query)
-					search(page)
-				}
-			})
-		}
-		return keys + results
-	}
-
-	private fun search(page: GlassesPage) {
-		val query = page.query.trim()
-		page.run(scope) {
-			if (query.isEmpty()) {
-				page.setRows(keyboardRows(page, emptyList()))
-				return@run
-			}
-			delay(SEARCH_DELAY_MS)
-			try {
-				val hubs = onServer { server, remembered -> searchHubs(server, remembered, query, SEARCH_LIMIT) }
-				page.setRows(keyboardRows(page, hubs.mapNotNull(::resultRow)))
-			} catch (e: Exception) {
-				if (e is CancellationException) throw e
-				page.setRows(keyboardRows(page, emptyList()))
-				show("Search failed")
-			}
-		}
-	}
 
 	private fun resultRow(hub: PlexHub): GlassesRow? {
 		val items = hub.items.filter { it.type in SEARCHABLE }
@@ -1031,8 +1191,6 @@ internal class GlassesNavigator(
 
 	private companion object {
 		const val LIBRARY_PAGE = 60
-		const val SEARCH_DELAY_MS = 500L
-		const val SEARCH_LIMIT = 12
 		const val TOAST_MS = 2_500L
 		val SEARCHABLE = setOf(MediaType.Movie, MediaType.Show, MediaType.Episode, MediaType.Season, MediaType.Collection)
 	}

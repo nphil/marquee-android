@@ -10,7 +10,7 @@ adb shell am start -W -n "$pkg/com.nphil.marquee.television.TelevisionActivity"
 wait_for() {
   local word=$1 attribute=${2:-text}
   for (( i=0; i<20; i++ )); do
-    if adb shell uiautomator dump /sdcard/window.xml >/dev/null && adb shell cat /sdcard/window.xml >"$out/window.xml" && grep -Fq "$attribute=\"$word\"" "$out/window.xml"; then return 0; fi
+    if adb shell uiautomator dump /sdcard/window.xml >/dev/null && adb shell cat /sdcard/window.xml >"$out/window.xml" && python3 -c 'import sys, xml.etree.ElementTree as E; raise SystemExit(not any(n.get(sys.argv[2]) == sys.argv[3] for n in E.parse(sys.argv[1]).iter("node")))' "$out/window.xml" "$attribute" "$word"; then return 0; fi
     sleep 1
   done
   echo "Did not reach $word" >&2; return 1
@@ -21,6 +21,21 @@ trap 'if [ "$?" -ne 0 ]; then capture failure; adb logcat -b crash -d >"$out/cra
 wait_for 'Continue Watching'
 capture home
 key KEYCODE_DPAD_UP
+key KEYCODE_DPAD_RIGHT
+key KEYCODE_DPAD_CENTER
+wait_for 'Browse Library'
+key KEYCODE_DPAD_RIGHT
+key KEYCODE_DPAD_CENTER
+wait_for On
+key KEYCODE_BACK
+key KEYCODE_DPAD_CENTER
+wait_for 'Unwatched · Title · A–Z'
+capture library-filter-restored
+key KEYCODE_DPAD_RIGHT
+key KEYCODE_DPAD_CENTER
+wait_for Off
+key KEYCODE_BACK
+key KEYCODE_DPAD_LEFT
 key KEYCODE_DPAD_CENTER
 wait_for A
 key KEYCODE_DPAD_RIGHT
@@ -97,6 +112,12 @@ key KEYCODE_DPAD_DOWN
 key KEYCODE_DPAD_DOWN
 key KEYCODE_DPAD_CENTER
 wait_for 'Apple TV'
+key KEYCODE_BACK
+key KEYCODE_DPAD_DOWN
+key KEYCODE_DPAD_DOWN
+key KEYCODE_DPAD_CENTER
+wait_for 'Hide'
+capture home-row-editor
 key KEYCODE_BACK
 key KEYCODE_BACK
 wait_for 'Continue Watching'

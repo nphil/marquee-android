@@ -53,6 +53,8 @@ class TelevisionActivity : ComponentActivity() {
                     Box(Modifier.fillMaxSize().background(lucent.canvas), contentAlignment = Alignment.Center) {
                         if (state.phase == AppSession.Phase.Ready) key(state.server?.id, state.user?.uuid) { Library() }
                         else Account(state)
+                        if (state.phase == AppSession.Phase.Ready && playing == null)
+                            com.nphil.marquee.ui.components.ToastHost(container.browse.toasts, Modifier.align(Alignment.BottomCenter))
                     }
                 }
             }
