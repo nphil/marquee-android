@@ -240,8 +240,9 @@ internal val LocalTvWatchedChanges = staticCompositionLocalOf<Map<String, Boolea
         itemsIndexed(panel.options, key = { _, o -> o.id }) { i, o ->
             Text((if (o.checked) "✓  " else "") + o.title, Modifier.fillMaxWidth().clip(TvSpace.card)
                 .background(if (i == panel.focus) lucent.glassRaised else lucent.sheet)
+                .semantics { selected = i == panel.focus }
                 .clickable { panel.focus = i; nav.handle(GlassesInput.Select) }
-                .semantics { focused = i == panel.focus }.padding(TvSpace.inset), color = if (i == panel.focus) lucent.accentText else lucent.ink)
+                .padding(TvSpace.inset), color = if (i == panel.focus) lucent.accentText else lucent.ink)
         }
     }
 }

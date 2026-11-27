@@ -14,16 +14,18 @@ wait_for() {
 import sys, xml.etree.ElementTree as E
 root = E.parse(sys.argv[1])
 attr, word = sys.argv[2:]
+labels = word.split("|")
 def labelled(n):
-    return any(c.get("text") == word or c.get("content-desc") == word for c in n.iter("node"))
-if attr in ("selected-text", "select-right"):
+    return any(c.get("text") in labels or c.get("content-desc") in labels for c in n.iter("node"))
+if attr in ("selected-text", "select-right", "select-down"):
     # Android projects Compose's selected button as a checked, clickable parent of its label.
     found = any((n.get("selected") == "true" or (n.get("checkable") == "true" and n.get("checked") == "true"))
                 and labelled(n) for n in root.iter("node"))
 elif attr in ("focused-text", "focus-down", "focus-right"):
     found = any(n.get("focused") == "true" and labelled(n) for n in root.iter("node"))
 elif attr in ("focused-editor", "editor-down"):
-    found = any(n.get("focused") == "true" and n.get("class") == "android.widget.EditText" for n in root.iter("node"))
+    found = any(n.get("focused") == "true" and n.get("class") == "android.widget.EditText" and labelled(n)
+                for n in root.iter("node"))
 elif attr == "text-prefix":
     found = any(n.get("text", "").startswith(word) for n in root.iter("node"))
 else:
@@ -32,12 +34,12 @@ raise SystemExit(not found)
 PY
     then return 0; fi
     case $attribute in
-      focus-down|editor-down) key KEYCODE_DPAD_DOWN ;;
+      focus-down|editor-down|select-down) key KEYCODE_DPAD_DOWN ;;
       focus-right|select-right) key KEYCODE_DPAD_RIGHT ;;
     esac
     sleep 1
   done
-  echo "Did not reach $word" >&2; return 1
+  echo "Did not reach $word ($attribute)" >&2; return 1
 }
 key() { adb shell input keyevent "$1"; }
 capture() { adb exec-out screencap -p >"$out/$1.png"; }
@@ -327,7 +329,7 @@ if grep -Fq 'text="Requests"' "$out/window.xml"; then exit 1; fi
 ;;
 seerr-requests)
 seerr_address
-key KEYCODE_DPAD_DOWN
+wait_for 'Plex Profile|API Key' focus-down
 wait_for 'API Key' focus-right
 key KEYCODE_DPAD_CENTER
 wait_for 'API Key' editor-down
@@ -341,7 +343,7 @@ key KEYCODE_BACK
 wait_for 'Continue Watching'
 home_shortcut Requests
 wait_for 'My Requests'
-wait_for Search editor-down
+wait_for 'Search movies and series' editor-down
 adb shell input text Wing
 hide_ime
 wait_for 'Wing It!, 2023' focus-down
@@ -352,7 +354,7 @@ key KEYCODE_DPAD_CENTER
 wait_for 'Request Wing It!'
 wait_for Request focus-down
 key KEYCODE_DPAD_CENTER
-wait_for Pending
+wait_for 'Pending · Requested by Jordan'
 capture seerr-pending
 key KEYCODE_BACK
 key KEYCODE_BACK
@@ -387,10 +389,10 @@ wait_for 'Subtitles' content-desc
 key KEYCODE_DPAD_UP
 key KEYCODE_DPAD_CENTER
 wait_for 'Subtitle Style'
-wait_for 'Find Subtitles' focus-down
+wait_for 'Find Subtitles' select-down
 key KEYCODE_DPAD_CENTER
 wait_for 'English subtitles on'
-wait_for 'From Plex' text-prefix
+grep -Fq 'text="From Plex' "$out/window.xml"
 capture subtitle-replacement
 ;;
 credits)
