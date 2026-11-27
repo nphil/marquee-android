@@ -27,7 +27,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.SemanticsPropertyKey
 import androidx.compose.ui.semantics.SemanticsPropertyReceiver
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.Player
@@ -90,12 +89,14 @@ internal fun TrailerPicture(player: Player, rendered: Boolean, stopped: Boolean,
 		},
 		update = { view ->
 			view.player = player
+			// Android accessibility traverses PlayerView itself, not the Compose wrapper around it.
+			val description = if (visible) "Trailer preview" else null
+			if (view.contentDescription != description) view.contentDescription = description
 			host.crop(crop)
 		},
 		modifier = modifier
 			.graphicsLayer { this.alpha = alpha }
 			.semantics {
-				contentDescription = "Trailer playing"
 				pictureState = { PictureState(stage.bars, visible) }
 			},
 		onRelease = { view ->
