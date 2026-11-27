@@ -153,17 +153,24 @@ internal class GlassesPanel(val title: String, val options: List<GlassesOption>,
 /** The player a [GlassesNavigator] drives: the phone's player, with the way to close it. */
 @Stable
 internal class GlassesPlayerLink(val model: PlayerModel, val close: () -> Unit) {
-	var watchFocus by mutableStateOf<Offer.SkipIntro?>(null)
+	var aspect by mutableStateOf(com.nphil.marquee.ui.player.PlayerAspect.Fit)
+	var visibleOffer: Offer? = null
+	var watchFocus by mutableStateOf<Offer?>(null, androidx.compose.runtime.referentialEqualityPolicy())
 		private set
 
-	fun chooseWatch(intro: Offer.SkipIntro, watch: Boolean) {
-		watchFocus = if (watch) intro else null
-		if (watch) model.offers.watchIntro()
+	fun chooseWatch(offer: Offer, watch: Boolean) {
+		watchFocus = if (watch) offer else null
+		if (watch) when (offer) { is Offer.SkipIntro -> model.offers.watchIntro(); else -> model.userActed() }
 	}
 
-	fun finishIntro(watch: Boolean) {
+	fun finishOffer(watch: Boolean) {
 		watchFocus = null
-		if (watch) model.offers.dismissIntro() else model.offers.skipIntro()
+		when (model.offers.offer) {
+			is Offer.SkipIntro -> if (watch) model.offers.dismissIntro() else model.offers.skipIntro()
+			is Offer.SkipCredits -> if (watch) model.offers.watchCredits() else model.offers.skipCredits()
+			is Offer.UpNext -> if (watch) model.offers.watchCredits() else { model.userActed(); model.playNext() }
+			null -> Unit
+		}
 	}
 }
 
@@ -179,6 +186,7 @@ internal class GlassesNavigator(
 	private val openTitle: (String, String, Boolean) -> Unit = requireNotNull(center)::play,
 	private val tvSettings: (() -> Unit)? = null,
 	private val tvSubtitleStyle: (() -> Unit)? = null,
+	private val tvRequests: (() -> Unit)? = null,
 ) {
 	val pages = mutableStateListOf<GlassesPage>()
 	var panel by mutableStateOf<GlassesPanel?>(null)
@@ -367,14 +375,15 @@ internal class GlassesNavigator(
 
 	private fun inPlayer(input: GlassesInput, player: GlassesPlayerLink): HapticCue? {
 		val model = player.model
-		val intro = model.offers.offer as? Offer.SkipIntro
+		val offer = model.offers.offer
 		if (isTelevision && scrubTime != null) return televisionScrub(input, model)
-		if (tvSettings != null && intro != null) {
+		if (isTelevision && offer != null && player.visibleOffer === offer) {
 			when (input) {
-				GlassesInput.Select -> { player.finishIntro(player.watchFocus === intro); return HapticCue.Select }
-				GlassesInput.Back -> { player.finishIntro(watch = true); return HapticCue.Back }
+				GlassesInput.Select -> { player.finishOffer(player.watchFocus === offer); return HapticCue.Select }
+				GlassesInput.Back -> { player.finishOffer(watch = true); return HapticCue.Back }
 				is GlassesInput.Move -> if (input.move.isHorizontal) {
-					player.chooseWatch(intro, input.move == FocusMove.Left)
+					player.chooseWatch(offer, input.move == FocusMove.Left)
+					chromeStamp++
 					return HapticCue.FocusStep
 				}
 				else -> Unit
@@ -382,8 +391,9 @@ internal class GlassesNavigator(
 		}
 		if (isTelevision && input is GlassesInput.Move && input.move.isHorizontal) return televisionScrub(input, model)
 		return when (input) {
-			GlassesInput.Select -> when (model.offers.offer) {
+			GlassesInput.Select -> when (model.offers.offer.takeUnless { isTelevision }) {
 				is Offer.SkipIntro -> { model.offers.skipIntro(); HapticCue.Select }
+				is Offer.SkipCredits -> { model.offers.skipCredits(); HapticCue.Select }
 				is Offer.UpNext -> { model.userActed(); model.playNext(); HapticCue.Select }
 				null -> {
 					model.userActed()
@@ -466,6 +476,7 @@ internal class GlassesNavigator(
 				model.pickSubtitle(SubtitlePick.track(track.id))
 			}
 		}
+		if (isTelevision && model.canFindSubtitles && !model.subtitleFinder.busy) options += GlassesOption("subtitle.find", "Find Subtitles", "Subtitles") { model.findSubtitles() }
 		for (track in lists.audio) {
 			options += GlassesOption("audio.${track.id}", track.label, "Audio", tracks.audioId == track.id) { model.pickAudio(track.id) }
 		}
@@ -495,6 +506,10 @@ internal class GlassesNavigator(
 					GlassesOption("speed.$it", com.nphil.marquee.ui.player.speedTitle(v), checked = model.speed == v) { model.setSpeed(v) }
 				}
 			}
+			link?.let { player -> submenu("Aspect Ratio") {
+				com.nphil.marquee.ui.player.PlayerAspect.entries.map { a -> GlassesOption(a.name, a.label, checked = player.aspect == a) { player.aspect = a } }
+			} }
+			options += GlassesOption("sleep.end", "Stop at End", "Playback", model.sleepAtEnd) { model.sleepAtEnd = !model.sleepAtEnd }
 			val chapters = model.plan?.chapters.orEmpty()
 			if (chapters.isNotEmpty()) submenu("Chapters") {
 				val active = com.nphil.marquee.ui.player.chapterAt(chapters, model.movieMs())
@@ -579,6 +594,18 @@ internal class GlassesNavigator(
 		page.failed("Could not load this page")
 	}
 
+	fun refreshRequestsEntry() {
+		val home = pages.firstOrNull() ?: return
+		val menu = home.rows.firstOrNull()?.takeIf { it.id == "menu" } ?: return
+		val enabled = tvRequests != null && container.seerr.enabled.value
+		if (menu.tiles.any { it.id == "requests" } == enabled) return
+		val focused = home.focusedTile?.id.takeIf { home.focus.row == 0 }
+		val tiles = menu.tiles.filterNot { it.id == "requests" }.toMutableList()
+		if (enabled) tiles.add(tiles.indexOfFirst { it.id == "settings" }.takeIf { it >= 0 } ?: tiles.size, GlassesTile("requests", "Requests", select = requireNotNull(tvRequests)))
+		home.setRows(listOf(GlassesRow(menu.id, menu.title, menu.shape, tiles)) + home.rows.drop(1), home.loading)
+		if (focused != null) tiles.indexOfFirst { it.id == focused }.takeIf { it >= 0 }?.let { home.focusOn(0, it) }
+	}
+
 	private fun homePage(): GlassesPage {
 		val page = GlassesPage("Home")
 		page.run(scope) {
@@ -594,7 +621,7 @@ internal class GlassesNavigator(
 				val load = HomeLoad(layout.shownLibraries.toList(), hidden.toList(), dismissed, SnapshotMode.Live, null, false)
 				val reply = onServer { server, remembered -> homeRows(server, remembered, load) }
 				val shown = layout.arrange(reply.rows).filter { it.shown && it.hub.items.isNotEmpty() }
-				page.setRows(listOf(menu) + shown.map(::row))
+				page.setRows(listOf(page.rows.first()) + shown.map(::row))
 				// Continue Watching is what most visits are for.
 				if (shown.firstOrNull()?.continueWatching == true) page.focusOn(1, 0)
 			} catch (e: Exception) {
@@ -615,6 +642,7 @@ internal class GlassesNavigator(
 			}
 		}
 		if (isTelevision) tiles += GlassesTile("watchlist", "Watchlist") { pages += watchlist() }
+		if (tvRequests != null && container.seerr.enabled.value) tiles += GlassesTile("requests", "Requests", select = tvRequests)
 		tvSettings?.let { tiles += GlassesTile("settings", "Settings", select = it) }
 		return GlassesRow("menu", null, TileShape.Card, tiles)
 	}

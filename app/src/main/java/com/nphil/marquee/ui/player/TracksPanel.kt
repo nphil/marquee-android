@@ -271,7 +271,7 @@ private fun StylePage(look: SubtitleLook, onLook: ((SubtitleLook) -> SubtitleLoo
 	Column(verticalArrangement = Arrangement.spacedBy(GroupGap)) {
 		presets.forEachIndexed { index, preset ->
 			PickRow(index, presets.size, preset.title, selected = look.preset == preset && look.isPreset) {
-				onLook { SubtitleLook.of(preset, reveal = it.reveal) }
+				onLook { it.applying(preset) }
 			}
 		}
 	}
@@ -293,6 +293,8 @@ private fun SubtitleEdge.title() = when (this) {
 	SubtitleEdge.Outline -> "Outline"
 	SubtitleEdge.DropShadow -> "Drop Shadow"
 	SubtitleEdge.SoftShadow -> "Soft Shadow"
+	SubtitleEdge.Raised -> "Raised"
+	SubtitleEdge.Depressed -> "Depressed"
 }
 
 /** A row of a list of choices: the chosen one is marked, and one that cannot be chosen is dimmed. */

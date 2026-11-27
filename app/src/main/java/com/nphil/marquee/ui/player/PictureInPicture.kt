@@ -74,13 +74,14 @@ private data class WindowState(
 	val surface: Rect?,
 )
 
-internal enum class WindowOffer { None, SkipIntro, NextEpisode }
+internal enum class WindowOffer { None, SkipIntro, SkipCredits, NextEpisode }
 
 internal enum class WindowAction {
 	Back,
 	PlayPause,
 	Forward,
 	SkipIntro,
+	SkipCredits,
 	NextEpisode,
 	;
 
@@ -92,6 +93,7 @@ internal enum class WindowAction {
 fun rememberPictureInPicture(model: PlayerModel): PictureInPicture {
 	val offer = when (model.offers.offer) {
 		is Offer.SkipIntro -> WindowOffer.SkipIntro
+		is Offer.SkipCredits -> WindowOffer.SkipCredits
 		is Offer.UpNext -> WindowOffer.NextEpisode
 		null -> WindowOffer.None
 	}
@@ -104,6 +106,7 @@ fun rememberPictureInPicture(model: PlayerModel): PictureInPicture {
 			WindowAction.Forward -> model.skip(model.skipInterval)
 			WindowAction.PlayPause -> model.toggle()
 			WindowAction.SkipIntro -> { model.userActed(); model.offers.skipIntro() }
+			WindowAction.SkipCredits -> model.offers.skipCredits()
 			WindowAction.NextEpisode -> model.playNext()
 		}
 	}
@@ -255,6 +258,7 @@ private fun actions(activity: ComponentActivity, state: WindowState): List<Remot
 		add(action(WindowAction.Forward, R.drawable.ic_forward, "Forward ${state.skipSeconds} seconds"))
 		when (state.offer) {
 			WindowOffer.SkipIntro -> add(action(WindowAction.SkipIntro, R.drawable.ic_skip_next, "Skip Intro"))
+			WindowOffer.SkipCredits -> add(action(WindowAction.SkipCredits, R.drawable.ic_skip_next, "Skip Credits"))
 			WindowOffer.NextEpisode -> add(action(WindowAction.NextEpisode, R.drawable.ic_skip_next, "Next Episode"))
 			WindowOffer.None -> Unit
 		}

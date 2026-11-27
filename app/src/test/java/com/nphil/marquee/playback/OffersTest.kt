@@ -13,27 +13,50 @@ class OffersTest {
 
 	@Test
 	fun skipIntroShowsInsideTheIntroUntilASecondBeforeItsEnd() {
-		assertNull(offerAt(29.9, intro, credits, false, false, next))
-		assertEquals(Offer.SkipIntro(90.0), offerAt(30.0, intro, credits, false, false, next))
-		assertEquals(Offer.SkipIntro(90.0), offerAt(88.9, intro, credits, false, false, next))
-		assertNull(offerAt(89.0, intro, credits, false, false, next))
+		assertNull(offerAt(29.9, intro, credits, false, emptySet(), next))
+		assertEquals(Offer.SkipIntro(90.0), offerAt(30.0, intro, credits, false, emptySet(), next))
+		assertEquals(Offer.SkipIntro(90.0), offerAt(88.9, intro, credits, false, emptySet(), next))
+		assertNull(offerAt(89.0, intro, credits, false, emptySet(), next))
 	}
 
 	@Test
 	fun anIntroThatWasSkippedDoesNotComeBack() {
-		assertNull(offerAt(40.0, intro, credits, true, false, next))
+		assertNull(offerAt(40.0, intro, credits, true, emptySet(), next))
 	}
 
 	@Test
-	fun upNextShowsFromTheFinalCreditsMarkerWhenAnEpisodeFollows() {
-		assertNull(offerAt(2_399.0, intro, credits, false, false, next))
-		assertEquals(Offer.UpNext(next), offerAt(2_400.0, intro, credits, false, false, next))
-		assertNull("a movie has no episode to go on to", offerAt(2_450.0, intro, credits, false, false, null))
-		assertNull("Watch Credits keeps it away", offerAt(2_450.0, intro, credits, false, true, next))
+	fun splitCreditsAllowNextOnEitherMarkerButNotDuringTheSceneBetweenThem() {
+		val early = Marker(100_000, 120_000)
+		val final = credits.single()
+		val segments = listOf(early, final)
+		fun at(s: Double, dismissed: Set<Int> = emptySet()) = offerAt(s, intro, segments, false, dismissed, next)
+		assertEquals(Offer.UpNext(next, early), at(100.0))
+		assertNull(at(101.0, setOf(early.start)))
+		assertNull(at(120.0))
+		assertEquals(Offer.UpNext(next, final), at(2_400.0, setOf(early.start)))
+	}
 
-		val several = listOf(Marker(100_000, 120_000), Marker(2_400_000, 2_500_000, isFinal = true), Marker(2_600_000, 2_700_000))
-		assertNull("only the final marker starts Up Next", offerAt(110.0, emptyList(), several, false, false, next))
-		val noneFinal = listOf(Marker(100_000, 120_000), Marker(2_600_000, 2_700_000))
-		assertEquals("with none marked final, the last one does", Offer.UpNext(next), offerAt(2_600.0, emptyList(), noneFinal, false, false, next))
+	@Test
+	fun onlyASeenMarkerCanCarryManualNextDuringTheGag() {
+		val seen = Marker(100_000, 120_000)
+		fun at(s: Double, dismissed: Set<Int> = emptySet()) =
+			offerAt(s, emptyList(), listOf(seen), false, dismissed, next, firstSeenCredits = seen) as? Offer.UpNext
+		assertEquals(true, at(119.99)?.canCountDown)
+		assertEquals(false, at(120.0)?.canCountDown)
+		assertNull(at(99.0))
+		assertNull(at(121.0, setOf(seen.start)))
+		val chapter = seen.copy(fromChapter = true)
+		assertEquals(false, (offerAt(110.0, emptyList(), listOf(chapter), false, emptySet(), next) as Offer.UpNext).canCountDown)
+	}
+
+	@Test
+	fun standaloneCreditsSkipOnlyTheMarkedSpanUnlessItEndsTheFilm() {
+		val early = Marker(100_000, 120_000)
+		val tail = Marker(220_000, 239_000)
+		fun at(s: Double) = offerAt(s, emptyList(), listOf(early, tail), false, emptySet(), null, duration = 240.0)
+		assertEquals(Offer.SkipCredits(early, false), at(110.0))
+		assertNull(at(120.0))
+		assertEquals(Offer.SkipCredits(tail, true), at(239.5))
+		assertNull(offerAt(239.5, emptyList(), emptyList(), false, emptySet(), null, duration = 240.0))
 	}
 }

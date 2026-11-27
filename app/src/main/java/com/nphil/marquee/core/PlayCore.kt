@@ -205,7 +205,7 @@ data class LinkProbe(
 
 /** An intro or credits span, in milliseconds. */
 @Serializable
-data class Marker(val start: Int, val end: Int, val isFinal: Boolean = false)
+data class Marker(val start: Int, val end: Int, val isFinal: Boolean = false, val fromChapter: Boolean = false)
 
 /** A chapter in milliseconds. [thumb] is the server's picture of it (an art path), when the server made one. */
 @Serializable
@@ -373,6 +373,7 @@ enum class AtCredits {
 @Serializable
 enum class CreditsAutoplay {
 	@SerialName("countdown") Countdown,
+	@SerialName("afterCredits") AfterCredits,
 	@SerialName("skipInstantly") SkipInstantly,
 }
 
@@ -394,6 +395,8 @@ data class AutoplayPlan(
 )
 
 suspend fun MarqueeCore.playAutoplay(enabled: Boolean, credits: CreditsAutoplay, delay: Int, creditsWatched: Boolean): AutoplayPlan =
+	if (credits == CreditsAutoplay.AfterCredits) AutoplayPlan(AtCredits.Card, playsNextAtEnd = enabled)
+	else
 	call("play.autoplay", buildJsonObject {
 		put("enabled", enabled)
 		put("credits", CoreJson.encodeToJsonElement(CreditsAutoplay.serializer(), credits))

@@ -47,6 +47,7 @@ android {
 		versionCode = appVersionCode
 		versionName = appVersionName
 		buildConfigField("String", "COMMIT", "\"${git("rev-parse", "--short", "HEAD") ?: "unknown"}\"")
+		buildConfigField("boolean", "TV_CONTROLS", providers.gradleProperty("marquee.tvReview").orElse("false").get())
 
 		testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 		ndk { abiFilters += bridgeAbis }
@@ -87,6 +88,7 @@ android {
 		create("television") {
 			initWith(getByName("release"))
 			applicationIdSuffix = ".tv"
+			buildConfigField("boolean", "TV_CONTROLS", "true")
 			matchingFallbacks += "release"
 			// Private sideloads never need the phone application's publishing key.
 			signingConfig = signingConfigs.getByName("debug")

@@ -351,11 +351,22 @@ struct MarkerWire: Encodable {
     let start: Int
     let end: Int
     let isFinal: Bool
+    let fromChapter: Bool
+
+    /// An authored chapter can offer a manual skip, but cannot move an automatic action ahead of Plex's detection.
+    static func spans(_ item: PlexMetadata, _ kind: PlexMarker.Kind) -> [MarkerWire] {
+        let detected = item.markers.filter { $0.kind == kind && $0.start >= 0 && $0.end > $0.start }
+        let fallback = item.markers(kind).filter { chapter in
+            chapter.fromChapter && !detected.contains { $0.start < chapter.end && chapter.start < $0.end }
+        }
+        return (detected + fallback).sorted { $0.start < $1.start }.map(MarkerWire.init)
+    }
 
     init(_ marker: PlexMarker) {
         start = marker.start
         end = marker.end
         isFinal = marker.isFinal
+        fromChapter = marker.fromChapter
     }
 }
 

@@ -149,7 +149,7 @@ class PlayerModel(
 	internal val canFindSubtitles: Boolean get() = player != null && onlineSubtitleSource != null
 
 	/** Skip Intro and Up Next over the picture. */
-	internal val offers = PlayerOffers(viewModelScope, container.core, ::steady, { menusOpen || scrubbing }, ::seekTo, ::playNext)
+	internal val offers: PlayerOffers = PlayerOffers(viewModelScope, container.core, ::steady, { menusOpen || scrubbing }, ::seekTo, ::playNext, ::finish, ::movieMs)
 
 	var phase: PlayerPhase by mutableStateOf(PlayerPhase.Starting)
 		private set

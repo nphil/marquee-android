@@ -84,6 +84,10 @@ internal fun OfferOverlay(model: PlayerModel, visible: Boolean, modifier: Modifi
 				},
 				onWatch = offers::watchIntro,
 			)
+			is Offer.SkipCredits -> Row(horizontalArrangement = Arrangement.spacedBy(Space.s3)) {
+				GlassPill("Watch Credits", offers::watchCredits)
+				GlassPill("Skip Credits", offers::skipCredits, icon = R.drawable.ic_skip_next, fill = accent, content = PlayerInk.onAccent)
+			}
 			is Offer.UpNext -> UpNextCard(
 				accent = accent,
 				next = shown.next,

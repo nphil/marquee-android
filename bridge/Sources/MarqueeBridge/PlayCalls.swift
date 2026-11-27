@@ -181,7 +181,7 @@ enum PlayCalls {
             PlanWire(
                 session: session.id, item: ItemWire(item), mediaIndex: mediaIndex, startAt: startAt, duration: duration,
                 route: RouteWire(route), stream: stream, probe: probe,
-                intro: item.markers(.intro).map(MarkerWire.init), credits: item.markers(.credits).map(MarkerWire.init),
+                intro: MarkerWire.spans(item, .intro), credits: MarkerWire.spans(item, .credits),
                 chapters: item.chapters.map(ChapterWire.init), tracks: lists, isAnime: picked.isAnime,
                 quality: quality.rawValue, qualityTitle: adaptive?.rung.title, adapts: adaptive != nil, badge: badge,
                 thumbnails: thumbnails
@@ -246,7 +246,7 @@ enum PlayCalls {
             session: session.id, item: ItemWire(item), mediaIndex: 0, startAt: startSeconds(call, item: item, duration: duration), duration: duration,
             route: RouteWire(route),
             stream: StreamSpec(kind: "file", url: URL(fileURLWithPath: files.file).absoluteString, headers: [:], session: nil, offset: 0),
-            probe: nil, intro: item.markers(.intro).map(MarkerWire.init), credits: item.markers(.credits).map(MarkerWire.init),
+            probe: nil, intro: MarkerWire.spans(item, .intro), credits: MarkerWire.spans(item, .credits),
             chapters: item.chapters.map(ChapterWire.init), tracks: lists, isAnime: picked.isAnime,
             quality: 0, adapts: false, badge: BadgeWire(FormatBadge.make(video: part.videoStream, media: media, audio: audio, route: route)),
             thumbnails: nil

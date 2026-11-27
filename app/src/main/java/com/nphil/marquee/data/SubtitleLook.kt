@@ -18,11 +18,14 @@ enum class SubtitlePreset(val title: String) {
 	Outline("Outline"),
 	LargePrint("Large Print"),
 	HighContrast("High Contrast"),
+	Marquee("Marquee"),
 }
 
-enum class SubtitleFont { Standard, Mono, Legible }
+enum class SubtitleFont { Standard, Mono, Legible, Serif, Narrow, Rounded }
 
-enum class SubtitleEdge { None, Outline, DropShadow, SoftShadow }
+enum class SubtitleBacking(val rgb: Int) { Black(0), Navy(0x142030), Slate(0x34363C), White(0xFFFFFF) }
+
+enum class SubtitleEdge { None, Outline, DropShadow, SoftShadow, Raised, Depressed }
 
 enum class SubtitleReveal(val title: String) {
 	Off("Off"),
@@ -63,20 +66,32 @@ data class SubtitleLook(
 	/** The colour is lifted off pure white a little: see [textArgb]. */
 	val softens: Boolean = true,
 	val reveal: SubtitleReveal = SubtitleReveal.Off,
+	val windowBox: Boolean = false,
+	val backingColour: SubtitleBacking = SubtitleBacking.Black,
+	val atTop: Boolean = false,
+	/** Blank space from the chosen edge, in additional percentage points of picture height. */
+	val inset: Int = 0,
+	val brightness: Int = 100,
+	val edgeWidth: Int = 2,
+	val lineSpacing: Int = 100,
+	val boxRadius: Int = 0,
+	val boxPadding: Int = 8,
 ) {
 	/** Reveal belongs to the text, independently of which visual preset is in use. */
-	val isPreset: Boolean get() = this == of(preset, reveal)
+	val isPreset: Boolean get() = this == applying(preset)
+
+	fun applying(next: SubtitlePreset) = of(next, reveal).copy(brightness = brightness)
 
 	/** The text colour as drawn: ARGB, the picked colour softened when [softens], at [opacity]. */
 	val textArgb: Int
 		get() {
-			fun channel(value: Float) = ((if (softens) value * SOFTEN_SCALE + SOFTEN_LIFT else value) * 255f).roundToInt().coerceIn(0, 255)
+			val scale = brightness.coerceIn(0, 100) / 100f
+			fun channel(value: Float) = ((if (softens) value * SOFTEN_SCALE + SOFTEN_LIFT else value) * 255f * scale).roundToInt().coerceIn(0, 255)
 			val alpha = (opacity.coerceIn(0, 100) * 255 / 100)
 			return (alpha shl 24) or (channel(colour.red) shl 16) or (channel(colour.green) shl 8) or channel(colour.blue)
 		}
 
-	/** The box's colour as drawn: ARGB black at [boxOpacity], or clear when there is no box. */
-	val boxArgb: Int get() = if (box) (boxOpacity.coerceIn(0, 100) * 255 / 100) shl 24 else 0
+	val boxArgb: Int get() = if (box) ((boxOpacity.coerceIn(0, 100) * 255 / 100) shl 24) or backingColour.rgb else 0
 
 	companion object {
 		val SIZES = listOf(75, 85, 100, 115, 130, 150, 175, 200)
@@ -95,6 +110,7 @@ data class SubtitleLook(
 			)
 			SubtitlePreset.Netflix -> SubtitleLook(preset, opacity = 100, edge = SubtitleEdge.DropShadow, softens = false, reveal = reveal)
 			SubtitlePreset.Outline -> SubtitleLook(preset, opacity = 100, edge = SubtitleEdge.Outline, softens = false, reveal = reveal)
+			SubtitlePreset.Marquee -> SubtitleLook(preset, bold = true, opacity = 95, edge = SubtitleEdge.Outline, reveal = reveal)
 			SubtitlePreset.LargePrint -> SubtitleLook(
 				preset, SubtitleFont.Legible, size = 150, opacity = 100, edge = SubtitleEdge.Outline, softens = false, reveal = reveal,
 			)

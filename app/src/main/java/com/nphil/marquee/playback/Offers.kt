@@ -25,35 +25,44 @@ import kotlinx.coroutines.launch
 /** What the player offers over the picture. */
 sealed interface Offer {
 	/** The playhead is inside the intro, which ends [end] seconds into the title. */
-	data class SkipIntro(val end: Double) : Offer
+	data class SkipIntro(val end: Double, val manualOnly: Boolean = false) : Offer
 
 	/** The credits have begun and an episode follows. */
-	data class UpNext(val next: PlexItem) : Offer
+	data class UpNext(val next: PlexItem, val marker: Marker, val carried: Boolean = false) : Offer {
+		val canCountDown get() = !carried && !marker.fromChapter
+	}
+	data class SkipCredits(val marker: Marker, val finish: Boolean) : Offer
 }
 
 /** An offer taking itself: it started at [startedAt] on the elapsed-real-time clock and runs [lengthMs]. */
 data class Countdown(val startedAt: Long, val lengthMs: Long)
 
 /**
- * The offer the playhead at [seconds] calls for. Plex's markers are in milliseconds. Skip Intro shows inside an intro
- * marker until a second from its end, unless the intro was skipped already; Up Next shows from the credits marker
- * (the final one, else the last) when an episode follows and "Watch Credits" was not chosen.
+ * A real segment owns the offer. Never infer credits from time remaining: a scene may follow a non-final marker.
  */
 internal fun offerAt(
 	seconds: Double,
 	intro: List<Marker>,
 	credits: List<Marker>,
 	introSkipped: Boolean,
-	creditsDismissed: Boolean,
+	dismissedCredits: Set<Int>,
 	upcoming: PlexItem?,
+	duration: Double = 0.0,
+	firstSeenCredits: Marker? = null,
 ): Offer? {
 	val ms = seconds * 1000
 	if (!introSkipped) {
 		val marker = intro.firstOrNull { ms >= it.start && ms < it.end }
-		if (marker != null && marker.end / 1000.0 - seconds > 1) return Offer.SkipIntro(marker.end / 1000.0)
+		if (marker != null && marker.end / 1000.0 - seconds > 1) return Offer.SkipIntro(marker.end / 1000.0, marker.fromChapter)
 	}
-	val finale = credits.firstOrNull { it.isFinal } ?: credits.lastOrNull()
-	if (!creditsDismissed && finale != null && ms >= finale.start && upcoming != null) return Offer.UpNext(upcoming)
+	for (marker in credits) {
+		if (marker.start < 0 || marker.end <= marker.start || ms < marker.start || marker.start in dismissedCredits) continue
+		val final = marker.isFinal || (!marker.fromChapter && duration > 0 && marker.end >= duration * 1000 - 2000)
+		if (!final && ms >= marker.end) continue
+		return if (upcoming == null) Offer.SkipCredits(marker, final) else Offer.UpNext(upcoming, marker)
+	}
+	if (upcoming != null && firstSeenCredits != null && ms >= firstSeenCredits.start && firstSeenCredits.start !in dismissedCredits)
+		return Offer.UpNext(upcoming, firstSeenCredits, carried = true)
 	return null
 }
 
@@ -74,6 +83,8 @@ internal class PlayerOffers(
 	private val seek: (Double) -> Boolean,
 	/** Plays the episode after this one. */
 	private val advance: () -> Unit,
+	private val finish: () -> Unit,
+	private val positionMs: () -> Long,
 ) {
 	/** The offer on screen; null for none. */
 	var offer: Offer? by mutableStateOf(null)
@@ -93,6 +104,9 @@ internal class PlayerOffers(
 	private var session: String? = null
 	private var intro: List<Marker> = emptyList()
 	private var credits: List<Marker> = emptyList()
+	private var duration = 0.0
+	private val dismissedCredits = mutableSetOf<Int>()
+	private var firstSeenCredits: Marker? = null
 	private var introDelay = 0
 	private var atCredits = AtCredits.Card
 	private var creditsSeconds = 0
@@ -112,6 +126,7 @@ internal class PlayerOffers(
 		session = plan.session
 		intro = plan.intro
 		credits = plan.credits
+		duration = plan.duration
 		introDelay = introSkipDelay
 		atCredits = autoplay.atCredits
 		creditsSeconds = autoplay.seconds ?: 0
@@ -129,6 +144,8 @@ internal class PlayerOffers(
 		introCancelled = false
 		skippedIntroEnd = null
 		creditsDismissed = false
+		dismissedCredits.clear()
+		firstSeenCredits = null
 		countdownStopped = false
 		checking = null
 		checkedAt = null
@@ -149,10 +166,14 @@ internal class PlayerOffers(
 
 	private fun update(movie: Double) {
 		skippedIntroEnd?.let { if (movie >= it - 1) skippedIntroEnd = null }
-		val wanted = offerAt(movie, intro, credits, skippedIntroEnd != null, creditsDismissed, upcoming)
-		if (wanted is Offer.UpNext && atCredits == AtCredits.PlayNow) {
-			// Binge mode: no card. The flag keeps later looks from repeating the jump; the next title clears it.
-			if (offer != null || !steady() || held()) return
+		val wanted = offerAt(movie, intro, credits, skippedIntroEnd != null, dismissedCredits, upcoming, duration, firstSeenCredits)
+		if (firstSeenCredits == null) firstSeenCredits = when (wanted) {
+			is Offer.UpNext -> wanted.marker.takeIf { wanted.canCountDown }
+			is Offer.SkipCredits -> wanted.marker.takeUnless { it.fromChapter }
+			else -> null
+		}
+		if (wanted is Offer.UpNext && wanted.canCountDown && !creditsDismissed && !countdownStopped && atCredits == AtCredits.PlayNow) {
+			if (!steady() || held()) return
 			creditsDismissed = true
 			Diag.notice(DiagCategory.Offers, "autoplay.now", "next" to wanted.next.ratingKey, "at" to movie)
 			advance()
@@ -180,15 +201,16 @@ internal class PlayerOffers(
 	}
 
 	private fun startCountdownIfDue() {
-		if (countdown != null || !steady()) return
-		when (offer) {
-			is Offer.SkipIntro -> if (introDelay > 0 && !introCancelled) run(introDelay) { skipIntro(auto = true) }
-			is Offer.UpNext -> if (atCredits == AtCredits.Countdown && !countdownStopped && !held()) run(creditsSeconds, advance)
-			null -> Unit
+		if (countdown != null || !steady() || held()) return
+		when (val current = offer) {
+			is Offer.SkipIntro -> if (!current.manualOnly && introDelay > 0 && !introCancelled) run(introDelay) { skipIntro(auto = true) }
+			is Offer.UpNext -> if (current.canCountDown && !creditsDismissed && atCredits == AtCredits.Countdown && !countdownStopped) run(creditsSeconds, advance)
+			is Offer.SkipCredits, null -> Unit
 		}
 	}
 
 	private fun run(seconds: Int, then: () -> Unit) {
+		val original = offer
 		Diag.info(DiagCategory.Offers, "countdown.start", "offer" to name(offer), "seconds" to seconds)
 		countdown = Countdown(SystemClock.elapsedRealtime(), seconds * 1000L)
 		countdownJob = scope.launch {
@@ -196,6 +218,13 @@ internal class PlayerOffers(
 			// Let go of the job first: the action's own cancel would otherwise cancel the job it runs in.
 			countdownJob = null
 			countdown = null
+			if (!steady() || held()) return@launch
+			// The playhead may have crossed into the gag since the last one-second playback tick.
+			val at = positionMs() / 1000.0
+			if (offerAt(at, intro, credits, skippedIntroEnd != null, dismissedCredits, upcoming, duration) != original) {
+				update(at)
+				return@launch
+			}
 			Diag.notice(DiagCategory.Offers, "countdown.fire", "offer" to name(offer))
 			then()
 		}
@@ -210,7 +239,8 @@ internal class PlayerOffers(
 
 	/** Pause, buffering, menus and any input stop the Up Next countdown until the next episode. */
 	fun interrupt() {
-		if (offer !is Offer.UpNext || countdown == null) return
+		if (offer is Offer.SkipIntro && countdown != null) { watchIntro(); return }
+		if (offer !is Offer.UpNext) return
 		cancelCountdown("interrupted")
 		countdownStopped = true
 	}
@@ -251,9 +281,22 @@ internal class PlayerOffers(
 		offer = null
 	}
 
+	fun skipCredits() {
+		val shown = offer as? Offer.SkipCredits ?: return
+		if (!shown.finish && !seek(shown.marker.end / 1000.0)) return
+		dismissedCredits += shown.marker.start
+		offer = null
+		if (shown.finish) finish()
+	}
+
 	/** The viewer chose to watch the credits: Up Next stays away and the episode ends on its own screen. */
 	fun watchCredits() {
 		Diag.info(DiagCategory.Offers, "watch-credits")
+		when (val shown = offer) {
+			is Offer.UpNext -> dismissedCredits += shown.marker.start
+			is Offer.SkipCredits -> dismissedCredits += shown.marker.start
+			else -> return
+		}
 		creditsDismissed = true
 		cancelCountdown("watch-credits")
 		offer = null
@@ -306,6 +349,7 @@ internal class PlayerOffers(
 
 	private fun name(offer: Offer?) = when (offer) {
 		is Offer.SkipIntro -> "skipIntro"
+		is Offer.SkipCredits -> "skipCredits"
 		is Offer.UpNext -> "upNext"
 		null -> "none"
 	}

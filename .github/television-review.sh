@@ -63,3 +63,39 @@ wait_for 'Playback Info'
 key KEYCODE_DPAD_DOWN
 key KEYCODE_DPAD_CENTER
 wait_for 'Apple TV'
+key KEYCODE_BACK
+key KEYCODE_BACK
+wait_for 'Continue Watching'
+key KEYCODE_MENU
+wait_for 'Play from Start'
+key KEYCODE_DPAD_DOWN
+key KEYCODE_DPAD_CENTER
+wait_for 'Video & Playback'
+capture settings
+key KEYCODE_DPAD_DOWN
+key KEYCODE_DPAD_DOWN
+key KEYCODE_DPAD_CENTER
+wait_for 'Apple TV'
+key KEYCODE_BACK
+key KEYCODE_BACK
+wait_for 'Continue Watching'
+key KEYCODE_MENU
+wait_for 'Play from Start'
+key KEYCODE_DPAD_CENTER
+wait_for 'Skip Intro'
+key KEYCODE_DPAD_CENTER
+key KEYCODE_DPAD_RIGHT
+wait_for 'After the opening'
+key KEYCODE_DPAD_DOWN
+wait_for 'First roll'
+key KEYCODE_DPAD_CENTER
+wait_for 'Watch Credits'
+key KEYCODE_DPAD_LEFT
+capture credits-first
+key KEYCODE_DPAD_CENTER
+key KEYCODE_DPAD_RIGHT
+key KEYCODE_DPAD_DOWN
+wait_for 'Last roll'
+key KEYCODE_DPAD_CENTER
+wait_for 'Next Episode'
+capture credits-final

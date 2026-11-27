@@ -31,7 +31,7 @@ data class PlaybackPrefs(
 	val skipInterval: Int = 10,
 	val skipTaps: SkipTapMode = SkipTapMode.DoubleTap,
 	/** Seconds before Skip Intro takes itself; 0 leaves it to a tap. */
-	val introSkipDelay: Int = 5,
+	val introSkipDelay: Int = if (com.nphil.marquee.BuildConfig.TV_CONTROLS) 0 else 5,
 	/** The next episode follows when one ends. */
 	val autoplaysNext: Boolean = true,
 	val creditsAutoplay: CreditsAutoplay = CreditsAutoplay.Countdown,

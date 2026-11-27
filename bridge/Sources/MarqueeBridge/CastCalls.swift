@@ -140,7 +140,7 @@ enum CastCalls {
             session: session.id, item: ItemWire(item), mediaIndex: mediaIndex, startAt: startAt, duration: duration,
             route: RouteWire(route),
             stream: StreamSpec(kind: conversion == nil ? "file" : "hls", url: stream.url.absoluteString, headers: [:], session: stream.session, offset: 0),
-            probe: nil, intro: item.markers(.intro).map(MarkerWire.init), credits: item.markers(.credits).map(MarkerWire.init),
+            probe: nil, intro: MarkerWire.spans(item, .intro), credits: MarkerWire.spans(item, .credits),
             chapters: item.chapters.map(ChapterWire.init), tracks: lists, isAnime: picked.isAnime, quality: quality.rawValue,
             adapts: false, badge: BadgeWire(FormatBadge.make(video: part.videoStream, media: media, audio: badgeAudio, route: route)),
             thumbnails: thumbnails

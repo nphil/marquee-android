@@ -294,11 +294,13 @@ private fun skipTapsTitle(mode: SkipTapMode): String = when (mode) {
 
 private fun creditsTitle(mode: CreditsAutoplay): String = when (mode) {
 	CreditsAutoplay.Countdown -> "Countdown"
+	CreditsAutoplay.AfterCredits -> "After Credits"
 	CreditsAutoplay.SkipInstantly -> "Skip Credits Instantly"
 }
 
 private fun autoplayNote(prefs: PlaybackPrefs): String = when {
 	!prefs.autoplaysNext -> "Off: an episode ends on its own. At Plex's credits marker, Up Next is offered and waits for a tap."
+	prefs.creditsAutoplay == CreditsAutoplay.AfterCredits -> "Watch through the end, then play the next episode. Next Episode is still available during the credits."
 	prefs.creditsAutoplay == CreditsAutoplay.Countdown ->
 		"At Plex's credits marker, Up Next counts down ${prefs.nextEpisodeDelay} s, then the next episode plays. " +
 			"An episode with no credits marker goes on when it ends."

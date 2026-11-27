@@ -52,13 +52,27 @@ internal fun CaptionView(cues: List<Cue>, look: SubtitleLook, controlsUp: Boolea
 		MaterialTheme.motionScheme.defaultSpatialSpec(),
 		label = "caption lift",
 	)
+	val margin = (SubtitleView.DEFAULT_BOTTOM_PADDING_FRACTION + look.inset.coerceIn(-4, 20) / 100f)
+	val single = cues.singleOrNull()
+	if (single != null && single.isPlainDialogue() &&
+		(look.lineSpacing != 100 || look.edgeWidth != 2 || look.box && (look.boxRadius != 0 || look.boxPadding != 8))) {
+		DialogueCaption(single, look, margin, { lift }, modifier)
+		return
+	}
+	val placed = remember(cues, look.atTop, margin) {
+		if (!look.atTop) cues else cues.map { cue ->
+			// Explicitly positioned signs and bitmap subtitles belong where the file puts them.
+			if (cue.bitmap != null || cue.line != Cue.DIMEN_UNSET) cue
+			else cue.buildUpon().setLine(margin, Cue.LINE_TYPE_FRACTION).setLineAnchor(Cue.ANCHOR_TYPE_START).build()
+		}
+	}
 	AndroidView(
 		factory = { context -> SubtitleView(context).apply { setApplyEmbeddedFontSizes(false) } },
 		update = { view ->
 			view.setStyle(style)
 			view.setFractionalTextSize(SubtitleView.DEFAULT_TEXT_SIZE_FRACTION * look.size / 100f)
-			view.setBottomPaddingFraction(SubtitleView.DEFAULT_BOTTOM_PADDING_FRACTION + lift)
-			view.setCues(cues)
+			view.setBottomPaddingFraction(margin + lift)
+			view.setCues(placed)
 		},
 		modifier = modifier,
 	)
@@ -69,17 +83,22 @@ internal fun SubtitleLook.captionStyle(): CaptionStyleCompat {
 	val edgeType = when (edge) {
 		SubtitleEdge.None -> CaptionStyleCompat.EDGE_TYPE_NONE
 		SubtitleEdge.Outline -> CaptionStyleCompat.EDGE_TYPE_OUTLINE
+		SubtitleEdge.Raised -> CaptionStyleCompat.EDGE_TYPE_RAISED
+		SubtitleEdge.Depressed -> CaptionStyleCompat.EDGE_TYPE_DEPRESSED
 		SubtitleEdge.DropShadow, SubtitleEdge.SoftShadow -> CaptionStyleCompat.EDGE_TYPE_DROP_SHADOW
 	}
 	val edgeColour = if (edge == SubtitleEdge.SoftShadow) SOFT_SHADOW else Color.BLACK
-	return CaptionStyleCompat(textArgb, boxArgb, Color.TRANSPARENT, edgeType, edgeColour, typeface())
+	return CaptionStyleCompat(textArgb, if (windowBox) Color.TRANSPARENT else boxArgb, if (windowBox) boxArgb else Color.TRANSPARENT, edgeType, edgeColour, typeface())
 }
 
-private fun SubtitleLook.typeface(): Typeface {
+internal fun SubtitleLook.typeface(): Typeface {
 	val weight = if (bold) Typeface.BOLD else Typeface.NORMAL
 	return when (font) {
 		SubtitleFont.Standard -> Typeface.create(Typeface.SANS_SERIF, weight)
 		SubtitleFont.Mono -> Typeface.create(Typeface.MONOSPACE, weight)
 		SubtitleFont.Legible -> Typeface.create("sans-serif-medium", weight)
+		SubtitleFont.Narrow -> Typeface.create("sans-serif-condensed", weight)
+		SubtitleFont.Rounded -> Typeface.create("sans-serif-rounded", weight)
+		SubtitleFont.Serif -> Typeface.create(Typeface.SERIF, weight)
 	}
 }

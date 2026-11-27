@@ -51,7 +51,7 @@ class TelevisionActivity : ComponentActivity() {
             MarqueeTheme(theme, container.typography) {
                 ProvidePlexImages(container) {
                     Box(Modifier.fillMaxSize().background(lucent.canvas), contentAlignment = Alignment.Center) {
-                        if (state.phase == AppSession.Phase.Ready) key(state.server?.id, state.user?.uuid) { Library(mode) }
+                        if (state.phase == AppSession.Phase.Ready) key(state.server?.id, state.user?.uuid) { Library() }
                         else Account(state)
                     }
                 }
@@ -86,22 +86,28 @@ class TelevisionActivity : ComponentActivity() {
         }
     }
 
-    @Composable private fun Library(mode: ThemeMode) {
+    @Composable private fun Library() {
         val scope = rememberCoroutineScope()
         var settings by remember { mutableStateOf(false) }
         var style by remember { mutableStateOf(false) }
+        var requests by remember { mutableStateOf(false) }
+        val requestsAvailable by container.seerr.enabled.collectAsStateWithLifecycle()
         var request by remember { mutableStateOf<Triple<String, String, Boolean>?>(null) }
-        val nav = remember { GlassesNavigator(container, scope, openTitle = { id, title, start -> request = Triple(id, title, start) }, tvSettings = { settings = true }, tvSubtitleStyle = { style = true }) }
+        val nav = remember { GlassesNavigator(container, scope, openTitle = { id, title, start -> request = Triple(id, title, start) },
+            tvSettings = { settings = true }, tvSubtitleStyle = { style = true }, tvRequests = { requests = true }) }
+        LaunchedEffect(requestsAvailable) { nav.refreshRequestsEntry(); if (!requestsAvailable) requests = false }
         DisposableEffect(nav) { nav.start(); onDispose { nav.close() } }
-        SideEffect { input = if (settings || style) null else nav }
+        SideEffect { input = if (settings || style || requests) null else nav }
         DisposableEffect(Unit) { onDispose { input = null } }
-        BackHandler(style || settings || nav.panel != null || nav.pages.size > 1 || request != null) {
-            if (style) style = false else if (settings) settings = false else nav.handle(GlassesInput.Back)
+        BackHandler(style || settings || requests || nav.panel != null || nav.pages.size > 1 || request != null) {
+            when { style -> style = false; settings -> settings = false; requests -> requests = false; else -> nav.handle(GlassesInput.Back) }
         }
         request?.let { item -> key(item) {
             val owner = remember { object : ViewModelStoreOwner { override val viewModelStore = ViewModelStore() } }
             val model = viewModel<PlayerModel>(viewModelStoreOwner = owner) { PlayerModel(container, container.http, this@TelevisionActivity, item.first, item.second, item.third) }
             MatchFilmRate(window, model.player, model.plan?.takeUnless { it.route.reencodesVideo }?.videoStream()?.frameRate)
+            SideEffect { model.menusOpen = nav.panel != null || settings || style }
+            LaunchedEffect(model, nav.panel != null || settings || style) { if (model.menusOpen) model.userActed() }
             DisposableEffect(model) {
                 playing = model; nav.link = GlassesPlayerLink(model) { request = null }
                 onDispose { window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON); nav.link = null; nav.leftPlayer(); playing = null; owner.viewModelStore.clear() }
@@ -115,21 +121,12 @@ class TelevisionActivity : ComponentActivity() {
             val layout = BigScreenLayout.of(DisplayKind.Tv, pixels.width, pixels.height)
             val density = (pixels.height / 1080f).coerceAtLeast(0.5f)
             CompositionLocalProvider(LocalDensity provides Density(density, LocalDensity.current.fontScale)) { GlassesPlayerView(model, nav, container, layout) }
-        } } ?: if (!settings && !style) { nav.page?.let { page -> key(page) { TvBrowse(page, nav.panel == null) } } } else Unit
-        if (!settings && !style) TvOptions(nav.panel, nav)
-        if (style) TvSubtitleStyle(container) else if (settings) {
-            Column(Modifier.fillMaxSize().background(lucent.canvas).padding(48.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Settings", color = lucent.ink, style = MaterialTheme.typography.headlineLarge)
-                Action("Appearance · ${mode.name}") { scope.launch { container.settings.updateTheme { it.copy(matchSystem = false, fixedMode = if (mode == ThemeMode.Dark) ThemeMode.Light else ThemeMode.Dark) } } }
-                Action("Subtitle Style") { style = true }
-                var confirmSignOut by remember { mutableStateOf(false) }
-                if (confirmSignOut) {
-                    Text("Unlink this TV from Plex?", color = lucent.ink)
-                    Action("Keep linked") { confirmSignOut = false }
-                    Action("Unlink account") { container.session.signOut() }
-                } else Action("Sign out") { confirmSignOut = true }
-                Action("Done") { settings = false }
-            }
+        } } ?: if (!settings && !style && !requests) { nav.page?.let { page -> key(page) { TvBrowse(page, nav.panel == null) } } } else Unit
+        when {
+            style -> TvSubtitleStyle(container)
+            settings -> TvSettings(container) { settings = false }
+            requests -> com.nphil.marquee.ui.requests.RequestsDestination(container, Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 12.dp)) { requests = false }
+            else -> TvOptions(nav.panel, nav)
         }
     }
 

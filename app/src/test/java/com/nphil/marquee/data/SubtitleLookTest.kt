@@ -23,6 +23,26 @@ class SubtitleLookTest {
 	}
 
 	@Test
+	fun changingPresetPreservesBrightnessWithoutReducingOpacity() {
+		val dim = SubtitleLook(brightness = 55).applying(SubtitlePreset.AppleTV)
+		assertTrue(dim.isPreset)
+		assertEquals(0xFF8C8C8C.toInt(), dim.textArgb)
+	}
+
+	@Test
+	fun oldLineBoxesStayBlackAndColouredWindowsKeepTheirOpacity() {
+		val prefs = mutablePreferencesOf(stringPreferencesKey("subtitles.a.look") to """{"box":true,"boxOpacity":50}""")
+		val line = prefs.subtitleLook("a")
+		assertFalse(line.windowBox)
+		assertEquals(0x7F000000, line.boxArgb)
+		val window = line.copy(windowBox = true, backingColour = SubtitleBacking.Navy, atTop = true, inset = 8)
+		prefs.setSubtitleLook("a", window)
+		assertEquals(window, prefs.subtitleLook("a"))
+		assertEquals(0x7F142030, window.boxArgb)
+		assertEquals(0, window.copy(box = false).boxArgb)
+	}
+
+	@Test
 	fun aLookIsKeptPerProfileAndAnUnreadableOneFallsBackToBlend() {
 		val prefs = mutablePreferencesOf()
 		val chosen = SubtitleLook.of(SubtitlePreset.LargePrint, SubtitleReveal.Word).copy(colour = SubtitleColour.Cyan)

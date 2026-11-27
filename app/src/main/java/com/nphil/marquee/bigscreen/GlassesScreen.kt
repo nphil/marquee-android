@@ -556,8 +556,12 @@ internal fun GlassesPlayerView(model: PlayerModel, navigator: GlassesNavigator, 
 	}
 	val scrubbed = navigator.scrubTime
 	val tv = navigator.link?.takeIf { navigator.isTelevision }
-	val intro = model.offers.offer as? Offer.SkipIntro
+	val candidate = model.offers.offer.takeIf { tv != null }
+	var raised by remember(candidate) { mutableStateOf(candidate != null && !(candidate is Offer.UpNext && candidate.carried)) }
+	LaunchedEffect(candidate) { if (raised) { delay(8_000); raised = false } }
 	val controls = chrome || scrubbed != null || !model.isPlaying || model.phase != PlayerPhase.Playing
+	val tvOffer = candidate.takeIf { (raised || controls || model.offers.countdown != null) && navigator.panel == null && scrubbed == null }
+	androidx.compose.runtime.SideEffect { tv?.visibleOffer = tvOffer }
 	val profile by remember(container) { container.session.state.map { it.user?.uuid }.distinctUntilChanged() }.collectAsStateWithLifecycle(null)
 	val look by remember(container, profile) { container.settings.subtitleLook(profile) }.collectAsStateWithLifecycle(SubtitleLook())
 	LaunchedEffect(model, look.reveal) { model.tracks.setReveal(look.reveal) }
@@ -572,7 +576,7 @@ internal fun GlassesPlayerView(model: PlayerModel, navigator: GlassesNavigator, 
 						subtitleView?.visibility = android.view.View.GONE
 					}
 				},
-				update = { it.player = engine },
+				update = { it.player = engine; it.resizeMode = tv?.aspect?.resizeMode ?: AspectRatioFrameLayout.RESIZE_MODE_FIT },
 				onRelease = { it.player = null },
 				modifier = Modifier.fillMaxSize(),
 			)
@@ -581,7 +585,7 @@ internal fun GlassesPlayerView(model: PlayerModel, navigator: GlassesNavigator, 
 		AnimatedVisibility(controls, enter = fadeIn(), exit = fadeOut()) {
 			var positionMs by remember { mutableLongStateOf(model.movieMs()) }
 			LaunchedEffect(model) { while (true) { positionMs = model.movieMs(); delay(POSITION_POLL_MS) } }
-			PlayerOsd(model, positionMs, scrubbed, layout, tv != null && intro != null && scrubbed == null)
+			PlayerOsd(model, positionMs, scrubbed, layout, tvOffer != null)
 		}
 		if (controls && model.showsStats && layout.kind == DisplayKind.Tv) {
 			val lines = remember(stamp, model.phase) { model.stats().all.filter { it.label in setOf("Route", "Video", "Picture", "Start", "Frames", "Buffer") } }
@@ -591,13 +595,14 @@ internal fun GlassesPlayerView(model: PlayerModel, navigator: GlassesNavigator, 
 			}
 		}
 		PlayerCenter(model, scrubbed, navigator.isTelevision)
-		if (tv != null && intro != null && scrubbed == null && navigator.panel == null) {
-			val watch = tv.watchFocus === intro
+		if (tv != null && navigator.panel == null) com.nphil.marquee.ui.player.SubtitleSearchBanner(model.subtitleFinder, Modifier.align(Alignment.TopCenter).padding(top = layout.marginY.toFloat().dp))
+		if (tv != null && tvOffer != null && scrubbed == null && navigator.panel == null) {
+			val watch = tv.watchFocus === tvOffer
 			Row(Modifier.align(Alignment.BottomEnd).padding(end = layout.marginX.toFloat().dp,
 				bottom = layout.marginY.toFloat().dp + if (controls) (GlassesCanvas.OPTION * 2).dp else 0.dp),
 				horizontalArrangement = Arrangement.spacedBy(GlassesCanvas.TITLE_GAP.dp)) {
-				IntroButton("Watch Intro", watch, { tv.finishIntro(true) })
-				IntroButton("Skip Intro", !watch, { tv.finishIntro(false) }) {
+				IntroButton(if (tvOffer is Offer.SkipIntro) "Watch Intro" else "Watch Credits", watch, { tv.finishOffer(true) })
+				IntroButton(when (tvOffer) { is Offer.UpNext -> "Next Episode"; is Offer.SkipCredits -> "Skip Credits"; is Offer.SkipIntro -> "Skip Intro" }, !watch, { tv.finishOffer(false) }) {
 					model.offers.countdown?.let { CountdownRing(it, if (watch) lucent.ink else lucent.accentInk, Modifier.size(GlassesText.Body.size.dp)) }
 				}
 			}
@@ -695,6 +700,7 @@ private fun PlayerCenter(model: PlayerModel, scrub: Double?, television: Boolean
 
 private fun offerText(model: PlayerModel): String? = when (val offer = model.offers.offer) {
 	is Offer.SkipIntro -> "Tap to Skip Intro"
+	is Offer.SkipCredits -> "Tap to Skip Credits"
 	is Offer.UpNext -> "Tap for Next: ${offer.next.title}"
 	null -> null
 }
