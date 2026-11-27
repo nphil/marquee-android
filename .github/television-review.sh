@@ -156,6 +156,23 @@ key KEYCODE_DPAD_CENTER
 wait_for 'Big Buck Bunny'
 capture library-watched
 ;;
+source-title)
+key KEYCODE_DPAD_UP
+key KEYCODE_DPAD_CENTER
+wait_for A
+key KEYCODE_DPAD_CENTER
+key KEYCODE_DPAD_CENTER
+wait_for 'Search other servers' select-down
+key KEYCODE_DPAD_CENTER
+wait_for 'Aardvark' select-down
+key KEYCODE_DPAD_CENTER
+wait_for 'Switch to Cabin'
+capture source-confirm
+wait_for 'Switch to Cabin' select-down
+key KEYCODE_DPAD_CENTER
+wait_for 'Aardvark: Cabin Edition'
+capture source-title
+;;
 people)
 key KEYCODE_DPAD_UP
 key KEYCODE_DPAD_CENTER
@@ -486,7 +503,7 @@ failed=0
 if ! /usr/bin/python3 .github/television-captions.py "$out" "$pkg"; then
   echo "::error::TV caption placement failed"; failed=1
 fi
-for name in watchlist series library people details playback settings account-services restricted-profile seerr-permission seerr-requests seerr-disable subtitle-replacement subtitle-provider credits; do
+for name in watchlist series library people source-title details playback settings account-services restricted-profile seerr-permission seerr-requests seerr-disable subtitle-replacement subtitle-provider credits; do
   set +e
   (
     set -e

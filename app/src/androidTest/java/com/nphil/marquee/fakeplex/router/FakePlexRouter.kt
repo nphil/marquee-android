@@ -116,7 +116,8 @@ class FakePlexRouter(private val fixtures: Fixtures) {
 			// A file without a fixture answers a ranged read with filler: the link probe reads the start of the file.
 			if (path.startsWith("/library/parts/") && range != null) return binary(filler, range)
 		}
-		val found = fixture(base, query) ?: derived(base, query)
+		val sourceFixture = if (prefix == "pms" && method == "GET") fixture("servers/$host/$base", query) else null
+		val found = sourceFixture ?: fixture(base, query) ?: derived(base, query)
 		if (found != null) {
 			if (found !is JsonObject) return json(found)
 			val status = (found["__status"] as? JsonPrimitive)?.intOrNull ?: 200
